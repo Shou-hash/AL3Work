@@ -6,7 +6,7 @@
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	
 	//初期化
-	KamataEngine::Initialize(L"LE2A_12_ショウ_ズーウェン_AL3");
+	KamataEngine::Initialize(L"LE2C_12_ショウ_ズーウェン_AL3");
 
 	using namespace KamataEngine;
 
