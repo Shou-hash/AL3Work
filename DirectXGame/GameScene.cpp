@@ -8,24 +8,26 @@ GameScene::~GameScene()
 	delete player_;
 }
 
-void GameScene::Initialize() 
+void GameScene::Initialize()
 {
 	// カメラの初期化
 	camera_.Initialize();
 
-	// 背景などの初期化（既存コード）
+	// 背景などの初期化
 	textureHandle_ = TextureManager::Load("uvChecker.png");
 	model_ = Model::Create();
-	worldTransform_.Initialize();
 
 	// プレイヤーの生成と初期化
 	player_ = new Player();
 	player_->Initialize(model_, textureHandle_);
 }
 
-void GameScene::Update() 
+void GameScene::Update()
 {
-	player_->Update(); 
+	// カメラの行列を更新
+	camera_.UpdateMatrix();
+
+	player_->Update();
 }
 
 void GameScene::Draw() 

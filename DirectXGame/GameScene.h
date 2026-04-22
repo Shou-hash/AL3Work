@@ -1,6 +1,6 @@
 #pragma once
 #include "Kamataengine.h"
-#include "Player.h" // Playerクラスを使用するためにインクルード
+#include "Player.h"
 
 class GameScene {
 public:
@@ -24,5 +24,4 @@ private:
 
 	uint32_t textureHandle_ = 0;
 	KamataEngine::Model* model_ = nullptr;
-	KamataEngine::WorldTransform worldTransform_;
 };
