@@ -4,6 +4,9 @@
 class GameScene 
 {
 public:
+
+	~GameScene();
+
 	//初期化
 	void Initialize();
 
@@ -12,4 +15,8 @@ public:
 
 	// 描画
 	void Draw();
+
+private:
+
+
 };
