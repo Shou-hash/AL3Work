@@ -1,5 +1,7 @@
 #pragma once
 #include "Kamataengine.h"
+#include <vector>
+#include "Matrix4x4.h"
 
 class GameScene 
 {
@@ -18,5 +20,13 @@ public:
 
 private:
 
+	KamataEngine::Model* model_ = nullptr;
 
+	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
+
+	KamataEngine::Camera camera_;
+
+	bool isDebugCameraActive_ = false;
+
+	KamataEngine::DebugCamera* debugCamera_ = nullptr;
 };
