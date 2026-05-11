@@ -8,7 +8,10 @@ using namespace KamataEngine;
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	
 	//初期化
-	Initialize(L"LE2C_12_ショウ_ズーウェン_AL3");
+	Initialize(L"LE2C_12_ショウ_ズーウェン_AL3");//#include <base\WinApp.h>の中でサイズ変える
+
+	//KamataEngine::WinApp::GetInstance()->CreateGameWindow(L"LE2C_12_ショウ_ズーウェン_AL3", WS_OVERLAPPEDWINDOW, 1920, 1080);
+
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 
 	GameScene* gameScene = new GameScene();
