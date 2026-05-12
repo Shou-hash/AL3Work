@@ -47,19 +47,21 @@ public:
 	void Draw();
 
 private:
-	// カメラとトランスフォーム
 	KamataEngine::Camera camera_{};
 
 	// --- テクスチャハンドル ---
-	uint32_t texBg_[3] = {0}; // 背景複数
+	uint32_t texBg_[3] = {0};
 	uint32_t texClock_[3] = {0};
 	uint32_t texHandHour_ = 0;
 	uint32_t texHandMin_ = 0;
 	uint32_t texPiece_[4] = {0};
 	uint32_t texGear_[11] = {0};
-	uint32_t texSparkle_ = 0; // 追加: 星(光)のパーティクル
+	uint32_t texSparkle_ = 0;
+	// --- 追加: 太陽と月のテクスチャ ---
+	uint32_t texSun_ = 0;
+	uint32_t texMoon_ = 0;
 
-	// --- スプライトポインタ (描画用) ---
+	// --- スプライトポインタ ---
 	KamataEngine::Sprite* sprBg_[3] = {nullptr};
 	KamataEngine::Sprite* sprClock_[3] = {nullptr};
 	KamataEngine::Sprite* sprHandHour_ = nullptr;
@@ -67,6 +69,9 @@ private:
 	KamataEngine::Sprite* sprPiece_[4] = {nullptr};
 	KamataEngine::Sprite* sprGear_[11] = {nullptr};
 	KamataEngine::Sprite* sprSparkle_ = nullptr;
+	// --- 追加: 太陽と月のスプライト ---
+	KamataEngine::Sprite* sprSun_ = nullptr;
+	KamataEngine::Sprite* sprMoon_ = nullptr;
 
 	// --- ゲームロジック変数 ---
 	KamataEngine::Vector2 clockPos_ = {640.0f, 360.0f};
@@ -82,9 +87,9 @@ private:
 	float shakeTimer_ = 0.0f;
 	KamataEngine::Vector2 shakeOffset_ = {0, 0};
 
-	// --- 追加: 色変え・演出用変数 ---
+	// 色変え・演出用変数
 	bool isSunActive_ = true;
-	float colorLerpTimer_ = 0.0f; // 0.0(昼) ～ 1.0(夜)
+	float colorLerpTimer_ = 0.0f;
 	const float kColorChangeSpeed_ = 0.02f;
 
 	// 配列データ

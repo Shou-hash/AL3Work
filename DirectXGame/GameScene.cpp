@@ -14,6 +14,10 @@ struct GearSpawnData {
 	int textureIndex;
 };
 
+float GameScene::Random(float min, float max) { return min + (float)std::rand() / RAND_MAX * (max - min); }
+
+KamataEngine::Vector2 GameScene::GetZoomPos(float x, float y) { return {x, y}; }
+
 const GearSpawnData kGearInitDatas[kGearNum] = {
     {{168.0f, -24.0f},  160.0f, 0.03f,  320, 4 },
     {{164.0f, 136.0f},  144.0f, -0.10f, 288, 1 },
@@ -53,20 +57,22 @@ GameScene::~GameScene() {
 	for (int i = 0; i < 11; i++)
 		delete sprGear_[i];
 	delete sprSparkle_;
+	// 追加: 太陽と月のメモリ解放
+	delete sprSun_;
+	delete sprMoon_;
 }
 
 void GameScene::Initialize() {
 	std::srand((unsigned int)std::time(nullptr));
 	camera_.Initialize();
 
-	// 背景の読み込み
+	// 背景・時計盤・針・パーティクル・ギヤの読み込み（元のコードと同じなので省略せずそのまま）
 	for (int i = 0; i < 3; i++) {
 		texBg_[i] = TextureManager::Load("./Resource/Clock/Bg/bg" + std::to_string(i + 1) + ".png");
 		if (texBg_[i])
 			sprBg_[i] = Sprite::Create(texBg_[i], {0, 0});
 	}
 
-	// 時計盤
 	for (int i = 0; i < 3; i++) {
 		texClock_[i] = TextureManager::Load("./Resource/Clock/clock" + std::to_string(i + 1) + ".png");
 		if (texClock_[i]) {
@@ -75,7 +81,6 @@ void GameScene::Initialize() {
 		}
 	}
 
-	// 針
 	texHandHour_ = TextureManager::Load("./Resource/Clock/Hand/hourHand.png");
 	if (texHandHour_) {
 		sprHandHour_ = Sprite::Create(texHandHour_, {0, 0});
@@ -87,7 +92,6 @@ void GameScene::Initialize() {
 		sprHandMin_->SetAnchorPoint({0.5f, 0.5f});
 	}
 
-	// 欠片
 	for (int i = 0; i < 4; i++) {
 		texPiece_[i] = TextureManager::Load("./Resource/Clock/Piece/piece" + std::to_string(i + 1) + ".png");
 		if (texPiece_[i]) {
@@ -96,14 +100,12 @@ void GameScene::Initialize() {
 		}
 	}
 
-	// 光パーティクル
 	texSparkle_ = TextureManager::Load("./Resource/Clock/Light/particle.png");
 	if (texSparkle_) {
 		sprSparkle_ = Sprite::Create(texSparkle_, {0, 0});
 		sprSparkle_->SetAnchorPoint({0.5f, 0.5f});
 	}
 
-	// ギヤ
 	for (int i = 0; i < 11; i++) {
 		texGear_[i] = TextureManager::Load("./Resource/Gear/gear" + std::to_string(i + 1) + ".png");
 		if (texGear_[i]) {
@@ -112,7 +114,20 @@ void GameScene::Initialize() {
 		}
 	}
 
-	// --- 全ギヤの初期配置設定 ---
+	// --- 追加: 太陽と月の読み込み ---
+	// ※画像ファイルのパスはご自身の環境に合わせて変更してください
+	texSun_ = TextureManager::Load("./Resource/Clock/Light/sun2.png");
+	if (texSun_) {
+		sprSun_ = Sprite::Create(texSun_, {0, 0});
+		sprSun_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
+	texMoon_ = TextureManager::Load("./Resource/Clock/Light/month2.png");
+	if (texMoon_) {
+		sprMoon_ = Sprite::Create(texMoon_, {0, 0});
+		sprMoon_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
 	for (int i = 0; i < kGearNum; i++) {
 		gears_[i].position = kGearInitDatas[i].position;
 		gears_[i].radius = kGearInitDatas[i].radius;
@@ -122,7 +137,6 @@ void GameScene::Initialize() {
 		gears_[i].angle = 0.0f;
 	}
 
-	// --- 欠片・光の初期化 ---
 	for (auto& p : pieces_)
 		p.isDisplay = false;
 	for (auto& s : sparkles_)
@@ -134,7 +148,7 @@ void GameScene::Update() {
 
 	// --- 色変え（昼/夜 切り替え）処理 ---
 	if (input->TriggerKey(DIK_C)) {
-		isSunActive_ = !isSunActive_; // Cキーで色味の切り替えテスト
+		isSunActive_ = !isSunActive_;
 	}
 
 	if (!isSunActive_) {
@@ -147,14 +161,31 @@ void GameScene::Update() {
 			colorLerpTimer_ = 0.0f;
 	}
 
-	// --- 時計回転ロジック ---
+	// --- 時計回転ロジック（逆回転と時針連動を追加） ---
 	if (!isRotating_) {
+		bool isSpacePressed = input->TriggerKey(DIK_SPACE);
 		intervalTimer_++;
-		if (intervalTimer_ > 120 || input->TriggerKey(DIK_SPACE)) {
+
+		// 一定時間経過するか、スペースキーが押されたら回転開始
+		if (intervalTimer_ > 120 || isSpacePressed) {
 			isRotating_ = true;
 			easeTimer_ = 0.0f;
 			minStart_ = minAngle_;
-			minTarget_ = minAngle_ + 0.523f; // 30度
+			hourStart_ = hourAngle_;
+
+			// 追加: 分針が30度進むと、時針は2.5度進む (30度 / 12)
+			float moveAngleMin = 0.523f;   // 約30度
+			float moveAngleHour = 0.0436f; // 約2.5度
+
+			// スペースキーなら逆回転、それ以外は正回転
+			if (isSpacePressed) {
+				minTarget_ = minAngle_ - moveAngleMin;
+				hourTarget_ = hourAngle_ - moveAngleHour;
+			} else {
+				minTarget_ = minAngle_ + moveAngleMin;
+				hourTarget_ = hourAngle_ + moveAngleHour;
+			}
+
 			shakeTimer_ = 30.0f;
 			intervalTimer_ = 0;
 
@@ -162,6 +193,7 @@ void GameScene::Update() {
 			for (auto& p : pieces_) {
 				p.isDisplay = true;
 				p.position = clockPos_;
+				// 逆回転時は飛び散り方を変えたい場合はここで調整可能です
 				p.velocity = {Random(-5, 5), Random(-10, -2)};
 				p.angle = Random(0, 6.28f);
 				p.angularVelocity = Random(-0.1f, 0.1f);
@@ -171,7 +203,7 @@ void GameScene::Update() {
 			}
 
 			// 光(星)の放出
-			for (int i = 0; i < 15; i++) { // 1度に15個放出
+			for (int i = 0; i < 15; i++) {
 				for (auto& s : sparkles_) {
 					if (!s.isDisplay) {
 						s.isDisplay = true;
@@ -189,8 +221,12 @@ void GameScene::Update() {
 		if (easeTimer_ >= 1.0f) {
 			isRotating_ = false;
 			minAngle_ = minTarget_;
+			hourAngle_ = hourTarget_;
 		} else {
-			minAngle_ = minStart_ + (minTarget_ - minStart_) * EaseOutQuart(easeTimer_);
+			// 追加: 時針も分針と一緒にイージングをかけて回す
+			float easeVal = EaseOutQuart(easeTimer_);
+			minAngle_ = minStart_ + (minTarget_ - minStart_) * easeVal;
+			hourAngle_ = hourStart_ + (hourTarget_ - hourStart_) * easeVal;
 		}
 	}
 
@@ -207,25 +243,25 @@ void GameScene::Update() {
 		g.angle += g.rotateSpeed;
 	}
 
-	// 欠片(Piece)の物理更新
+	// 欠片の物理更新
 	for (auto& p : pieces_) {
 		if (p.isDisplay) {
 			p.position.x += p.velocity.x;
 			p.position.y += p.velocity.y;
-			p.velocity.y += 0.5f;         // 重力
-			p.angle += p.angularVelocity; // 回転
+			p.velocity.y += 0.5f;
+			p.angle += p.angularVelocity;
 			if (p.position.y > 1080) {
 				p.isDisplay = false;
 			}
 		}
 	}
 
-	// 光(Sparkle)の更新
+	// 光の更新
 	for (auto& s : sparkles_) {
 		if (s.isDisplay) {
 			s.position.x += s.velocity.x;
 			s.position.y += s.velocity.y;
-			s.alpha -= s.lifeSpeed; // 透明度を下げる
+			s.alpha -= s.lifeSpeed;
 			if (s.alpha <= 0.0f) {
 				s.isDisplay = false;
 			}
@@ -238,14 +274,28 @@ void GameScene::Draw() {
 
 	Vector2 drawPos = {clockPos_.x + shakeOffset_.x, clockPos_.y + shakeOffset_.y};
 
-	// 2D背景の色変え (KamataEngine側での色の合成手法に準拠)
-	// 例として、colorLerpTimer_に応じて全体の色調（アルファなど）を制御できます
+	// 背景
 	if (sprBg_[0])
-		sprBg_[0]->Draw(); // 昼背景
+		sprBg_[0]->Draw();
 	if (sprBg_[1] && colorLerpTimer_ > 0.0f) {
-		// 夜背景をアルファブレンドで乗せる（エンジン仕様に合わせてSetColor等でアルファを指定）
+		// ※エンジンによってはアルファブレンド関数が必要です
 		// sprBg_[1]->SetColor({1.0f, 1.0f, 1.0f, colorLerpTimer_});
 		sprBg_[1]->Draw();
+	}
+
+	// --- 追加: 太陽と月の描画 ---
+	// colorLerpTimer_ に応じて高さを変えるなどの演出を加えています
+	if (sprSun_) {
+		// 昼(0.0)のときは画面上部、夜(1.0)のときは画面下部へ沈む
+		float sunY = 200.0f + (colorLerpTimer_ * 500.0f);
+		sprSun_->SetPosition({300.0f, sunY});
+		sprSun_->Draw();
+	}
+	if (sprMoon_) {
+		// 夜(1.0)のときは画面上部、昼(0.0)のときは画面下部へ沈む
+		float moonY = 700.0f - (colorLerpTimer_ * 500.0f);
+		sprMoon_->SetPosition({980.0f, moonY});
+		sprMoon_->Draw();
 	}
 
 	// 時計本体
@@ -258,9 +308,8 @@ void GameScene::Draw() {
 
 	// ギヤ
 	for (int i = 0; i < kGearNum; i++) {
-		if (gears_[i].size <= 0) {
+		if (gears_[i].size <= 0)
 			continue;
-		}
 		auto* s = sprGear_[gears_[i].textureIndex];
 		if (s) {
 			s->SetPosition({gears_[i].position.x + shakeOffset_.x, gears_[i].position.y + shakeOffset_.y});
@@ -270,10 +319,10 @@ void GameScene::Draw() {
 		}
 	}
 
-	// 針
+	// 針の描画 (時針と分針)
 	if (sprHandHour_) {
 		sprHandHour_->SetPosition(drawPos);
-		sprHandHour_->SetRotation(hourAngle_);
+		sprHandHour_->SetRotation(hourAngle_); // 計算された時針の角度を適用
 		sprHandHour_->Draw();
 	}
 	if (sprHandMin_) {
@@ -282,7 +331,7 @@ void GameScene::Draw() {
 		sprHandMin_->Draw();
 	}
 
-	// --- 欠片(Piece)の描画 ---
+	// 欠片の描画
 	for (auto& p : pieces_) {
 		if (p.isDisplay) {
 			auto* s = sprPiece_[p.textureIndex];
@@ -295,22 +344,14 @@ void GameScene::Draw() {
 		}
 	}
 
-	// --- 光(Sparkle)の描画 ---
+	// 光の描画
 	for (auto& s : sparkles_) {
 		if (s.isDisplay && sprSparkle_) {
 			sprSparkle_->SetPosition(s.position);
-			// エンジンに応じてアルファ値を反映: sprSparkle_->SetColor({1.0f, 1.0f, 1.0f, s.alpha});
-			sprSparkle_->SetSize({32.0f * s.alpha, 32.0f * s.alpha}); // 透明度に合わせてサイズも縮小する擬似表現
+			sprSparkle_->SetSize({32.0f * s.alpha, 32.0f * s.alpha});
 			sprSparkle_->Draw();
 		}
 	}
 
 	Sprite::PostDraw();
-}
-
-float GameScene::Random(float min, float max) { return min + (float)std::rand() / RAND_MAX * (max - min); }
-
-KamataEngine::Vector2 GameScene::GetZoomPos(float x, float y) {
-	// 将来的なズーム実装用ヘルパー
-	return {x, y};
 }
