@@ -2,9 +2,9 @@
 #include "Kamataengine.h"
 #include "Matrix4x4.h"
 #include <vector>
-
 #include "Skydome.h"
 #include <memory>
+#include "MapChipField.h"
 
 class GameScene {
 public:
@@ -20,6 +20,8 @@ public:
 	void Draw();
 	KamataEngine::Camera& GetCamera() { return camera_; }
 
+	void GenerateBlocks();
+
 private:
 	KamataEngine::Model* model_ = nullptr;
 
@@ -33,4 +35,6 @@ private:
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 	KamataEngine::Model* modelSkydome_ = nullptr;
+
+	MapChipField* mapChipField_;
 };
