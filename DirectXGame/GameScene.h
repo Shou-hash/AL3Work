@@ -35,6 +35,7 @@ private:
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 	KamataEngine::Model* modelSkydome_ = nullptr;
+	KamataEngine::Model* modelPlayer_ = nullptr;
 
 	MapChipField* mapChipField_;
 };

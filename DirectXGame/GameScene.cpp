@@ -1,5 +1,6 @@
 #include "GameScene.h"
 #include "Matrix4x4.h"
+#include "Player.h"
 
 using namespace KamataEngine;
 
@@ -37,6 +38,10 @@ void GameScene::Initialize() {
 
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
+
+	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2,19);
+
+	player_->Initialize(modelPlayer_, &camera_, playerPosition);
 }
 
 void GameScene::GenerateBlocks() {
