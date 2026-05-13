@@ -93,6 +93,7 @@ void GameScene::Update() {
 	skydome->Update();
 }
 
+
 void GameScene::Draw() {
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
