@@ -47,20 +47,10 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 }
 
 MapChipType MapChipField::GetMapChipTypeByIndex(uint32_t xIndex, uint32_t yIndex) {
-	//if (xIndex < 0 || kNumBlockHorizontal - 1 < xIndex) {
-	//	return MapChipType::kBlank;
-	//}
-	//if (yIndex < 0 || kNumBlockVertical - 1 < yIndex) {
-	//	return MapChipType::kBlank;
-	//}
-
-	// uint32_t は符号なし（マイナスにならない）ため、< 0 のチェックは不要（かつ常にfalse）です。
-	// 代わりに >= で上限チェックを行います。
-
-	if (xIndex >= kNumBlockHorizontal) {
+	if (xIndex < 0 || kNumBlockHorizontal - 1 < xIndex) {
 		return MapChipType::kBlank;
 	}
-	if (yIndex >= kNumBlockVertical) {
+	if (yIndex < 0 || kNumBlockVertical - 1 < yIndex) {
 		return MapChipType::kBlank;
 	}
 
