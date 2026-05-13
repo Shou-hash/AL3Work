@@ -1,32 +1,36 @@
 #pragma once
 #include "Kamataengine.h"
-#include <vector>
 #include "Matrix4x4.h"
+#include <vector>
 
-class GameScene 
-{
+#include "Skydome.h"
+#include <memory>
+
+class GameScene {
 public:
-
 	~GameScene();
 
-	//初期化
+	// 初期化
 	void Initialize();
 
-	//更新
+	// 更新
 	void Update();
 
 	// 描画
 	void Draw();
+	KamataEngine::Camera& GetCamera() { return camera_; }
 
 private:
-
 	KamataEngine::Model* model_ = nullptr;
 
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
 
-	KamataEngine::Camera camera_;
+	KamataEngine::Camera camera_{};
 
 	bool isDebugCameraActive_ = false;
 
 	KamataEngine::DebugCamera* debugCamera_ = nullptr;
+
+	std::unique_ptr<Skydome> skydome = nullptr;
+	KamataEngine::Model* modelSkydome_ = nullptr;
 };

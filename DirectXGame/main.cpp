@@ -13,6 +13,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	GameScene* gameScene = new GameScene();
 	gameScene->Initialize();
+	
 
 	//メインループ
 	while (true) 
@@ -25,12 +26,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		// ゲームシーンの更新
 		gameScene->Update();
-
+		
 		// 描画前処理
 		dxCommon->PreDraw();
 
 		// 描画処理
 		gameScene->Draw();
+
 
 		// 描画後処理
 		dxCommon->PostDraw();
