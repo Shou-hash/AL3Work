@@ -1,7 +1,11 @@
-#include "GameScene.h"
+#define _USE_MATH_DEFINES
 #include "Easeing.h"
+#include "GameScene.h"
 #include <cmath>
 #include <ctime>
+#include <math.h>
+#include <string>
+#include <time.h>
 
 using namespace KamataEngine;
 
@@ -15,8 +19,6 @@ struct GearSpawnData {
 };
 
 float GameScene::Random(float min, float max) { return min + (float)std::rand() / RAND_MAX * (max - min); }
-
-KamataEngine::Vector2 GameScene::GetZoomPos(float x, float y) { return {x, y}; }
 
 const GearSpawnData kGearInitDatas[kGearNum] = {
     {{168.0f, -24.0f},  160.0f, 0.03f,  320, 4 },
@@ -57,16 +59,16 @@ GameScene::~GameScene() {
 	for (int i = 0; i < 11; i++)
 		delete sprGear_[i];
 	delete sprSparkle_;
-	// 追加: 太陽と月のメモリ解放
 	delete sprSun_;
 	delete sprMoon_;
+	for (int i = 0; i < 2; i++)
+		delete sprSpace_[i];
 }
 
 void GameScene::Initialize() {
 	std::srand((unsigned int)std::time(nullptr));
 	camera_.Initialize();
 
-	// 背景・時計盤・針・パーティクル・ギヤの読み込み（元のコードと同じなので省略せずそのまま）
 	for (int i = 0; i < 3; i++) {
 		texBg_[i] = TextureManager::Load("./Resource/Clock/Bg/bg" + std::to_string(i + 1) + ".png");
 		if (texBg_[i])
@@ -84,12 +86,12 @@ void GameScene::Initialize() {
 	texHandHour_ = TextureManager::Load("./Resource/Clock/Hand/hourHand.png");
 	if (texHandHour_) {
 		sprHandHour_ = Sprite::Create(texHandHour_, {0, 0});
-		sprHandHour_->SetAnchorPoint({0.5f, 0.5f});
+		sprHandHour_->SetAnchorPoint({0.0f, 0.5f});// ★時針の回転中心
 	}
 	texHandMin_ = TextureManager::Load("./Resource/Clock/Hand/minHand.png");
 	if (texHandMin_) {
 		sprHandMin_ = Sprite::Create(texHandMin_, {0, 0});
-		sprHandMin_->SetAnchorPoint({0.5f, 0.5f});
+		sprHandMin_->SetAnchorPoint({0.0f, 0.5f});// ★分針の回転中心
 	}
 
 	for (int i = 0; i < 4; i++) {
@@ -114,8 +116,6 @@ void GameScene::Initialize() {
 		}
 	}
 
-	// --- 追加: 太陽と月の読み込み ---
-	// ※画像ファイルのパスはご自身の環境に合わせて変更してください
 	texSun_ = TextureManager::Load("./Resource/Clock/Light/sun2.png");
 	if (texSun_) {
 		sprSun_ = Sprite::Create(texSun_, {0, 0});
@@ -128,6 +128,15 @@ void GameScene::Initialize() {
 		sprMoon_->SetAnchorPoint({0.5f, 0.5f});
 	}
 
+	// Space UI の読み込み
+	for (int i = 0; i < 2; i++) {
+		texSpace_[i] = TextureManager::Load("./Resource/Clock/space" + (i == 0 ? std::string("") : std::to_string(2)) + ".png");
+		if (texSpace_[i]) {
+			sprSpace_[i] = Sprite::Create(texSpace_[i], {0, 0});
+			sprSpace_[i]->SetAnchorPoint({0.5f, 0.5f});
+		}
+	}
+
 	for (int i = 0; i < kGearNum; i++) {
 		gears_[i].position = kGearInitDatas[i].position;
 		gears_[i].radius = kGearInitDatas[i].radius;
@@ -135,49 +144,47 @@ void GameScene::Initialize() {
 		gears_[i].size = kGearInitDatas[i].grSize;
 		gears_[i].textureIndex = kGearInitDatas[i].textureIndex;
 		gears_[i].angle = 0.0f;
+		// ギヤのアニメーション変数を初期化
+		gears_[i].startupTimer = 0.0f;
+		gears_[i].isStadyRotation = false;
+		gears_[i].shakeAmount = 0.02f;
+		gears_[i].shakeSpeed = 30.0f;
 	}
 
-	for (auto& p : pieces_)
-		p.isDisplay = false;
-	for (auto& s : sparkles_)
-		s.isDisplay = false;
+	for (int i = 0; i < kPieceNum; i++) {
+		pieces_[i].position = {960.0f, 540.0f};
+		pieces_[i].velocity = {Random(-3.0f, 3.0f), Random(-2.0f, -6.0f)};
+		pieces_[i].angle = Random(0.0f, 6.28f);
+		pieces_[i].angularVelocity = Random(-0.05f, 0.05f);
+		pieces_[i].isDisplay = false;
+		pieces_[i].width = Random(10.0f, 48.0f);
+		pieces_[i].height = Random(10.0f, 48.0f);
+		pieces_[i].life = 0.0f;
+		pieces_[i].maxLife = 1.0f;
+	}
 }
 
 void GameScene::Update() {
 	Input* input = Input::GetInstance();
 
-	// --- 色変え（昼/夜 切り替え）処理 ---
-	if (input->TriggerKey(DIK_C)) {
-		isSunActive_ = !isSunActive_;
-	}
+	hourCos_ = cosf(hourAngle_);
+	spaceAnimTimer_++;
 
-	if (!isSunActive_) {
-		colorLerpTimer_ += kColorChangeSpeed_;
-		if (colorLerpTimer_ > 1.0f)
-			colorLerpTimer_ = 1.0f;
-	} else {
-		colorLerpTimer_ -= kColorChangeSpeed_;
-		if (colorLerpTimer_ < 0.0f)
-			colorLerpTimer_ = 0.0f;
-	}
-
-	// --- 時計回転ロジック（逆回転と時針連動を追加） ---
+	// --- 時計回転ロジック ---
 	if (!isRotating_) {
 		bool isSpacePressed = input->TriggerKey(DIK_SPACE);
 		intervalTimer_++;
 
-		// 一定時間経過するか、スペースキーが押されたら回転開始
 		if (intervalTimer_ > 120 || isSpacePressed) {
 			isRotating_ = true;
 			easeTimer_ = 0.0f;
 			minStart_ = minAngle_;
 			hourStart_ = hourAngle_;
 
-			// 追加: 分針が30度進むと、時針は2.5度進む (30度 / 12)
-			float moveAngleMin = 0.523f;   // 約30度
-			float moveAngleHour = 0.0436f; // 約2.5度
+			const float kToRad = float(M_PI) / 180.0f;
+			float moveAngleMin = 30.0f * kToRad;
+			float moveAngleHour = 2.5f * kToRad;
 
-			// スペースキーなら逆回転、それ以外は正回転
 			if (isSpacePressed) {
 				minTarget_ = minAngle_ - moveAngleMin;
 				hourTarget_ = hourAngle_ - moveAngleHour;
@@ -189,30 +196,32 @@ void GameScene::Update() {
 			shakeTimer_ = 30.0f;
 			intervalTimer_ = 0;
 
-			// 欠片の放出
-			for (auto& p : pieces_) {
-				p.isDisplay = true;
-				p.position = clockPos_;
-				// 逆回転時は飛び散り方を変えたい場合はここで調整可能です
-				p.velocity = {Random(-5, 5), Random(-10, -2)};
-				p.angle = Random(0, 6.28f);
-				p.angularVelocity = Random(-0.1f, 0.1f);
-				p.textureIndex = std::rand() % 4;
-				p.width = Random(16.0f, 48.0f);
-				p.height = p.width;
-			}
+			// 欠片の放出とライフの初期化
+			for (int i = 0; i < kPieceNum; i++) {
+				if (!pieces_[i].isDisplay) {
+					pieces_[i].isDisplay = true;
+					pieces_[i].textureIndex = rand() % 4;
+					pieces_[i].life = Random(60.0f, 150.0f); // 寿命を設定
+					pieces_[i].maxLife = pieces_[i].life;
 
-			// 光(星)の放出
-			for (int i = 0; i < 15; i++) {
-				for (auto& s : sparkles_) {
-					if (!s.isDisplay) {
-						s.isDisplay = true;
-						s.position = {clockPos_.x + Random(-150, 150), clockPos_.y + Random(-150, 150)};
-						s.velocity = {Random(-2, 2), Random(-5, -1)};
-						s.alpha = 1.0f;
-						s.lifeSpeed = Random(0.01f, 0.03f);
-						break;
+					// 三等分して出現位置と飛ぶ方向を分ける
+					if (i < kPieceNum / 3) {
+						// ① 左端側（全体の1/3）: Xは0、Yは0〜720
+						pieces_[i].position = {0.0f, Random(0.0f, 720.0f)};
+						// 右（画面内）へ向かって飛ぶように速度調整
+						pieces_[i].velocity = {Random(2.0f, 6.0f), Random(-6.0f, -1.0f)};
+					} else if (i < (kPieceNum / 3) * 2) {
+						// ② 右端側（全体の1/3）: Xは1280、Yは0〜720
+						pieces_[i].position = {1280.0f, Random(0.0f, 720.0f)};
+						// 左（画面内）へ向かって飛ぶように速度調整
+						pieces_[i].velocity = {Random(-6.0f, -2.0f), Random(-6.0f, -1.0f)};
+					} else {
+						// ③ 上側（全体の1/3）: Xは0〜1280、Yは0
+						pieces_[i].position = {Random(0.0f, 1280.0f), 0.0f};
+						// 下へ向かって落ちるように速度調整（重力と合わせて加速します）
+						pieces_[i].velocity = {Random(-3.0f, 3.0f), Random(0.0f, 3.0f)};
 					}
+					pieces_[i].angularVelocity = Random(-0.1f, 0.1f);
 				}
 			}
 		}
@@ -223,14 +232,55 @@ void GameScene::Update() {
 			minAngle_ = minTarget_;
 			hourAngle_ = hourTarget_;
 		} else {
-			// 追加: 時針も分針と一緒にイージングをかけて回す
 			float easeVal = EaseOutQuart(easeTimer_);
 			minAngle_ = minStart_ + (minTarget_ - minStart_) * easeVal;
 			hourAngle_ = hourStart_ + (hourTarget_ - hourStart_) * easeVal;
 		}
 	}
 
-	// シェイク更新
+	// --- 時計パルス演出（拡大縮小） ---
+	if (input->TriggerKey(DIK_SPACE)) {
+		const float kScaleSpeed = 1.0f / 20.0f;
+		if (isExpanding_) {
+			scaleTimer_ += kScaleSpeed;
+			if (scaleTimer_ >= 1.0f)
+				isExpanding_ = false;
+		} else {
+			scaleTimer_ -= kScaleSpeed;
+			if (scaleTimer_ <= 0.0f)
+				isExpanding_ = true;
+		}
+	} else {
+		scaleTimer_ = 0.0f;
+		isExpanding_ = false;
+	}
+	currentScale_ = 1.0f + (1.2f - 1.0f) * EaseInOutQuart(scaleTimer_);
+
+	// 光(星)の放出
+	for (int i = 0; i < kSparkleNum; i++) {
+		if (!sparkles_[i].isDisplay) {
+			sparkles_[i].isDisplay = true;
+			sparkles_[i].position.x = Random(0.0f, 1920.0f);
+			sparkles_[i].position.y = Random(0.0f, 1080.0f);
+			float angle = Random(0.0f, float(M_PI) * 2.0f);
+			float speed = Random(1.0f, 4.0f);
+			sparkles_[i].velocity.x = cosf(angle) * speed;
+			sparkles_[i].velocity.y = sinf(angle) * speed;
+			sparkles_[i].alpha = 1.0f;
+			sparkles_[i].lifeSpeed = Random(0.01f, 0.03f);
+		}
+	}
+
+	for (int i = 0; i < kSparkleNum; i++) {
+		if (sparkles_[i].isDisplay) {
+			sparkles_[i].position.x += sparkles_[i].velocity.x;
+			sparkles_[i].position.y += sparkles_[i].velocity.y;
+			sparkles_[i].alpha -= sparkles_[i].lifeSpeed;
+			if (sparkles_[i].alpha <= 0.0f)
+				sparkles_[i].isDisplay = false;
+		}
+	}
+
 	if (shakeTimer_ > 0) {
 		shakeTimer_ -= 1.0f;
 		shakeOffset_ = {Random(-5, 5), Random(-5, 5)};
@@ -238,32 +288,37 @@ void GameScene::Update() {
 		shakeOffset_ = {0, 0};
 	}
 
-	// ギヤ回転
-	for (auto& g : gears_) {
-		g.angle += g.rotateSpeed;
-	}
-
-	// 欠片の物理更新
-	for (auto& p : pieces_) {
-		if (p.isDisplay) {
-			p.position.x += p.velocity.x;
-			p.position.y += p.velocity.y;
-			p.velocity.y += 0.5f;
-			p.angle += p.angularVelocity;
-			if (p.position.y > 1080) {
-				p.isDisplay = false;
+	// ギヤのアニメーションと回転更新
+	for (int i = 0; i < kGearNum; i++) {
+		if (!gears_[i].isStadyRotation) {
+			gears_[i].startupTimer += 0.02f;
+			if (gears_[i].startupTimer >= 1.0f) {
+				gears_[i].startupTimer = 1.0f;
+				gears_[i].isStadyRotation = true;
 			}
+			// イージングをかけて回転速度を徐々に上げる
+			float easeT = EaseOutBounce(gears_[i].startupTimer);
+			gears_[i].angle += gears_[i].rotateSpeed * easeT;
+
+			// 起動時の微小な揺れ
+			gears_[i].position.x = kGearInitDatas[i].position.x + sinf(gears_[i].startupTimer * gears_[i].shakeSpeed) * gears_[i].shakeAmount * 100.0f;
+		} else {
+			gears_[i].angle += gears_[i].rotateSpeed;
+			gears_[i].position.x = kGearInitDatas[i].position.x; // 位置リセット
 		}
 	}
 
-	// 光の更新
-	for (auto& s : sparkles_) {
-		if (s.isDisplay) {
-			s.position.x += s.velocity.x;
-			s.position.y += s.velocity.y;
-			s.alpha -= s.lifeSpeed;
-			if (s.alpha <= 0.0f) {
-				s.isDisplay = false;
+	// 欠片の物理更新と寿命管理
+	for (int i = 0; i < kPieceNum; i++) {
+		if (pieces_[i].isDisplay) {
+			pieces_[i].position.x += pieces_[i].velocity.x;
+			pieces_[i].position.y += pieces_[i].velocity.y;
+			pieces_[i].velocity.y += 0.4f; // 重力
+			pieces_[i].angle += pieces_[i].angularVelocity;
+			pieces_[i].life -= 1.0f;
+
+			if (pieces_[i].position.y > 1080.0f || pieces_[i].life <= 0.0f) {
+				pieces_[i].isDisplay = false;
 			}
 		}
 	}
@@ -274,34 +329,25 @@ void GameScene::Draw() {
 
 	Vector2 drawPos = {clockPos_.x + shakeOffset_.x, clockPos_.y + shakeOffset_.y};
 
-	// 背景
 	if (sprBg_[0])
 		sprBg_[0]->Draw();
-	if (sprBg_[1] && colorLerpTimer_ > 0.0f) {
-		// ※エンジンによってはアルファブレンド関数が必要です
-		// sprBg_[1]->SetColor({1.0f, 1.0f, 1.0f, colorLerpTimer_});
-		sprBg_[1]->Draw();
-	}
 
-	// --- 追加: 太陽と月の描画 ---
-	// colorLerpTimer_ に応じて高さを変えるなどの演出を加えています
-	if (sprSun_) {
-		// 昼(0.0)のときは画面上部、夜(1.0)のときは画面下部へ沈む
-		float sunY = 200.0f + (colorLerpTimer_ * 500.0f);
-		sprSun_->SetPosition({300.0f, sunY});
+	// 昼夜の表現をhourCos_を元に描画
+	if (hourCos_ >= 0) {
+		sprSun_->SetPosition({640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y});
+		sprSun_->SetSize({sprSun_->GetTextureSize().x * currentScale_, sprSun_->GetTextureSize().y * currentScale_});
 		sprSun_->Draw();
-	}
-	if (sprMoon_) {
-		// 夜(1.0)のときは画面上部、昼(0.0)のときは画面下部へ沈む
-		float moonY = 700.0f - (colorLerpTimer_ * 500.0f);
-		sprMoon_->SetPosition({980.0f, moonY});
+	} else {
+		sprMoon_->SetPosition({640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y});
+		sprMoon_->SetSize({sprMoon_->GetTextureSize().x * currentScale_, sprMoon_->GetTextureSize().y * currentScale_});
 		sprMoon_->Draw();
 	}
 
-	// 時計本体
+	// 時計本体 (スケール適用)
 	for (int i = 2; i >= 0; i--) {
 		if (sprClock_[i]) {
 			sprClock_[i]->SetPosition(drawPos);
+			sprClock_[i]->SetSize({sprClock_[i]->GetTextureSize().x * currentScale_, sprClock_[i]->GetTextureSize().y * currentScale_});
 			sprClock_[i]->Draw();
 		}
 	}
@@ -319,36 +365,56 @@ void GameScene::Draw() {
 		}
 	}
 
-	// 針の描画 (時針と分針)
+	// 針の描画
 	if (sprHandHour_) {
 		sprHandHour_->SetPosition(drawPos);
-		sprHandHour_->SetRotation(hourAngle_); // 計算された時針の角度を適用
+		sprHandHour_->SetRotation(hourAngle_);
+		sprHandHour_->SetSize({sprHandHour_->GetTextureSize().x * currentScale_, sprHandHour_->GetTextureSize().y * currentScale_});
 		sprHandHour_->Draw();
 	}
 	if (sprHandMin_) {
 		sprHandMin_->SetPosition(drawPos);
 		sprHandMin_->SetRotation(minAngle_);
+		sprHandMin_->SetSize({sprHandMin_->GetTextureSize().x * currentScale_, sprHandMin_->GetTextureSize().y * currentScale_});
 		sprHandMin_->Draw();
 	}
 
+	// Space UI 描画（点滅アニメーション）
+	int spaceTexIdx = (spaceAnimTimer_ / 30) % 2;
+	if (!isRotating_ && sprSpace_[spaceTexIdx]) {
+		sprSpace_[spaceTexIdx]->SetPosition({1496.0f, 544.0f});
+		sprSpace_[spaceTexIdx]->Draw();
+	}
+
 	// 欠片の描画
-	for (auto& p : pieces_) {
-		if (p.isDisplay) {
-			auto* s = sprPiece_[p.textureIndex];
-			if (s) {
-				s->SetPosition(p.position);
-				s->SetRotation(p.angle);
-				s->SetSize({p.width, p.height});
+	for (int i = 0; i < kPieceNum; i++) {
+		if (pieces_[i].isDisplay) {
+			int texIdx = pieces_[i].textureIndex;
+			Sprite* s = sprPiece_[texIdx];
+
+			// ★追加修正: 選ばれた画像が読み込めておらず nullptr だった場合、
+			// 強制的に0番（piece1.png）を代用して、パーティクルが消えるのを防ぐ
+			if (s == nullptr) {
+				s = sprPiece_[0];
+			}
+
+			// スプライトが有効な場合のみ描画
+			if (s != nullptr) {
+				s->SetPosition(pieces_[i].position);
+				s->SetRotation(pieces_[i].angle);
+				// 寿命に応じて徐々に小さくなる演出
+				float lifeRatio = pieces_[i].life / pieces_[i].maxLife;
+				s->SetSize({pieces_[i].width * lifeRatio, pieces_[i].height * lifeRatio});
 				s->Draw();
 			}
 		}
 	}
 
 	// 光の描画
-	for (auto& s : sparkles_) {
-		if (s.isDisplay && sprSparkle_) {
-			sprSparkle_->SetPosition(s.position);
-			sprSparkle_->SetSize({32.0f * s.alpha, 32.0f * s.alpha});
+	for (int i = 0; i < kSparkleNum; i++) {
+		if (sparkles_[i].isDisplay && sprSparkle_) {
+			sprSparkle_->SetPosition(sparkles_[i].position);
+			sprSparkle_->SetSize({32.0f * sparkles_[i].alpha, 32.0f * sparkles_[i].alpha});
 			sprSparkle_->Draw();
 		}
 	}

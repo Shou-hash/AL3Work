@@ -27,4 +27,11 @@ inline float EaseInOutQuart(float t) {
 	}
 }
 
-float EaseOutQuart(float t) { return 1.0f - powf(1.0f - t, 4); }
+inline float EaseOutQuart(float t) { return 1.0f - powf(1.0f - t, 4); }
+
+// --- 追加: EaseInBack ---
+inline float EaseInBack(float x) {
+	const float c1 = 1.70158f;
+	const float c3 = c1 + 1.0f;
+	return c3 * x * x * x - c1 * x * x;
+}

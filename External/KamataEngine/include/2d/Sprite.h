@@ -116,6 +116,8 @@ public: // メンバ関数
 
 	const Vector2& GetPosition() const { return position_; }
 
+	const Vector2& GetTextureSize() const { return texSize_; }
+
 	/// <summary>
 	/// 角度の設定
 	/// </summary>

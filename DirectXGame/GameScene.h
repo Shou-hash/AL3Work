@@ -7,7 +7,6 @@ const int kPieceNum = 100;
 const int kSparkleNum = 50;
 const int kGearNum = 24;
 
-// 構造体定義（すべてKamataEngine::Vector2を使用）
 struct Piece {
 	KamataEngine::Vector2 position;
 	KamataEngine::Vector2 velocity;
@@ -16,6 +15,9 @@ struct Piece {
 	int textureIndex;
 	bool isDisplay;
 	float width, height;
+	// --- 追加：生存時間 ---
+	float life;
+	float maxLife;
 };
 
 struct Sparkle {
@@ -24,6 +26,7 @@ struct Sparkle {
 	float alpha;
 	float lifeSpeed;
 	bool isDisplay;
+	float scale;
 };
 
 struct Gear {
@@ -36,6 +39,8 @@ struct Gear {
 	// --- 追加: アニメーション・揺れ用 ---
 	float startupTimer;
 	bool isStadyRotation;
+	float shakeAmount;
+	float shakeSpeed;
 };
 
 class GameScene {
@@ -57,9 +62,10 @@ private:
 	uint32_t texPiece_[4] = {0};
 	uint32_t texGear_[11] = {0};
 	uint32_t texSparkle_ = 0;
-	// --- 追加: 太陽と月のテクスチャ ---
 	uint32_t texSun_ = 0;
 	uint32_t texMoon_ = 0;
+	// --- 追加: Space操作ガイド用 ---
+	uint32_t texSpace_[2] = {0};
 
 	// --- スプライトポインタ ---
 	KamataEngine::Sprite* sprBg_[3] = {nullptr};
@@ -69,15 +75,17 @@ private:
 	KamataEngine::Sprite* sprPiece_[4] = {nullptr};
 	KamataEngine::Sprite* sprGear_[11] = {nullptr};
 	KamataEngine::Sprite* sprSparkle_ = nullptr;
-	// --- 追加: 太陽と月のスプライト ---
 	KamataEngine::Sprite* sprSun_ = nullptr;
 	KamataEngine::Sprite* sprMoon_ = nullptr;
+	KamataEngine::Sprite* sprSpace_[2] = {nullptr};
 
 	// --- ゲームロジック変数 ---
 	KamataEngine::Vector2 clockPos_ = {640.0f, 360.0f};
 	float minAngle_ = -1.57f, hourAngle_ = -1.57f;
 	float minTarget_ = -1.57f, hourTarget_ = -1.57f;
 	float minStart_ = -1.57f, hourStart_ = -1.57f;
+
+	float hourCos_ = 0.0f;
 
 	bool isRotating_ = false;
 	float easeTimer_ = 0.0f;
@@ -87,10 +95,13 @@ private:
 	float shakeTimer_ = 0.0f;
 	KamataEngine::Vector2 shakeOffset_ = {0, 0};
 
-	// 色変え・演出用変数
-	bool isSunActive_ = true;
-	float colorLerpTimer_ = 0.0f;
-	const float kColorChangeSpeed_ = 0.02f;
+	// 拡大縮小用変数 (パルスアニメーション)
+	float scaleTimer_ = 0.0f;
+	float currentScale_ = 1.0f;
+	bool isExpanding_ = false;
+
+	// Spaceガイドのアニメーション用タイマー
+	int spaceAnimTimer_ = 0;
 
 	// 配列データ
 	Piece pieces_[kPieceNum];
@@ -98,6 +109,5 @@ private:
 	Gear gears_[kGearNum];
 
 	// ヘルパー関数
-	KamataEngine::Vector2 GetZoomPos(float x, float y);
 	float Random(float min, float max);
 };
