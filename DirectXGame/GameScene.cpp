@@ -1,6 +1,6 @@
 #define _USE_MATH_DEFINES
-#include "Easeing.h"
 #include "GameScene.h"
+#include "Easeing.h"
 #include <cmath>
 #include <ctime>
 #include <math.h>
@@ -48,21 +48,30 @@ const GearSpawnData kGearInitDatas[kGearNum] = {
 };
 
 GameScene::~GameScene() {
-	for (int i = 0; i < 3; i++)
+	for (int i = 0; i < 3; i++) {
 		delete sprBg_[i];
-	for (int i = 0; i < 3; i++)
+	}
+	for (int i = 0; i < 3; i++) {
 		delete sprClock_[i];
+	}
 	delete sprHandHour_;
 	delete sprHandMin_;
-	for (int i = 0; i < 4; i++)
-		delete sprPiece_[i];
-	for (int i = 0; i < 11; i++)
+
+	for (int i = 0; i < kPieceNum; i++) {
+		delete pieces_[i].sprite;
+	}
+	for (int i = 0; i < kSparkleNum; i++) {
+		delete sparkles_[i].sprite;
+	}
+
+	for (int i = 0; i < 11; i++) {
 		delete sprGear_[i];
-	delete sprSparkle_;
+	}
 	delete sprSun_;
 	delete sprMoon_;
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; i < 2; i++) {
 		delete sprSpace_[i];
+	}
 }
 
 void GameScene::Initialize() {
@@ -86,27 +95,18 @@ void GameScene::Initialize() {
 	texHandHour_ = TextureManager::Load("./Resource/Clock/Hand/hourHand.png");
 	if (texHandHour_) {
 		sprHandHour_ = Sprite::Create(texHandHour_, {0, 0});
-		sprHandHour_->SetAnchorPoint({0.0f, 0.5f});// ★時針の回転中心
+		sprHandHour_->SetAnchorPoint({0.0f, 0.5f}); // ★時針の回転中心
 	}
 	texHandMin_ = TextureManager::Load("./Resource/Clock/Hand/minHand.png");
 	if (texHandMin_) {
 		sprHandMin_ = Sprite::Create(texHandMin_, {0, 0});
-		sprHandMin_->SetAnchorPoint({0.0f, 0.5f});// ★分針の回転中心
+		sprHandMin_->SetAnchorPoint({0.0f, 0.5f}); // ★分針の回転中心
 	}
 
 	for (int i = 0; i < 4; i++) {
 		texPiece_[i] = TextureManager::Load("./Resource/Clock/Piece/piece" + std::to_string(i + 1) + ".png");
-		if (texPiece_[i]) {
-			sprPiece_[i] = Sprite::Create(texPiece_[i], {0, 0});
-			sprPiece_[i]->SetAnchorPoint({0.5f, 0.5f});
-		}
 	}
-
 	texSparkle_ = TextureManager::Load("./Resource/Clock/Light/particle.png");
-	if (texSparkle_) {
-		sprSparkle_ = Sprite::Create(texSparkle_, {0, 0});
-		sprSparkle_->SetAnchorPoint({0.5f, 0.5f});
-	}
 
 	for (int i = 0; i < 11; i++) {
 		texGear_[i] = TextureManager::Load("./Resource/Gear/gear" + std::to_string(i + 1) + ".png");
@@ -161,6 +161,25 @@ void GameScene::Initialize() {
 		pieces_[i].height = Random(10.0f, 48.0f);
 		pieces_[i].life = 0.0f;
 		pieces_[i].maxLife = 1.0f;
+		pieces_[i].textureIndex = std::rand() % kPieceTexNum;
+
+		// 個別にスプライトを作成する
+		if (texPiece_[pieces_[i].textureIndex]) {
+			pieces_[i].sprite = Sprite::Create(texPiece_[pieces_[i].textureIndex], {0, 0});
+			pieces_[i].sprite->SetAnchorPoint({0.5f, 0.5f});
+		} else {
+			pieces_[i].sprite = nullptr;
+		}
+	}
+
+	for (int i = 0; i < kSparkleNum; i++) {
+		sparkles_[i].isDisplay = false;
+		if (texSparkle_) {
+			sparkles_[i].sprite = Sprite::Create(texSparkle_, {0, 0});
+			sparkles_[i].sprite->SetAnchorPoint({0.5f, 0.5f});
+		} else {
+			sparkles_[i].sprite = nullptr;
+		}
 	}
 }
 
@@ -170,7 +189,61 @@ void GameScene::Update() {
 	hourCos_ = cosf(hourAngle_);
 	spaceAnimTimer_++;
 
-	// --- 時計回転ロジック ---
+	#pragma region 拡大縮小更新処理
+
+	// スペースキーの状態
+	if (input->PushKey(DIK_SPACE)) {
+		isExpanding_ = true;
+	} else {
+		isExpanding_ = false;
+	}
+
+	// --- 盤面2の更新 (先に動く) ---
+	if (isExpanding_) {
+		scaleTimer2_ += kScaleSpeed_;
+	} else {
+		scaleTimer2_ -= kScaleSpeed_;
+	}
+
+	if (scaleTimer2_ > 1.0f) {
+		scaleTimer2_ = 1.0f;
+	}
+	if (scaleTimer2_ < 0.0f) {
+		scaleTimer2_ = 0.0f;
+	}
+
+	// --- 盤面1の更新 (盤面2が0.3以上進んだら動き出すディレイ処理) ---
+	// 拡大時：盤面2がある程度進んだら開始
+	// 縮小時：盤面2がある程度戻ったら開始
+	if (isExpanding_) {
+		if (scaleTimer2_ > 0.3f) { // 0.3秒分のディレイ
+			scaleTimer1_ += kScaleSpeed_;
+		}
+	} else {
+		if (scaleTimer2_ < 0.7f) { // 戻る時も差をつける
+			scaleTimer1_ -= kScaleSpeed_;
+		}
+	}
+
+	if (scaleTimer1_ > 1.0f) {
+		scaleTimer1_ = 1.0f;
+	}
+	if (scaleTimer1_ < 0.0f) {
+		scaleTimer1_ = 0.0f;
+	}
+
+	// 個別にイージングを適用
+	float scaleT1 = EaseInOutQuart(scaleTimer1_);
+	float scaleT2 = EaseInOutQuart(scaleTimer2_);
+
+	// 倍率の計算
+	currentScale1_ = 1.0f + (kMaxScale_ - 1.35f) * scaleT1;
+	currentScale2_ = 1.0f + (kMaxScale_ - 1.35f) * scaleT2;
+
+#pragma endregion
+
+	#pragma region 時計回転ロジック
+
 	if (!isRotating_) {
 		bool isSpacePressed = input->TriggerKey(DIK_SPACE);
 		intervalTimer_++;
@@ -200,7 +273,6 @@ void GameScene::Update() {
 			for (int i = 0; i < kPieceNum; i++) {
 				if (!pieces_[i].isDisplay) {
 					pieces_[i].isDisplay = true;
-					pieces_[i].textureIndex = rand() % 4;
 					pieces_[i].life = Random(60.0f, 150.0f); // 寿命を設定
 					pieces_[i].maxLife = pieces_[i].life;
 
@@ -237,6 +309,8 @@ void GameScene::Update() {
 			hourAngle_ = hourStart_ + (hourTarget_ - hourStart_) * easeVal;
 		}
 	}
+
+	#pragma endregion
 
 	// --- 時計パルス演出（拡大縮小） ---
 	if (input->TriggerKey(DIK_SPACE)) {
@@ -343,13 +417,28 @@ void GameScene::Draw() {
 		sprMoon_->Draw();
 	}
 
-	// 時計本体 (スケール適用)
-	for (int i = 2; i >= 0; i--) {
-		if (sprClock_[i]) {
-			sprClock_[i]->SetPosition(drawPos);
-			sprClock_[i]->SetSize({sprClock_[i]->GetTextureSize().x * currentScale_, sprClock_[i]->GetTextureSize().y * currentScale_});
-			sprClock_[i]->Draw();
-		}
+	// 時計画像1 (後から拡大し、離すと後から戻る)
+	if (sprClock_[0]) {
+		sprClock_[0]->SetPosition(drawPos);
+		// currentScale1_ を適用
+		sprClock_[0]->SetSize({sprClock_[0]->GetTextureSize().x * currentScale1_, sprClock_[0]->GetTextureSize().y * currentScale1_});
+		sprClock_[0]->Draw();
+	}
+
+	// 時計画像2 (先に拡大し、離すと先に戻る)
+	if (sprClock_[1]) {
+		sprClock_[1]->SetPosition(drawPos);
+		// currentScale2_ を適用
+		sprClock_[1]->SetSize({sprClock_[1]->GetTextureSize().x * currentScale2_, sprClock_[1]->GetTextureSize().y * currentScale2_});
+		sprClock_[1]->Draw();
+	}
+
+	// 時計画像3 (そのまま変化しない)
+	if (sprClock_[2]) {
+		sprClock_[2]->SetPosition(drawPos);
+		// currentScale_ (1.0f固定) を適用
+		sprClock_[2]->SetSize({sprClock_[2]->GetTextureSize().x * currentScale_, sprClock_[2]->GetTextureSize().y * currentScale_});
+		sprClock_[2]->Draw();
 	}
 
 	// ギヤ
@@ -386,36 +475,26 @@ void GameScene::Draw() {
 		sprSpace_[spaceTexIdx]->Draw();
 	}
 
-	// 欠片の描画
+	// --- 欠片の描画 ---
 	for (int i = 0; i < kPieceNum; i++) {
-		if (pieces_[i].isDisplay) {
-			int texIdx = pieces_[i].textureIndex;
-			Sprite* s = sprPiece_[texIdx];
+		if (pieces_[i].isDisplay && pieces_[i].sprite) {
+			Sprite* s = pieces_[i].sprite;
 
-			// ★追加修正: 選ばれた画像が読み込めておらず nullptr だった場合、
-			// 強制的に0番（piece1.png）を代用して、パーティクルが消えるのを防ぐ
-			if (s == nullptr) {
-				s = sprPiece_[0];
-			}
-
-			// スプライトが有効な場合のみ描画
-			if (s != nullptr) {
-				s->SetPosition(pieces_[i].position);
-				s->SetRotation(pieces_[i].angle);
-				// 寿命に応じて徐々に小さくなる演出
-				float lifeRatio = pieces_[i].life / pieces_[i].maxLife;
-				s->SetSize({pieces_[i].width * lifeRatio, pieces_[i].height * lifeRatio});
-				s->Draw();
-			}
+			s->SetPosition(pieces_[i].position);
+			s->SetRotation(pieces_[i].angle);
+			float lifeRatio = pieces_[i].life / pieces_[i].maxLife;
+			s->SetSize({pieces_[i].width * lifeRatio, pieces_[i].height * lifeRatio});
+			s->Draw();
 		}
 	}
 
-	// 光の描画
+	// --- 光の描画 ---
 	for (int i = 0; i < kSparkleNum; i++) {
-		if (sparkles_[i].isDisplay && sprSparkle_) {
-			sprSparkle_->SetPosition(sparkles_[i].position);
-			sprSparkle_->SetSize({32.0f * sparkles_[i].alpha, 32.0f * sparkles_[i].alpha});
-			sprSparkle_->Draw();
+		if (sparkles_[i].isDisplay && sparkles_[i].sprite) {
+			Sprite* s = sparkles_[i].sprite;
+			s->SetPosition(sparkles_[i].position);
+			s->SetSize({32.0f * sparkles_[i].alpha, 32.0f * sparkles_[i].alpha});
+			s->Draw();
 		}
 	}
 

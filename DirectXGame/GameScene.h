@@ -6,6 +6,7 @@
 const int kPieceNum = 100;
 const int kSparkleNum = 50;
 const int kGearNum = 24;
+const int kPieceTexNum = 4;
 
 struct Piece {
 	KamataEngine::Vector2 position;
@@ -15,9 +16,9 @@ struct Piece {
 	int textureIndex;
 	bool isDisplay;
 	float width, height;
-	// --- 追加：生存時間 ---
 	float life;
 	float maxLife;
+	KamataEngine::Sprite* sprite;
 };
 
 struct Sparkle {
@@ -27,6 +28,7 @@ struct Sparkle {
 	float lifeSpeed;
 	bool isDisplay;
 	float scale;
+	KamataEngine::Sprite* sprite;
 };
 
 struct Gear {
@@ -72,12 +74,19 @@ private:
 	KamataEngine::Sprite* sprClock_[3] = {nullptr};
 	KamataEngine::Sprite* sprHandHour_ = nullptr;
 	KamataEngine::Sprite* sprHandMin_ = nullptr;
-	KamataEngine::Sprite* sprPiece_[4] = {nullptr};
 	KamataEngine::Sprite* sprGear_[11] = {nullptr};
-	KamataEngine::Sprite* sprSparkle_ = nullptr;
 	KamataEngine::Sprite* sprSun_ = nullptr;
 	KamataEngine::Sprite* sprMoon_ = nullptr;
 	KamataEngine::Sprite* sprSpace_[2] = {nullptr};
+
+	bool isExpanding_ = false;               // 拡大中フラグ
+	float scaleTimer1_ = 0.0f;               // 盤面1用のタイマー
+	float scaleTimer2_ = 0.0f;               // 盤面2用のタイマー
+	float currentScale1_ = 1.0f;             // 盤面1のスケール
+	float currentScale2_ = 1.0f;             // 盤面2のスケール
+	float currentScale_ = 1.0f;              // 盤面3や針などのベーススケール（1.0固定）
+	const float kScaleSpeed_ = 1.0f / 20.0f; // アニメーション速度
+	const float kMaxScale_ = 1.5f;           // スケール計算用の定数
 
 	// --- ゲームロジック変数 ---
 	KamataEngine::Vector2 clockPos_ = {640.0f, 360.0f};
@@ -97,8 +106,6 @@ private:
 
 	// 拡大縮小用変数 (パルスアニメーション)
 	float scaleTimer_ = 0.0f;
-	float currentScale_ = 1.0f;
-	bool isExpanding_ = false;
 
 	// Spaceガイドのアニメーション用タイマー
 	int spaceAnimTimer_ = 0;
