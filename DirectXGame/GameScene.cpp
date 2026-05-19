@@ -15,39 +15,33 @@ GameScene::~GameScene() {
 	worldTransformBlocks_.clear();
 
 	delete debugCamera_;
-
 	delete modelSkydome_;
-
 	delete mapChipField_;
 
-	delete Player::player_;
+	// player_ は unique_ptr なので自動で delete されます
 }
 
 void GameScene::Initialize() {
-
 	mapChipField_ = new MapChipField;
 	mapChipField_->LoadMapChipDataFromCSV("Resources/blocks.csv");
 
 	GenerateBlocks();
 
 	model_ = Model::Create();
-
 	worldTransform_.Initialize();
-
 	camera_.Initialize();
-
 	debugCamera_ = new DebugCamera(1280, 720);
-
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
-
 	modelPlayer_ = Model::CreateFromOBJ("player", true);
 
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
-	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2,19);
+	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2, 17);
 
-	Player::player_->Initialize(modelPlayer_, &camera_, playerPosition);
+	// プレイヤーの生成と初期化
+	player_ = std::make_unique<Player>();
+	player_->Initialize(modelPlayer_, &camera_, playerPosition);
 }
 
 void GameScene::GenerateBlocks() {
@@ -71,44 +65,20 @@ void GameScene::GenerateBlocks() {
 void GameScene::Update() {
 	debugCamera_->Update();
 
-	worldTransform_.translation_.x += Player::player_->velocity_.x;
-	worldTransform_.translation_.y += Player::player_->velocity_.y;
-	worldTransform_.translation_.z += Player::player_->velocity_.z;
-
-	if (Input::GetInstance()->PushKey(DIK_RIGHT) ||
-		Input::GetInstance()->PushKey(DIK_LEFT)) 
-	{
-		KamataEngine::Vector3 acceleration = {};
-		if (Input::GetInstance()->PushKey(DIK_RIGHT)) {
-			acceleration.x += Player::kAcceleration;
-
-			if (Input::GetInstance()->PushKey(DIK_RIGHT)) 
-			{
-				acceleration.x += Player::kAcceleration;
-			} 
-			else if (Input::GetInstance()->PushKey(DIK_LEFT)) 
-			{
-				acceleration.x -= Player::kAcceleration;
-			}
-			Player::player_->velocity_.x += acceleration.x;
-			Player::player_->velocity_.y += acceleration.y;
-			Player::player_->velocity_.z += acceleration.z;
-		}
-
+	// プレイヤーの更新処理を呼び出す
+	if (player_) {
+		player_->Update();
 	}
 
 #ifdef _DEBUG
-
 	if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
 		isDebugCameraActive_ = !isDebugCameraActive_;
 	}
-
 #endif
 
 	if (isDebugCameraActive_) {
 		camera_.matView = debugCamera_->GetCamera().matView;
 		camera_.matProjection = debugCamera_->GetCamera().matProjection;
-
 		camera_.TransferMatrix();
 	} else {
 		camera_.UpdateMatrix();
@@ -119,11 +89,8 @@ void GameScene::Update() {
 			if (!worldTransformBlock) {
 				continue;
 			}
-
 			Matrix4x4 affineMatrix = MakeAffineMatrix(worldTransformBlock->scale_, worldTransformBlock->rotation_, worldTransformBlock->translation_);
-
 			worldTransformBlock->matWorld_ = affineMatrix;
-
 			worldTransformBlock->TransferMatrix();
 		}
 	}
@@ -132,22 +99,20 @@ void GameScene::Update() {
 }
 
 void GameScene::Draw() {
-
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
 			if (!worldTransformBlock) {
 				continue;
 			}
-
 			Model::PreDraw();
-
 			model_->Draw(*worldTransformBlock, camera_);
-
 			Model::PostDraw();
 		}
 	}
 	skydome->Draw();
 
-	Player::player_->Draw();
-
+	// プレイヤーの描画
+	if (player_) {
+		player_->Draw();
+	}
 }
