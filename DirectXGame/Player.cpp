@@ -24,7 +24,7 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 void Player::Update() {
 	velocity_.z = 0.0f;
 
-	// 【改善】移動入力を onGround_ の外に出すことで、空中でも左右に動けるようにします
+	// 移動入力を onGround_ の外に出すことで、空中でも左右に動けるようにします
 	if (KamataEngine::Input::GetInstance()->PushKey(DIK_RIGHT)) {
 		if (lrDirection_ != LRDirection::kRight) {
 			lrDirection_ = LRDirection::kRight;
@@ -58,7 +58,7 @@ void Player::Update() {
 
 	// 地上・空中の処理
 	if (onGround_) {
-		// 【修正】y速度がリセットされなくなったため、これで正しくジャンプできます
+		// y速度がリセットされなくなったため、これで正しくジャンプできます
 		if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_UP)) {
 			velocity_.y = kJumpAcceleration;
 			onGround_ = false;
@@ -85,7 +85,7 @@ void Player::Update() {
 	} else {
 		if (landing) {
 			worldTransform_.translation_.y = 1.0f;
-			// 【修正】着地時の不自然な x への速度加算バグを削除
+			// 着地時の不自然な x への速度加算バグを削除
 			velocity_.y = 0.0f;
 			onGround_ = true;
 		}
