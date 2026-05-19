@@ -5,6 +5,8 @@
 #include "Skydome.h"
 #include <memory>
 #include "MapChipField.h"
+#include "Player.h"
+
 
 class GameScene {
 public:
@@ -28,6 +30,8 @@ private:
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
 
 	KamataEngine::Camera camera_{};
+
+	KamataEngine::WorldTransform worldTransform_;
 
 	bool isDebugCameraActive_ = false;
 

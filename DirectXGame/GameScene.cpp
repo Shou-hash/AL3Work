@@ -19,6 +19,8 @@ GameScene::~GameScene() {
 	delete modelSkydome_;
 
 	delete mapChipField_;
+
+	delete Player::player_;
 }
 
 void GameScene::Initialize() {
@@ -30,18 +32,22 @@ void GameScene::Initialize() {
 
 	model_ = Model::Create();
 
+	worldTransform_.Initialize();
+
 	camera_.Initialize();
 
 	debugCamera_ = new DebugCamera(1280, 720);
 
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
 
+	modelPlayer_ = Model::CreateFromOBJ("player", true);
+
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
 	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2,19);
 
-	player_->Initialize(modelPlayer_, &camera_, playerPosition);
+	Player::player_->Initialize(modelPlayer_, &camera_, playerPosition);
 }
 
 void GameScene::GenerateBlocks() {
@@ -64,6 +70,32 @@ void GameScene::GenerateBlocks() {
 
 void GameScene::Update() {
 	debugCamera_->Update();
+
+	worldTransform_.translation_.x += Player::player_->velocity_.x;
+	worldTransform_.translation_.y += Player::player_->velocity_.y;
+	worldTransform_.translation_.z += Player::player_->velocity_.z;
+
+	if (Input::GetInstance()->PushKey(DIK_RIGHT) ||
+		Input::GetInstance()->PushKey(DIK_LEFT)) 
+	{
+		KamataEngine::Vector3 acceleration = {};
+		if (Input::GetInstance()->PushKey(DIK_RIGHT)) {
+			acceleration.x += Player::kAcceleration;
+
+			if (Input::GetInstance()->PushKey(DIK_RIGHT)) 
+			{
+				acceleration.x += Player::kAcceleration;
+			} 
+			else if (Input::GetInstance()->PushKey(DIK_LEFT)) 
+			{
+				acceleration.x -= Player::kAcceleration;
+			}
+			Player::player_->velocity_.x += acceleration.x;
+			Player::player_->velocity_.y += acceleration.y;
+			Player::player_->velocity_.z += acceleration.z;
+		}
+
+	}
 
 #ifdef _DEBUG
 
@@ -115,4 +147,7 @@ void GameScene::Draw() {
 		}
 	}
 	skydome->Draw();
+
+	Player::player_->Draw();
+
 }

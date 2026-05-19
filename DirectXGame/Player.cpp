@@ -9,3 +9,11 @@ void Player::Initialize(KamataEngine::Model* modelPlayer_, KamataEngine::Camera*
 
 	worldTransform_.rotation_.y = std::numbers::pi_v<float> / 2.0f;
 }
+
+void Player::Draw() {
+	if (modelPlayer_) {
+		KamataEngine::Model::PreDraw();
+		modelPlayer_->Draw(worldTransform_,*camera_);
+		KamataEngine::Model::PostDraw();
+	}
+}
