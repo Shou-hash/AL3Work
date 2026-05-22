@@ -246,9 +246,11 @@ void GameScene::Update() {
 
 	if (!isRotating_) {
 		bool isSpacePressed = input->TriggerKey(DIK_SPACE);
+		bool isAPressed = input->TriggerKey(DIK_A);
+		bool isDPressed = input->TriggerKey(DIK_D);
 		intervalTimer_++;
 
-		if (intervalTimer_ > 120 || isSpacePressed) {
+		if (intervalTimer_ > 120 || isSpacePressed || isAPressed || isDPressed) {
 			isRotating_ = true;
 			easeTimer_ = 0.0f;
 			minStart_ = minAngle_;
@@ -261,7 +263,14 @@ void GameScene::Update() {
 			if (isSpacePressed) {
 				minTarget_ = minAngle_ - moveAngleMin;
 				hourTarget_ = hourAngle_ - moveAngleHour;
-			} else {
+			}
+			else if (isAPressed) {
+				hourTarget_ = hourAngle_ - moveAngleMin;
+			}
+			else if (isDPressed) {
+				hourTarget_ = hourAngle_ + moveAngleMin;
+			}
+			else {
 				minTarget_ = minAngle_ + moveAngleMin;
 				hourTarget_ = hourAngle_ + moveAngleHour;
 			}
