@@ -4,6 +4,7 @@
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "Skydome.h"
+#include "CameraController.h"
 #include <memory>
 #include <vector>
 
@@ -30,6 +31,8 @@ private:
 
 	// ポインタではなく、安全な unique_ptr で管理
 	std::unique_ptr<Player> player_ = nullptr;
+
+	std::unique_ptr<CameraController> cameraController_ = nullptr;
 
 	KamataEngine::Model* modelSkydome_ = nullptr;
 	KamataEngine::Model* modelPlayer_ = nullptr;

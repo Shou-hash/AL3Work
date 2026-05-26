@@ -17,8 +17,6 @@ GameScene::~GameScene() {
 	delete debugCamera_;
 	delete modelSkydome_;
 	delete mapChipField_;
-
-	// player_ は unique_ptr なので自動で delete されます
 }
 
 void GameScene::Initialize() {
@@ -27,7 +25,8 @@ void GameScene::Initialize() {
 
 	GenerateBlocks();
 
-	model_ = Model::Create();
+	model_ = Model::CreateFromOBJ("cube", true);
+
 	worldTransform_.Initialize();
 	camera_.Initialize();
 	debugCamera_ = new DebugCamera(1280, 720);
@@ -42,6 +41,15 @@ void GameScene::Initialize() {
 	// プレイヤーの生成と初期化
 	player_ = std::make_unique<Player>();
 	player_->Initialize(modelPlayer_, &camera_, playerPosition);
+
+	cameraController_ = std::make_unique<CameraController>();
+	cameraController_->Initialize(&camera_);
+	cameraController_->SetTarget(player_.get());
+
+	Rect stageArea = {10.0f, 100.0f, 0.0f, 100.0f};
+	cameraController_->SetMovableArea(stageArea);
+
+	cameraController_->Reset();
 }
 
 void GameScene::GenerateBlocks() {
@@ -70,18 +78,25 @@ void GameScene::Update() {
 		player_->Update();
 	}
 
+	// カメラコントローラーの更新
+	if (!isDebugCameraActive_ && cameraController_) {
+		cameraController_->Update();
+	}
+
 #ifdef _DEBUG
 	if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
 		isDebugCameraActive_ = !isDebugCameraActive_;
 	}
 #endif
 
+	// ★カメラ行列の更新と転送の修正
 	if (isDebugCameraActive_) {
 		camera_.matView = debugCamera_->GetCamera().matView;
 		camera_.matProjection = debugCamera_->GetCamera().matProjection;
 		camera_.TransferMatrix();
 	} else {
 		camera_.UpdateMatrix();
+		camera_.TransferMatrix(); // ★通常カメラの時も行列をGPUに転送する
 	}
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
