@@ -47,20 +47,19 @@ void CameraController::Update() {
 	camera_->translation_.y = Lerp(camera_->translation_.y, targetPosition_.y, kInterpolationRate);
 	camera_->translation_.z = Lerp(camera_->translation_.z, targetPosition_.z, kInterpolationRate);
 
-	// 要求通り、画面内に収めるためのマージン計算（limitArea）はそのまま残します
 	Rect limitArea;
 	limitArea.left = movableArea_.left + margin_.left;
 	limitArea.right = movableArea_.right + margin_.right;
 	limitArea.bottom = movableArea_.bottom + margin_.bottom;
 	limitArea.top = movableArea_.top + margin_.top;
 
-	// マージンを含めた限界領域（limitArea）でカメラをクランプします
+	// limitArea.top = movableArea_.top + margin_.top + 20.0f;
+
 	camera_->translation_.x = std::clamp(camera_->translation_.x, limitArea.left, limitArea.right);
 	camera_->translation_.y = std::clamp(camera_->translation_.y, limitArea.bottom, limitArea.top);
-	camera_->translation_.z = targetPosition_.z;
 
+	// 移動範囲（movableArea_）に収まるように制限（クランプ）して追従
 	camera_->translation_.x = std::clamp(camera_->translation_.x, movableArea_.left, movableArea_.right);
 	camera_->translation_.y = std::clamp(camera_->translation_.y, movableArea_.bottom, movableArea_.top);
 	camera_->translation_.z = targetPosition_.z;
-
 }
