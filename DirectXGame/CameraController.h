@@ -37,5 +37,5 @@ private:
 
 	Rect movableArea_ = {0, 100, 0, 100};
 
-	static inline const Rect margin_ = {-20.0f, 20.0f, -20.0f, 40.0f};
+	static inline const Rect margin_ = {-10.0f, 100.0f, -10.0f, 100.0f};
 };

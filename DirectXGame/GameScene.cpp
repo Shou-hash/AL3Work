@@ -27,6 +27,8 @@ void GameScene::Initialize() {
 
 	model_ = Model::CreateFromOBJ("cube", true);
 
+	player_->SetMapChipField(mapChipField_);
+
 	worldTransform_.Initialize();
 	camera_.Initialize();
 	debugCamera_ = new DebugCamera(1280, 720);
@@ -46,7 +48,7 @@ void GameScene::Initialize() {
 	cameraController_->Initialize(&camera_);
 	cameraController_->SetTarget(player_.get());
 
-	Rect stageArea = {10.0f, 100.0f, 0.0f, 100.0f};
+	Rect stageArea = {10.0f, 100.0f, 5.0f, 200.0f};
 	cameraController_->SetMovableArea(stageArea);
 
 	cameraController_->Reset();
