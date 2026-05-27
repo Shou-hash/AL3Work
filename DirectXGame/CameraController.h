@@ -27,7 +27,7 @@ private:
 
 	KamataEngine::Camera* camera_ = nullptr;
 	Player* target_ = nullptr;
-	KamataEngine::Vector3 targetOffset_ = {0.0f, 2.0f, -15.0f};
+	KamataEngine::Vector3 targetOffset_ = {0.0f, 0.5f, -15.0f};
 
 	KamataEngine::Vector3 targetPosition_;
 
@@ -35,7 +35,7 @@ private:
 
 	static inline const float kVelocityBias = 5.0f;
 
-	Rect movableArea_ = {0, 100, 0, 100};
+	Rect movableArea_ = {5, 100, 0, 100};
 
-	static inline const Rect margin_ = {-20.0f, 20.0f, -20.0f, 40.0f};
+	static inline const Rect margin_ = {-2.0f, 2.0f, -1.0f, 2.0f};
 };

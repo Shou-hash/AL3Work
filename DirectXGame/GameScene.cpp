@@ -25,7 +25,7 @@ void GameScene::Initialize() {
 
 	GenerateBlocks();
 
-	model_ = Model::CreateFromOBJ("cube", true);
+	model_ = Model::CreateFromOBJ("block", true);
 
 	worldTransform_.Initialize();
 	camera_.Initialize();
@@ -46,7 +46,7 @@ void GameScene::Initialize() {
 	cameraController_->Initialize(&camera_);
 	cameraController_->SetTarget(player_.get());
 
-	Rect stageArea = {10.0f, 100.0f, 0.0f, 100.0f};
+	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
 	cameraController_->SetMovableArea(stageArea);
 
 	cameraController_->Reset();

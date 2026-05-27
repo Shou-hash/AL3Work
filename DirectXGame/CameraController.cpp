@@ -53,7 +53,7 @@ void CameraController::Update() {
 	limitArea.bottom = movableArea_.bottom + margin_.bottom;
 	limitArea.top = movableArea_.top + margin_.top;
 
-	limitArea.top = movableArea_.top + margin_.top + 20.0f;
+	//limitArea.top = movableArea_.top + margin_.top + 20.0f;
 
 	camera_->translation_.x = std::clamp(camera_->translation_.x, limitArea.left, limitArea.right);
 	camera_->translation_.y = std::clamp(camera_->translation_.y, limitArea.bottom, limitArea.top);
