@@ -20,6 +20,7 @@ GameScene::~GameScene() {
 }
 
 void GameScene::Initialize() {
+
 	mapChipField_ = new MapChipField;
 	mapChipField_->LoadMapChipDataFromCSV("Resources/blocks.csv");
 
@@ -41,6 +42,8 @@ void GameScene::Initialize() {
 	// プレイヤーの生成と初期化
 	player_ = std::make_unique<Player>();
 	player_->Initialize(modelPlayer_, &camera_, playerPosition);
+
+	player_->SetMapChipField(mapChipField_);
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
