@@ -12,7 +12,7 @@ enum class LRDirection {
 
 class Player {
 public:
-	// 【スクリーンショット 145808】4つの角の定義
+	// 4つの角の定義
 	enum Corner {
 		kRightBottom, // 右下 (0)
 		kLeftBottom,  // 左下 (1)
@@ -21,7 +21,7 @@ public:
 		kNumCorner    // 要素数 (4)
 	};
 
-	// 【スクリーンショット 145741】衝突判定結果の構造体
+	// 衝突判定結果の構造体
 	struct CollisionMapInfo {
 		bool ceilingCollision = false;    // 天井衝突
 		bool onGround = false;            // 着地
@@ -49,20 +49,20 @@ public:
 	static inline const float kTimeTurn = 0.8f;
 	static inline const float kGravityAcceleration = 0.08f; // スムーズな落下にするため元の0.3から調整
 	static inline const float kLimitFallSpeed = 2.0f;       // 元の0.2から調整
-	static inline const float kJumpAcceleration = 1.2f;     // 快適なジャンプ力に調整
+	static inline const float kJumpAcceleration = 1.0f;     // 快適なジャンプ力に調整
 
 private:
-	// 【スクリーンショット 145732】移動入力を独立させた関数
+	// 移動入力を独立させた関数
 	void Move();
 
-	// 【スクリーンショット 145749 / 145759】マップ判定の主要関数と小分け関数
+	// マップ判定の主要関数と小分け関数
 	void MapCollision(CollisionMapInfo& info);
 	void MapCollisionTop(CollisionMapInfo& info);
 	void MapCollisionBottom(CollisionMapInfo& info);
 	void MapCollisionRight(CollisionMapInfo& info);
 	void MapCollisionLeft(CollisionMapInfo& info);
 
-	// 【スクリーンショット 145816 / 145822】データテーブルを用いた角の座標計算
+	// データテーブルを用いた角の座標計算
 	KamataEngine::Vector3 CornerPosition(const KamataEngine::Vector3& center, Corner corner);
 
 private:

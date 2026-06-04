@@ -71,29 +71,34 @@ void Player::Move() {
 }
 
 void Player::Update() {
+	// 1. 移動入力と重力の計算
 	Move();
 
+	// 2. 衝突判定用の移動量を設定
 	CollisionMapInfo collisionMapInfo;
 	collisionMapInfo.moveAmount = velocity_;
-	collisionMapInfo.onGround = onGround_; // 前フレームの状態を引き継ぐ
+	collisionMapInfo.onGround = onGround_;
 
+	// 3. マップとの衝突判定と補正
 	MapCollision(collisionMapInfo);
 
+	// 4. 補正された移動量を座標に反映
 	worldTransform_.translation_.x += collisionMapInfo.moveAmount.x;
 	worldTransform_.translation_.y += collisionMapInfo.moveAmount.y;
 	worldTransform_.translation_.z += collisionMapInfo.moveAmount.z;
 
+	// 5. 衝突結果をプレイヤーの状態にフィードバック
 	onGround_ = collisionMapInfo.onGround;
-	if (onGround_) {
-		velocity_.y = 0.0f;
-	}
-	if (collisionMapInfo.ceilingCollision) {
+
+	// 接地したか、または天井にぶつかったら垂直速度をリセット
+	if (onGround_ || collisionMapInfo.ceilingCollision) {
 		velocity_.y = 0.0f;
 	}
 	if (collisionMapInfo.wallCollision) {
 		velocity_.x = 0.0f;
 	}
 
+	// ターンアニメーション処理
 	if (turnTimer_ < kTimeTurn) {
 		turnTimer_ += 1.0f / 60.0f;
 		if (turnTimer_ > kTimeTurn) {
@@ -146,7 +151,7 @@ void Player::MapCollision(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionTop(CollisionMapInfo& info) {
-	// 上昇中のみ天井との衝突を判定する
+	// 上方向に移動していないなら判定スキップ
 	if (info.moveAmount.y <= 0.0f)
 		return;
 
@@ -161,19 +166,22 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 	MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightTop]);
 
 	if (chipLeftTop == MapChipType::kBlock || chipRightTop == MapChipType::kBlock) {
-		info.ceilingCollision = true;
-
 		Corner targetCorner = (chipLeftTop == MapChipType::kBlock) ? kLeftTop : kRightTop;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 
+		// ★重要: 移動先のブロックの「下端(blockBottomY)」が、
+		// 移動する前のプレイヤーの「中心位置」よりも高い場合のみ、本当の天井ブロックとして判定する
 		float blockBottomY = blockPos.y - 0.5f;
-		info.moveAmount.y = blockBottomY - (worldTransform_.translation_.y + kHeight / 2.0f) - 0.005f;
+		if (blockBottomY > worldTransform_.translation_.y) {
+			info.ceilingCollision = true;
+			info.moveAmount.y = blockBottomY - (worldTransform_.translation_.y + kHeight / 2.0f) - 0.005f;
+		}
 	}
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
-	// 上昇中は着地判定をスキップ（ジャンプした瞬間に地面に引っかかるのを防ぐ）
+	// 上に上昇しているときは床判定をスキップする
 	if (info.moveAmount.y > 0.0f) {
 		info.onGround = false;
 		return;
@@ -190,17 +198,20 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
 
 	if (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
-		info.onGround = true;
-
 		Corner targetCorner = (chipLeftBottom == MapChipType::kBlock) ? kLeftBottom : kRightBottom;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
-
 		float blockTopY = blockPos.y + 0.5f;
-		info.moveAmount.y = blockTopY - (worldTransform_.translation_.y - kHeight / 2.0f);
-	} else {
-		info.onGround = false;
+
+		float previousBottomY = worldTransform_.translation_.y - kHeight / 2.0f;
+		if (previousBottomY >= blockTopY - 0.2f) {
+			info.onGround = true;
+			info.moveAmount.y = blockTopY - previousBottomY;
+			return;
+		}
 	}
+
+	info.onGround = false;
 }
 
 void Player::MapCollisionRight(CollisionMapInfo& info) {
