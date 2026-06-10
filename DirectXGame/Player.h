@@ -4,6 +4,7 @@
 #include <array>
 
 class MapChipField;
+class CameraController; // 前方宣言を追加
 
 enum class LRDirection {
 	kLeft,
@@ -38,18 +39,22 @@ public:
 	void Draw();
 
 	void SetMapChipField(MapChipField* mapChipField) { mapChipField_ = mapChipField; }
+	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; } // 追加
 
 	const KamataEngine::Vector3& GetVelocity() const { return velocity_; }
 	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
+
+	// 死亡状態の取得
+	bool IsDead() const { return isDead_; } // 追加
 
 	// 各種調整パラメータ
 	static inline const float kAcceleration = 0.03f;
 	static inline const float kAttenuation = 0.5f;
 	static inline const float kLimitRunSpeed = 2.0f;
 	static inline const float kTimeTurn = 0.8f;
-	static inline const float kGravityAcceleration = 0.08f; // スムーズな落下にするため元の0.3から調整
-	static inline const float kLimitFallSpeed = 2.0f;       // 元の0.2から調整
-	static inline const float kJumpAcceleration = 1.0f;     // 快適なジャンプ力に調整
+	static inline const float kGravityAcceleration = 0.08f;
+	static inline const float kLimitFallSpeed = 2.0f;
+	static inline const float kJumpAcceleration = 1.0f;
 
 private:
 	// 移動入力を独立させた関数
@@ -62,11 +67,15 @@ private:
 	void MapCollisionRight(CollisionMapInfo& info);
 	void MapCollisionLeft(CollisionMapInfo& info);
 
+	// 画面端の押し出しと挟まれ死亡判定の追加
+	void CheckScreenEdgeCollision();
+
 	// データテーブルを用いた角の座標計算
 	KamataEngine::Vector3 CornerPosition(const KamataEngine::Vector3& center, Corner corner);
 
 private:
 	MapChipField* mapChipField_ = nullptr;
+	CameraController* cameraController_ = nullptr; // 追加
 
 	// キャラクターの当たり判定サイズ（1ブロック 1.0f に対して一回り小さい 0.8f）
 	static inline const float kWidth = 0.8f;
@@ -74,6 +83,7 @@ private:
 
 	KamataEngine::Vector3 velocity_ = {};
 	bool onGround_ = true;
+	bool isDead_ = false; // 追加：死亡フラグ
 
 	float turnFirstRotationY_ = 0.0f;
 	float turnTimer_ = 0.0f;

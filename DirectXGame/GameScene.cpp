@@ -49,6 +49,8 @@ void GameScene::Initialize() {
 	cameraController_->Initialize(&camera_);
 	cameraController_->SetTarget(player_.get());
 
+	player_->SetCameraController(cameraController_.get());
+
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
 	cameraController_->SetMovableArea(stageArea);
 

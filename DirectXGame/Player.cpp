@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "Player.h"
+#include "CameraController.h" // 追加
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include <algorithm>
@@ -24,11 +25,15 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 
 	velocity_ = {0.0f, 0.0f, 0.0f};
 	onGround_ = true;
+	isDead_ = false; // 死亡フラグリセット
 }
 
 void Player::KeysPush() {}
 
 void Player::Move() {
+	if (isDead_)
+		return; // 死亡時は移動不可
+
 	velocity_.z = 0.0f;
 
 	if (KamataEngine::Input::GetInstance()->PushKey(DIK_RIGHT)) {
@@ -71,6 +76,14 @@ void Player::Move() {
 }
 
 void Player::Update() {
+	if (isDead_) {
+		// 死亡時の演出処理（下に落ちていくなど）があればここに記述
+		worldTransform_.translation_.y -= kGravityAcceleration;
+		worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
+		worldTransform_.TransferMatrix();
+		return;
+	}
+
 	// 1. 移動入力と重力の計算
 	Move();
 
@@ -98,6 +111,9 @@ void Player::Update() {
 		velocity_.x = 0.0f;
 	}
 
+	// ★ 画面端での押し出し、および壁との挟まれ死亡判定処理を挿入
+	CheckScreenEdgeCollision();
+
 	// ターンアニメーション処理
 	if (turnTimer_ < kTimeTurn) {
 		turnTimer_ += 1.0f / 60.0f;
@@ -119,6 +135,39 @@ void Player::Update() {
 	worldTransform_.TransferMatrix();
 }
 
+void Player::CheckScreenEdgeCollision() {
+	if (!cameraController_ || !mapChipField_) {
+		return;
+	}
+
+	// カメラの左端ワールド座標を取得
+	float cameraLeftX = cameraController_->GetCameraLeftX();
+
+	// プレイヤーの左端の座標
+	float playerLeftX = worldTransform_.translation_.x - (kWidth / 2.0f);
+
+	// プレイヤーがカメラの左端より外側（左）に行こうとした場合
+	if (playerLeftX < cameraLeftX) {
+		// カメラの左端に合わせてプレイヤーの座標を右に押し出す
+		worldTransform_.translation_.x = cameraLeftX + (kWidth / 2.0f);
+
+		// 押し出した結果、プレイヤーの右側がブロックにめり込んでいないかチェックする
+		// （＝左からカメラ、右からブロックに挟まれている状態）
+		KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
+		KamataEngine::Vector3 rightTopPos = CornerPosition(currentCenter, kRightTop);
+		KamataEngine::Vector3 rightBottomPos = CornerPosition(currentCenter, kRightBottom);
+
+		MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(rightTopPos);
+		MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
+
+		// 右側がブロックなら、挟まれ死亡と判定
+		if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
+			isDead_ = true;
+			velocity_ = {0.0f, 0.0f, 0.0f};
+		}
+	}
+}
+
 KamataEngine::Vector3 Player::CornerPosition(const KamataEngine::Vector3& center, Corner corner) {
 	const float insetX = kWidth / 2.0f - 0.01f;
 	const float insetY = kHeight / 2.0f - 0.01f;
@@ -138,8 +187,9 @@ KamataEngine::Vector3 Player::CornerPosition(const KamataEngine::Vector3& center
 }
 
 void Player::MapCollision(CollisionMapInfo& info) {
-	if (!mapChipField_)
+	if (!mapChipField_) {
 		return;
+	}
 
 	// まず横移動を処理して壁のめり込みを解決する
 	MapCollisionRight(info);
@@ -151,9 +201,9 @@ void Player::MapCollision(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionTop(CollisionMapInfo& info) {
-	// 上方向に移動していないなら判定スキップ
-	if (info.moveAmount.y <= 0.0f)
+	if (info.moveAmount.y <= 0.0f) {
 		return;
+	}
 
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 
@@ -170,8 +220,6 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 
-		// ★重要: 移動先のブロックの「下端(blockBottomY)」が、
-		// 移動する前のプレイヤーの「中心位置」よりも高い場合のみ、本当の天井ブロックとして判定する
 		float blockBottomY = blockPos.y - 0.5f;
 		if (blockBottomY > worldTransform_.translation_.y) {
 			info.ceilingCollision = true;
@@ -181,7 +229,6 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
-	// 上に上昇しているときは床判定をスキップする
 	if (info.moveAmount.y > 0.0f) {
 		info.onGround = false;
 		return;
@@ -215,8 +262,9 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionRight(CollisionMapInfo& info) {
-	if (info.moveAmount.x <= 0.0f)
+	if (info.moveAmount.x <= 0.0f) {
 		return;
+	}
 
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y, worldTransform_.translation_.z};
 
@@ -241,8 +289,9 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionLeft(CollisionMapInfo& info) {
-	if (info.moveAmount.x >= 0.0f)
+	if (info.moveAmount.x >= 0.0f) {
 		return;
+	}
 
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y, worldTransform_.translation_.z};
 
