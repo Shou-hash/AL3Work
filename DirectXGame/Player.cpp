@@ -1,6 +1,6 @@
 #define NOMINMAX
 #include "Player.h"
-#include "CameraController.h" // 追加
+#include "CameraController.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include <algorithm>
@@ -25,7 +25,7 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 
 	velocity_ = {0.0f, 0.0f, 0.0f};
 	onGround_ = true;
-	isDead_ = false; // 死亡フラグリセット
+	isDead_ = false;
 }
 
 void Player::KeysPush() {}
@@ -67,7 +67,7 @@ void Player::Move() {
 	if (onGround_) {
 		if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_UP)) {
 			velocity_.y = kJumpAcceleration;
-			onGround_ = false;
+			// 離地フラグは ApplyGroundingStatus 内で速度を見て制御するため、ここでは velocity 変更のみに留めます
 		}
 	} else {
 		velocity_.y -= kGravityAcceleration;
@@ -77,7 +77,7 @@ void Player::Move() {
 
 void Player::Update() {
 	if (isDead_) {
-		// 死亡時の演出処理（下に落ちていくなど）があればここに記述
+		// 死亡時の演出処理（下に落ちていく処理）
 		worldTransform_.translation_.y -= kGravityAcceleration;
 		worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 		worldTransform_.TransferMatrix();
@@ -100,18 +100,18 @@ void Player::Update() {
 	worldTransform_.translation_.y += collisionMapInfo.moveAmount.y;
 	worldTransform_.translation_.z += collisionMapInfo.moveAmount.z;
 
-	// 5. 衝突結果をプレイヤーの状態にフィードバック
-	onGround_ = collisionMapInfo.onGround;
+	// 5. 資料⑥：接地状態の切り替え処理を適用
+	ApplyGroundingStatus(collisionMapInfo);
 
-	// 接地したか、または天井にぶつかったら垂直速度をリセット
-	if (onGround_ || collisionMapInfo.ceilingCollision) {
+	// 天井にぶつかったら垂直速度をリセット
+	if (collisionMapInfo.ceilingCollision) {
 		velocity_.y = 0.0f;
 	}
 	if (collisionMapInfo.wallCollision) {
 		velocity_.x = 0.0f;
 	}
 
-	// ★ 画面端での押し出し、および壁との挟まれ死亡判定処理を挿入
+	// 画面端での押し出し、および壁との挟まれ死亡判定処理
 	CheckScreenEdgeCollision();
 
 	// ターンアニメーション処理
@@ -135,24 +135,62 @@ void Player::Update() {
 	worldTransform_.TransferMatrix();
 }
 
+void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
+	if (!mapChipField_) {
+		return;
+	}
+
+	if (onGround_) {
+		// 接地している時の処理
+		// Y速度が上向きになった＝ジャンプを開始したということなので、空中状態に切り替える
+		if (velocity_.y > 0.0f) {
+			onGround_ = false;
+		} else {
+			// 左右移動や床がなくなるなど、ジャンプせずに落下を始める場合の判定（吸着処理）
+			// 現在の足元から、微小な数値（kGroundSearchOffset）だけ下にずらして床があるか判定を行う
+			KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
+			KamataEngine::Vector3 offset = {0.0f, -kGroundSearchOffset, 0.0f};
+
+			KamataEngine::Vector3 leftBottomPos;
+			leftBottomPos.y = CornerPosition(currentCenter, kLeftBottom).y + offset.y;
+			KamataEngine::Vector3 rightBottomPos;
+			rightBottomPos.y = CornerPosition(currentCenter, kRightBottom).y + offset.y;
+
+			MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(leftBottomPos);
+			MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
+
+			bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
+
+			// 足元にブロックが一切なければ、空中状態に切り替える（落下開始）
+			if (!hit) {
+				onGround_ = false;
+			}
+		}
+	} else {
+		// 空中にいる時の処理
+		// 今回の当たり判定で床（ブロック）にヒットしたら、空中状態から接地状態に切り替える
+		if (info.onGround) {
+			onGround_ = true;
+
+			// 着地時にX速度を減衰させる
+			velocity_.x *= (1.0f - kAttenuationLanding);
+			// Y速度をゼロにすることで下移動を止める
+			velocity_.y = 0.0f;
+		}
+	}
+}
+
 void Player::CheckScreenEdgeCollision() {
 	if (!cameraController_ || !mapChipField_) {
 		return;
 	}
 
-	// カメラの左端ワールド座標を取得
 	float cameraLeftX = cameraController_->GetCameraLeftX();
-
-	// プレイヤーの左端の座標
 	float playerLeftX = worldTransform_.translation_.x - (kWidth / 2.0f);
 
-	// プレイヤーがカメラの左端より外側（左）に行こうとした場合
 	if (playerLeftX < cameraLeftX) {
-		// カメラの左端に合わせてプレイヤーの座標を右に押し出す
 		worldTransform_.translation_.x = cameraLeftX + (kWidth / 2.0f);
 
-		// 押し出した結果、プレイヤーの右側がブロックにめり込んでいないかチェックする
-		// （＝左からカメラ、右からブロックに挟まれている状態）
 		KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
 		KamataEngine::Vector3 rightTopPos = CornerPosition(currentCenter, kRightTop);
 		KamataEngine::Vector3 rightBottomPos = CornerPosition(currentCenter, kRightBottom);
@@ -160,7 +198,6 @@ void Player::CheckScreenEdgeCollision() {
 		MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(rightTopPos);
 		MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
 
-		// 右側がブロックなら、挟まれ死亡と判定
 		if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
 			isDead_ = true;
 			velocity_ = {0.0f, 0.0f, 0.0f};
@@ -191,11 +228,8 @@ void Player::MapCollision(CollisionMapInfo& info) {
 		return;
 	}
 
-	// まず横移動を処理して壁のめり込みを解決する
 	MapCollisionRight(info);
 	MapCollisionLeft(info);
-
-	// 壁補正された状態のX座標を使って、正確に上下の判定を行う
 	MapCollisionTop(info);
 	MapCollisionBottom(info);
 }
@@ -229,8 +263,8 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
-	if (info.moveAmount.y > 0.0f) {
-		info.onGround = false;
+	// 資料①より：上方向への移動（上昇中）であれば、下方向の当たり判定自体をスキップする
+	if (info.moveAmount.y >= 0.0f) {
 		return;
 	}
 
@@ -252,6 +286,7 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 
 		float previousBottomY = worldTransform_.translation_.y - kHeight / 2.0f;
 		if (previousBottomY >= blockTopY - 0.2f) {
+			// 床ヒット時に移動量を補正し、一時構造体に記録する（即時書き換えは行わない）
 			info.onGround = true;
 			info.moveAmount.y = blockTopY - previousBottomY;
 			return;

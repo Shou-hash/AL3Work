@@ -4,7 +4,7 @@
 #include <array>
 
 class MapChipField;
-class CameraController; // 前方宣言を追加
+class CameraController;
 
 enum class LRDirection {
 	kLeft,
@@ -39,13 +39,13 @@ public:
 	void Draw();
 
 	void SetMapChipField(MapChipField* mapChipField) { mapChipField_ = mapChipField; }
-	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; } // 追加
+	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; }
 
 	const KamataEngine::Vector3& GetVelocity() const { return velocity_; }
 	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
 
 	// 死亡状態の取得
-	bool IsDead() const { return isDead_; } // 追加
+	bool IsDead() const { return isDead_; }
 
 	// 各種調整パラメータ
 	static inline const float kAcceleration = 0.03f;
@@ -55,6 +55,10 @@ public:
 	static inline const float kGravityAcceleration = 0.08f;
 	static inline const float kLimitFallSpeed = 2.0f;
 	static inline const float kJumpAcceleration = 1.0f;
+
+	// 追加：着地時の速度減衰率と、接地吸着判定用の微小オフセット
+	static inline const float kAttenuationLanding = 0.2f;
+	static inline const float kGroundSearchOffset = 0.01f;
 
 private:
 	// 移動入力を独立させた関数
@@ -67,7 +71,10 @@ private:
 	void MapCollisionRight(CollisionMapInfo& info);
 	void MapCollisionLeft(CollisionMapInfo& info);
 
-	// 画面端の押し出しと挟まれ死亡判定の追加
+	// 追加：接地状態の切り替え処理（内部で空中・地上の処理を分岐）
+	void ApplyGroundingStatus(const CollisionMapInfo& info);
+
+	// 画面端の押し出しと挟まれ死亡判定
 	void CheckScreenEdgeCollision();
 
 	// データテーブルを用いた角の座標計算
@@ -75,7 +82,7 @@ private:
 
 private:
 	MapChipField* mapChipField_ = nullptr;
-	CameraController* cameraController_ = nullptr; // 追加
+	CameraController* cameraController_ = nullptr;
 
 	// キャラクターの当たり判定サイズ（1ブロック 1.0f に対して一回り小さい 0.8f）
 	static inline const float kWidth = 0.8f;
@@ -83,7 +90,7 @@ private:
 
 	KamataEngine::Vector3 velocity_ = {};
 	bool onGround_ = true;
-	bool isDead_ = false; // 追加：死亡フラグ
+	bool isDead_ = false; // 死亡フラグ
 
 	float turnFirstRotationY_ = 0.0f;
 	float turnTimer_ = 0.0f;
