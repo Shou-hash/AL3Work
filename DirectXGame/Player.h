@@ -53,7 +53,7 @@ public:
 	static inline const float kLimitRunSpeed = 2.0f;
 	static inline const float kTimeTurn = 0.8f;
 	static inline const float kGravityAcceleration = 0.08f;
-	static inline const float kLimitFallSpeed = 2.0f;
+	static inline const float kLimitFallSpeed = 1.0f;
 	static inline const float kJumpAcceleration = 1.0f;
 
 	// 追加：着地時の速度減衰率と、接地吸着判定用の微小オフセット

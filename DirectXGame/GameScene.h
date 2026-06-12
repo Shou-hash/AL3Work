@@ -4,6 +4,7 @@
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "Skydome.h"
+#include "Enemy.h"
 #include "CameraController.h"
 #include <memory>
 #include <vector>
@@ -26,6 +27,12 @@ private:
 	KamataEngine::WorldTransform worldTransform_;
 	bool isDebugCameraActive_ = false;
 	KamataEngine::DebugCamera* debugCamera_ = nullptr;
+
+	// 敵（Wizard）の3Dモデルポインタ
+	KamataEngine::Model* modelEnemy_ = nullptr;
+
+	// 敵のインスタンスを unique_ptr で安全に管理（Playerと同様の構成）
+	std::unique_ptr<Enemy> enemy_ = nullptr;
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 

@@ -31,8 +31,11 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 void Player::KeysPush() {}
 
 void Player::Move() {
-	if (isDead_)
-		return; // 死亡時は移動不可
+
+	// 死亡時は移動不可
+	if (isDead_) {
+		return;
+	} 
 
 	velocity_.z = 0.0f;
 
@@ -142,19 +145,19 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 
 	if (onGround_) {
 		// 接地している時の処理
-		// Y速度が上向きになった＝ジャンプを開始したということなので、空中状態に切り替える
 		if (velocity_.y > 0.0f) {
 			onGround_ = false;
 		} else {
 			// 左右移動や床がなくなるなど、ジャンプせずに落下を始める場合の判定（吸着処理）
-			// 現在の足元から、微小な数値（kGroundSearchOffset）だけ下にずらして床があるか判定を行う
 			KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
 			KamataEngine::Vector3 offset = {0.0f, -kGroundSearchOffset, 0.0f};
 
-			KamataEngine::Vector3 leftBottomPos;
-			leftBottomPos.y = CornerPosition(currentCenter, kLeftBottom).y + offset.y;
-			KamataEngine::Vector3 rightBottomPos;
-			rightBottomPos.y = CornerPosition(currentCenter, kRightBottom).y + offset.y;
+			// CornerPosition から座標をまるごと取得し、そこに offset を適用する
+			KamataEngine::Vector3 leftBottomPos = CornerPosition(currentCenter, kLeftBottom);
+			leftBottomPos.y += offset.y;
+
+			KamataEngine::Vector3 rightBottomPos = CornerPosition(currentCenter, kRightBottom);
+			rightBottomPos.y += offset.y;
 
 			MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(leftBottomPos);
 			MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
@@ -168,7 +171,6 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 		}
 	} else {
 		// 空中にいる時の処理
-		// 今回の当たり判定で床（ブロック）にヒットしたら、空中状態から接地状態に切り替える
 		if (info.onGround) {
 			onGround_ = true;
 
@@ -254,45 +256,78 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 
+		// ブロックの下端のY座標
 		float blockBottomY = blockPos.y - 0.5f;
-		if (blockBottomY > worldTransform_.translation_.y) {
+
+		// 移動する前のプレイヤーの「頭のてっぺんのY座標」
+		float previousTopY = worldTransform_.translation_.y + kHeight / 2.0f;
+
+		if (previousTopY <= blockBottomY + 0.05f) {
 			info.ceilingCollision = true;
-			info.moveAmount.y = blockBottomY - (worldTransform_.translation_.y + kHeight / 2.0f) - 0.005f;
+			// ブロックの下端に押し戻す（少しマージンを引く）
+			info.moveAmount.y = blockBottomY - previousTopY - 0.005f;
+			return;
 		}
 	}
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
-	// 資料①より：上方向への移動（上昇中）であれば、下方向の当たり判定自体をスキップする
+	// 上方向への移動（上昇中・ジャンプした瞬間）であれば、下方向の当たり判定自体をスキップする
 	if (info.moveAmount.y >= 0.0f) {
 		return;
 	}
 
+	// 移動後の未来の座標を計算
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 
+	// 4つの角の座標を取得
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
 
+	// 各足元のマップチップタイプを取得
 	MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftBottom]);
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
 
-	if (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
+	// 下の当たり判定
+	bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
+
+	// ブロックに衝突していた場合の押し戻し・接地処理
+	if (hit) {
+		// どちらのブロックを基準にするか決定（左下がブロックなら左下、そうでなければ右下）
 		Corner targetCorner = (chipLeftBottom == MapChipType::kBlock) ? kLeftBottom : kRightBottom;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
+
+		// ブロックの上端のY座標
 		float blockTopY = blockPos.y + 0.5f;
 
+		// 移動前の足元のY座標
 		float previousBottomY = worldTransform_.translation_.y - kHeight / 2.0f;
-		if (previousBottomY >= blockTopY - 0.2f) {
-			// 床ヒット時に移動量を補正し、一時構造体に記録する（即時書き換えは行わない）
+
+		// 移動後の足元のY座標
+		float nextBottomY = nextCenter.y - kHeight / 2.0f;
+
+		// 移動前にブロックの上端より上にいた（あるいは、わずかな猶予分 -0.2f の範囲内にいた）状態で、
+		// 移動後にブロックの上端以下に到達しようとしているなら着地とみなす
+		if (previousBottomY >= blockTopY - 0.2f && nextBottomY <= blockTopY) {
+			info.onGround = true;
+			// 補正後の移動量 Y は「ブロックの上面」-「移動前の足元の座標」
+			info.moveAmount.y = blockTopY - previousBottomY;
+			return;
+		}
+
+		// もし最大落下速度が速すぎて上記の猶予（-0.2f）をすり抜けてしまっていた場合でも、
+		// 移動後に完全にブロックの中にめり込んでいるなら強制的に着地させる
+		if (nextBottomY < blockTopY) {
 			info.onGround = true;
 			info.moveAmount.y = blockTopY - previousBottomY;
 			return;
 		}
 	}
 
+	// ブロックに当たっていない、または条件を満たさなかった場合は空中状態
 	info.onGround = false;
 }
 
@@ -301,7 +336,8 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 		return;
 	}
 
-	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y, worldTransform_.translation_.z};
+	//y座標にも info.moveAmount.y を足すことで、ジャンプ中の正しい高さをシミュレートする
+	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
@@ -328,7 +364,8 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 		return;
 	}
 
-	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y, worldTransform_.translation_.z};
+	//y座標にも info.moveAmount.y を足すことで、ジャンプ中の正しい高さをシミュレートする
+	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
 	for (uint32_t i = 0; i < kNumCorner; ++i) {

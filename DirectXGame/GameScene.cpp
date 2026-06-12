@@ -17,6 +17,7 @@ GameScene::~GameScene() {
 	delete debugCamera_;
 	delete modelSkydome_;
 	delete mapChipField_;
+	delete modelEnemy_;
 }
 
 void GameScene::Initialize() {
@@ -33,17 +34,23 @@ void GameScene::Initialize() {
 	debugCamera_ = new DebugCamera(1280, 720);
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
 	modelPlayer_ = Model::CreateFromOBJ("player", true);
+	modelEnemy_ = Model::CreateFromOBJ("player", true);
 
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
-	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2, 17);
+	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2, 18);
 
 	// プレイヤーの生成と初期化
 	player_ = std::make_unique<Player>();
 	player_->Initialize(modelPlayer_, &camera_, playerPosition);
 
 	player_->SetMapChipField(mapChipField_);
+
+	// 敵の生成と初期化（例として適当な初期位置。マップチップから取得してもOKです）
+	KamataEngine::Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10, 18);
+	enemy_ = std::make_unique<Enemy>();
+	enemy_->Initialize(modelEnemy_, &camera_, enemyPosition);
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
@@ -81,6 +88,11 @@ void GameScene::Update() {
 	// プレイヤーの更新処理を呼び出す
 	if (player_) {
 		player_->Update();
+	}
+
+	// 敵の更新処理を呼び出す
+	if (enemy_) {
+		enemy_->Update();
 	}
 
 	// カメラコントローラーの更新
@@ -134,5 +146,10 @@ void GameScene::Draw() {
 	// プレイヤーの描画
 	if (player_) {
 		player_->Draw();
+	}
+
+	// 敵の描画
+	if (enemy_) {
+		enemy_->Draw();
 	}
 }
