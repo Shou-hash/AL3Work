@@ -17,4 +17,16 @@ private:
 
 	// 位置・回転・スケールを管理するワールドトランスフォーム
 	KamataEngine::WorldTransform worldTransform_;
+
+	KamataEngine::Vector3 velocity_ = {0, 0, 0}; // 敵の現在の速度
+
+	static inline const float kWalkspeed = 0.05f; // 敵の移動速度
+
+	static inline const float kWalkMotionAnglestart = -20.0f;
+
+	static inline const float kWalkMotionAngleEnd = 30.0f;
+
+	static inline const float kWalkMotionTime = 1.0f;
+
+	float walkTimer_ = 0.0f; // 歩行モーションのタイマー
 };
