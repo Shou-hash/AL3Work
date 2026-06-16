@@ -18,6 +18,13 @@ GameScene::~GameScene() {
 	delete modelSkydome_;
 	delete mapChipField_;
 	delete modelEnemy_;
+	delete modelPlayer_;
+
+	// 【解放処理】範囲for文（一重）でリスト内の敵を1体ずつ解放
+	for (Enemy* enemy : enemies_) {
+		delete enemy;
+	}
+	enemies_.clear();
 }
 
 void GameScene::Initialize() {
@@ -47,10 +54,16 @@ void GameScene::Initialize() {
 
 	player_->SetMapChipField(mapChipField_);
 
-	// 敵の生成と初期化（例として適当な初期位置。マップチップから取得してもOKです）
-	KamataEngine::Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10, 18);
-	enemy_ = std::make_unique<Enemy>();
-	enemy_->Initialize(modelEnemy_, &camera_, enemyPosition);
+	// 【敵の生成】スライドの指示通り new Enemy() で生成し、1体ずつ異なる座標をセットしてリストに追加
+	for (int32_t i = 0; i < 3; i++) {
+		// インデックス(10, 18)を基準に、1体ごとにX軸方向にずらして異なる座標を作成
+		KamataEngine::Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18);
+
+		Enemy* newEnemy = new Enemy();
+		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
+
+		enemies_.push_back(newEnemy);
+	}
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
@@ -90,9 +103,11 @@ void GameScene::Update() {
 		player_->Update();
 	}
 
-	// 敵の更新処理を呼び出す
-	if (enemy_) {
-		enemy_->Update();
+	// 【敵の更新】一重のfor文でリスト内のすべての敵を更新
+	for (Enemy* enemy : enemies_) {
+		if (enemy) {
+			enemy->Update();
+		}
 	}
 
 	// カメラコントローラーの更新
@@ -148,8 +163,10 @@ void GameScene::Draw() {
 		player_->Draw();
 	}
 
-	// 敵の描画
-	if (enemy_) {
-		enemy_->Draw();
+	// 【敵の描画】一重のfor文でリスト内のすべての敵を描画
+	for (Enemy* enemy : enemies_) {
+		if (enemy) {
+			enemy->Draw();
+		}
 	}
 }
