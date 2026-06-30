@@ -67,9 +67,6 @@ void GameScene::Initialize() {
 	}
 	
 	deathParticles_ = std::make_unique<DeathParticles>();
-	deathParticles_->Initialize(modelDeathParticles_, &camera_, playerPosition);
-
-	deathParticles_ = std::make_unique<DeathParticles>();
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
@@ -121,22 +118,18 @@ void GameScene::Update() {
 		player_->CheckEnemyCollision(enemies_);
 	}
 
-	// ★ デスパーティクルの発生と更新制御
+	// プレイヤーが死亡したときの処理
 	if (player_ && player_->IsDead()) {
-		// まだパーティクルが終了していない場合（＝死亡した瞬間）
-		if (!deathParticles_->IsFinished()) {
-			// 確実な方法として、パーティクルが未駆動かつ未終了の時に位置を設定して起動
-			static bool isTriggered = false; // 簡易的な1回のみ実行フラグ
-			if (!isTriggered) {
+		if (deathParticles_) {
+			if (!deathParticles_->IsInitialized() || deathParticles_->IsFinished()) {
 				KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
 				deathParticles_->Initialize(modelDeathParticles_, &camera_, deathPosition);
-				isTriggered = true;
 			}
 		}
 	}
 
-	// パーティクルの更新（初期化された後、終了するまで毎フレーム動かす）
-	if (deathParticles_ && !deathParticles_->IsFinished()) {
+	// パーティクルの更新
+	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
 		deathParticles_->Update();
 	}
 

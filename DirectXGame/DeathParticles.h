@@ -28,6 +28,8 @@ public:
 	/// </summary>
 	bool IsFinished() const { return isFinished_; }
 
+	bool IsInitialized() const { return isInitialized_; }
+
 private:
 	// パーティクルの個数
 	static inline const uint32_t kNumParticles = 8;
@@ -47,6 +49,9 @@ private:
 
 	// 速度のメンバ変数（固定長配列）
 	std::array<KamataEngine::Vector3, kNumParticles> velocities_;
+
+	// フェードアウト用のオブジェクトカラー
+	KamataEngine::ObjectColor objectColor_;
 
 	// 生存フラグ
 	bool isFinished_ = false;

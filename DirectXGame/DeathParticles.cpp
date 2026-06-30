@@ -7,6 +7,9 @@ void DeathParticles::Initialize(KamataEngine::Model* model, KamataEngine::Camera
 	model_ = model;
 	viewProjection_ = viewProjection;
 
+	objectColor_.Initialize();
+	objectColor_.SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+
 	// 各パーティクルの初期化
 	for (uint32_t i = 0; i < kNumParticles; ++i) {
 		// ワールド変換の初期化
@@ -52,6 +55,10 @@ void DeathParticles::Update() {
 		return;
 	}
 
+	// カウンターが0のとき1.0f、kDurationに近づくほど0.0fになる計算
+	float alpha = 1.0f - (static_cast<float>(counter_) / static_cast<float>(kDuration));
+	objectColor_.SetColor({1.0f, 1.0f, 1.0f, alpha});
+
 	for (uint32_t i = 0; i < kNumParticles; ++i) {
 		// 座標に速度を加算して移動
 		worldTransforms_[i].translation_.x += velocities_[i].x;
@@ -68,18 +75,19 @@ void DeathParticles::Update() {
 
 void DeathParticles::Draw() {
 	// 終了しているなら何もしない
+	if (model_ == nullptr || viewProjection_ == nullptr) {
+		return;
+	}
+
+	// 終了している場合も描画しない
 	if (isFinished_) {
 		return;
 	}
 
-	// パイプライン設定などの事前描画処理
-	KamataEngine::Model::PreDraw();
-
 	for (uint32_t i = 0; i < kNumParticles; ++i) {
 		// モデルの描画（カメラポインタを正しく渡す）
-		model_->Draw(worldTransforms_[i], *viewProjection_);
+		KamataEngine::Model::PreDraw();
+		model_->Draw(worldTransforms_[i], *viewProjection_, &objectColor_);
+		KamataEngine::Model::PostDraw();
 	}
-
-	// 事後描画処理
-	KamataEngine::Model::PostDraw();
 }
