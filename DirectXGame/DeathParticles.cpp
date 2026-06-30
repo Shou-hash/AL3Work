@@ -30,6 +30,7 @@ void DeathParticles::Initialize(KamataEngine::Model* model, KamataEngine::Camera
 		velocities_[i].z = 0.0f;
 	}
 
+
 	// 終了フラグとカウンターの初期化
 	isFinished_ = false;
 	counter_ = 0;
