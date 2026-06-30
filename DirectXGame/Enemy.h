@@ -10,6 +10,9 @@ public:
 	void Update();
 	void Draw();
 
+	// ワールドトランスフォームの取得（当たり判定用）
+	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
+
 private:
 	// 描画に必要なエンジン系のポインタ
 	KamataEngine::Camera* camera_ = nullptr;

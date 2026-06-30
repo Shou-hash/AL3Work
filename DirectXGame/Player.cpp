@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "Player.h"
 #include "CameraController.h"
+#include "Enemy.h" // 敵の座標を取得するため追加
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include <algorithm>
@@ -35,7 +36,7 @@ void Player::Move() {
 	// 死亡時は移動不可
 	if (isDead_) {
 		return;
-	} 
+	}
 
 	velocity_.z = 0.0f;
 
@@ -136,6 +137,45 @@ void Player::Update() {
 
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
+}
+
+void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
+	// 既に死亡している場合は判定しない
+	if (isDead_) {
+		return;
+	}
+
+	// プレイヤーのAABB（中心座標から半分のサイズを引く・足す）
+	float playerLeft = worldTransform_.translation_.x - kWidth / 2.0f;
+	float playerRight = worldTransform_.translation_.x + kWidth / 2.0f;
+	float playerBottom = worldTransform_.translation_.y - kHeight / 2.0f;
+	float playerTop = worldTransform_.translation_.y + kHeight / 2.0f;
+
+	for (Enemy* enemy : enemies) {
+		if (!enemy) {
+			continue;
+		}
+
+		// 敵の座標を取得
+		KamataEngine::Vector3 enemyPos = enemy->GetWorldTransform().translation_;
+
+		// 敵のサイズ（プレイヤーと同じ 0.8f 四方とする）
+		float enemyWidth = 0.8f;
+		float enemyHeight = 0.8f;
+
+		float enemyLeft = enemyPos.x - enemyWidth / 2.0f;
+		float enemyRight = enemyPos.x + enemyWidth / 2.0f;
+		float enemyBottom = enemyPos.y - enemyHeight / 2.0f;
+		float enemyTop = enemyPos.y + enemyHeight / 2.0f;
+
+		// AABBによる交差判定（衝突しているか）
+		if (playerLeft < enemyRight && playerRight > enemyLeft && playerBottom < enemyTop && playerTop > enemyBottom) {
+			// 衝突したらプレイヤーは死亡状態になる
+			isDead_ = true;
+			velocity_ = {0.0f, 0.0f, 0.0f};
+			break;
+		}
+	}
 }
 
 void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
@@ -336,7 +376,7 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 		return;
 	}
 
-	//y座標にも info.moveAmount.y を足すことで、ジャンプ中の正しい高さをシミュレートする
+	// y座標にも info.moveAmount.y を足すことで、ジャンプ中の正しい高さをシミュレートする
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
@@ -364,7 +404,7 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 		return;
 	}
 
-	//y座標にも info.moveAmount.y を足すことで、ジャンプ中の正しい高さをシミュレートする
+	// y座標にも info.moveAmount.y を足すことで、ジャンプ中の正しい高さをシミュレートする
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;

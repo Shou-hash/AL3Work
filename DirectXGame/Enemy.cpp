@@ -38,7 +38,7 @@ void Enemy::Update() {
 
 	// 度数法（degree）からラジアン（radian）に変換して、Z軸の回転に代入する
 	worldTransform_.rotation_.z = degree * (std::numbers::pi_v<float> / 270.0f);
-	
+
 	// Player と同様に、アフィン変換行列を計算して matWorld_ に代入
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 

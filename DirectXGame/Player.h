@@ -2,9 +2,11 @@
 #include "Kamataengine.h"
 #include <3d/WorldTransform.h>
 #include <array>
+#include <list> // std::list を使用するため追加
 
 class MapChipField;
 class CameraController;
+class Enemy; // 前方宣言
 
 enum class LRDirection {
 	kLeft,
@@ -46,6 +48,9 @@ public:
 
 	// 死亡状態の取得
 	bool IsDead() const { return isDead_; }
+
+	// 敵との衝突判定
+	void CheckEnemyCollision(const std::list<Enemy*>& enemies);
 
 	// 各種調整パラメータ
 	static inline const float kAcceleration = 0.03f;

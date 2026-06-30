@@ -57,11 +57,10 @@ void GameScene::Initialize() {
 	// 【敵の生成】スライドの指示通り new Enemy() で生成し、1体ずつ異なる座標をセットしてリストに追加
 	for (int32_t i = 0; i < 3; i++) {
 		// インデックス(10, 18)を基準に、1体ごとにX軸方向にずらして異なる座標を作成
-		KamataEngine::Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18);
-
 		Enemy* newEnemy = new Enemy();
-		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
+		Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18);
 
+		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
 		enemies_.push_back(newEnemy);
 	}
 
@@ -108,6 +107,11 @@ void GameScene::Update() {
 		if (enemy) {
 			enemy->Update();
 		}
+	}
+
+	// 【プレイヤーと敵の衝突判定】
+	if (player_) {
+		player_->CheckEnemyCollision(enemies_);
 	}
 
 	// カメラコントローラーの更新

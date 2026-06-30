@@ -32,8 +32,7 @@ private:
 	// 敵（Wizard）の3Dモデルポインタ
 	KamataEngine::Model* modelEnemy_ = nullptr;
 
-	// 単体のユニークポインタは複数管理では不要になるため削除、または互換性のために残す場合はそのまま
-	// 今回はスライドの指示通り enemies_ リストで一括管理するため、単体用の enemy_ は使用しません。
+	// 単体用の enemy_ は複数管理を行うため使用しませんが、型互換のために残します
 	std::unique_ptr<Enemy> enemy_ = nullptr;
 
 	std::unique_ptr<Skydome> skydome = nullptr;
