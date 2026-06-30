@@ -78,6 +78,12 @@ void GameScene::Initialize() {
 	std::srand((unsigned int)std::time(nullptr));
 	camera_.Initialize();
 
+	//追加: ズーム変数の初期化
+	globalScale_ = 1.0f;
+	zoomTimer_ = 0.0f;
+	isZooming_ = false;
+	zoomTargetPos_ = {640.0f, 360.0f}; // デフォルトは画面中心
+
 	for (int i = 0; i < 3; i++) {
 		texBg_[i] = TextureManager::Load("./Resource/Clock/Bg/bg" + std::to_string(i + 1) + ".png");
 		if (texBg_[i])
@@ -186,6 +192,37 @@ void GameScene::Initialize() {
 void GameScene::Update() {
 	Input* input = Input::GetInstance();
 
+	#pragma region ズーム更新処理
+
+	// ズームの更新処理
+	KamataEngine::Vector2 mousePos = input->GetMousePosition();
+
+	if (input->IsPressMouse(1)) { // 右クリック中
+		if (!isZooming_) {
+			isZooming_ = true;
+		}
+		// 右クリックを押しながら移動したときも、常に最新のマウス位置をズームターゲットにする
+		zoomTargetPos_ = mousePos;
+
+		zoomTimer_ += kZoomSpeed_;
+	} else { // 右クリックを離した
+		isZooming_ = false;
+		zoomTimer_ -= kZoomSpeed_;
+	}
+
+	// タイマーを 0.0 ～ 1.0 に制限
+	if (zoomTimer_ > 1.0f) {
+		zoomTimer_ = 1.0f;
+	}
+	if (zoomTimer_ < 0.0f) {
+		zoomTimer_ = 0.0f;
+	}
+
+	// イージングを適用して拡大率を計算 (1.0f から kMaxZoom_ まで変化)
+	globalScale_ = 1.0f + (kMaxZoom_ - 1.0f) * EaseOutQuart(zoomTimer_);
+
+#pragma endregion
+
 	hourCos_ = cosf(hourAngle_);
 	spaceAnimTimer_++;
 
@@ -198,7 +235,7 @@ void GameScene::Update() {
 		isExpanding_ = false;
 	}
 
-	// --- 盤面2の更新 (先に動く) ---
+	// 盤面2の更新 (先に動く) 
 	if (isExpanding_) {
 		scaleTimer2_ += kScaleSpeed_;
 	} else {
@@ -212,7 +249,7 @@ void GameScene::Update() {
 		scaleTimer2_ = 0.0f;
 	}
 
-	// --- 盤面1の更新 (盤面2が0.3以上進んだら動き出すディレイ処理) ---
+	// 盤面1の更新 (盤面2が0.3以上進んだら動き出すディレイ処理)
 	// 拡大時：盤面2がある程度進んだら開始
 	// 縮小時：盤面2がある程度戻ったら開始
 	if (isExpanding_) {
@@ -321,7 +358,7 @@ void GameScene::Update() {
 
 	#pragma endregion
 
-	// --- 時計パルス演出（拡大縮小） ---
+	// 時計パルス演出（拡大縮小）
 	if (input->TriggerKey(DIK_SPACE)) {
 		const float kScaleSpeed = 1.0f / 20.0f;
 		if (isExpanding_) {
@@ -411,97 +448,166 @@ void GameScene::Draw() {
 	Sprite::PreDraw();
 
 	Vector2 drawPos = {clockPos_.x + shakeOffset_.x, clockPos_.y + shakeOffset_.y};
+	// ズーム変換
+	Vector2 zoomedClockPos = GetZoomPos(drawPos);
 
 	if (sprBg_[0])
 		sprBg_[0]->Draw();
 
-	// 昼夜の表現をhourCos_を元に描画
+	// 昼夜の表現をhourCos_を元に描画（ズーム対応版）
 	if (hourCos_ >= 0) {
-		sprSun_->SetPosition({640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y});
-		sprSun_->SetSize({sprSun_->GetTextureSize().x * currentScale_, sprSun_->GetTextureSize().y * currentScale_});
-		sprSun_->Draw();
+		if (sprSun_) {
+			// 1. 本来の表示座標を計算
+			Vector2 originalSunPos = {640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y};
+
+			// 2. ズーム適用後の座標に変換
+			sprSun_->SetPosition(GetZoomPos(originalSunPos));
+
+			// 3. 元のサイズ × スケール × 画面全体のズーム倍率(globalScale_)
+			float sizeX = sprSun_->GetTextureSize().x * currentScale_ * globalScale_;
+			float sizeY = sprSun_->GetTextureSize().y * currentScale_ * globalScale_;
+			sprSun_->SetSize({sizeX, sizeY});
+
+			sprSun_->Draw();
+		}
 	} else {
-		sprMoon_->SetPosition({640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y});
-		sprMoon_->SetSize({sprMoon_->GetTextureSize().x * currentScale_, sprMoon_->GetTextureSize().y * currentScale_});
-		sprMoon_->Draw();
+		if (sprMoon_) {
+			// 1. 本来の表示座標を計算
+			Vector2 originalMoonPos = {640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y};
+
+			// 2. ズーム適用後の座標に変換
+			sprMoon_->SetPosition(GetZoomPos(originalMoonPos));
+
+			// 3. 元のサイズ × スケール × 画面全体のズーム倍率(globalScale_)
+			float sizeX = sprMoon_->GetTextureSize().x * currentScale_ * globalScale_;
+			float sizeY = sprMoon_->GetTextureSize().y * currentScale_ * globalScale_;
+			sprMoon_->SetSize({sizeX, sizeY});
+
+			sprMoon_->Draw();
+		}
 	}
 
 	// 時計画像1 (後から拡大し、離すと後から戻る)
 	if (sprClock_[0]) {
-		sprClock_[0]->SetPosition(drawPos);
-		// currentScale1_ を適用
-		sprClock_[0]->SetSize({sprClock_[0]->GetTextureSize().x * currentScale1_, sprClock_[0]->GetTextureSize().y * currentScale1_});
+		// 座標をズーム対応に変換
+		sprClock_[0]->SetPosition(GetZoomPos(drawPos));
+
+		// 元のサイズ × 固有のスケール(currentScale1_) × 画面全体のズーム倍率(globalScale_)
+		float sizeX = sprClock_[0]->GetTextureSize().x * currentScale1_ * globalScale_;
+		float sizeY = sprClock_[0]->GetTextureSize().y * currentScale1_ * globalScale_;
+		sprClock_[0]->SetSize({sizeX, sizeY});
+
 		sprClock_[0]->Draw();
 	}
 
 	// 時計画像2 (先に拡大し、離すと先に戻る)
 	if (sprClock_[1]) {
-		sprClock_[1]->SetPosition(drawPos);
-		// currentScale2_ を適用
-		sprClock_[1]->SetSize({sprClock_[1]->GetTextureSize().x * currentScale2_, sprClock_[1]->GetTextureSize().y * currentScale2_});
+		// 座標をズーム対応に変換
+		sprClock_[1]->SetPosition(GetZoomPos(drawPos));
+
+		// 元のサイズ × 固有のスケール(currentScale2_) × 画面全体のズーム倍率(globalScale_)
+		float sizeX = sprClock_[1]->GetTextureSize().x * currentScale2_ * globalScale_;
+		float sizeY = sprClock_[1]->GetTextureSize().y * currentScale2_ * globalScale_;
+		sprClock_[1]->SetSize({sizeX, sizeY});
+
 		sprClock_[1]->Draw();
 	}
 
 	// 時計画像3 (そのまま変化しない)
 	if (sprClock_[2]) {
-		sprClock_[2]->SetPosition(drawPos);
-		// currentScale_ (1.0f固定) を適用
-		sprClock_[2]->SetSize({sprClock_[2]->GetTextureSize().x * currentScale_, sprClock_[2]->GetTextureSize().y * currentScale_});
+		// 座標をズーム対応に変換
+		sprClock_[2]->SetPosition(GetZoomPos(drawPos));
+
+		// 元のサイズ × 固有のスケール(currentScale_) × 画面全体のズーム倍率(globalScale_)
+		float sizeX = sprClock_[2]->GetTextureSize().x * currentScale_ * globalScale_;
+		float sizeY = sprClock_[2]->GetTextureSize().y * currentScale_ * globalScale_;
+		sprClock_[2]->SetSize({sizeX, sizeY});
+
 		sprClock_[2]->Draw();
 	}
 
 	// ギヤ
 	for (int i = 0; i < kGearNum; i++) {
-		if (gears_[i].size <= 0)
-			continue;
-		auto* s = sprGear_[gears_[i].textureIndex];
-		if (s) {
-			s->SetPosition({gears_[i].position.x + shakeOffset_.x, gears_[i].position.y + shakeOffset_.y});
+		if (gears_[i].textureIndex >= 0 && sprGear_[gears_[i].textureIndex]) {
+			Sprite* s = sprGear_[gears_[i].textureIndex];
+
+			// 1. 本来のギヤの位置を計算
+			Vector2 originalGearPos = {gears_[i].position.x + shakeOffset_.x, gears_[i].position.y + shakeOffset_.y};
+
+			// 2. ズーム適用後の座標に変換
+			Vector2 zoomedGearPos = GetZoomPos(originalGearPos);
+			s->SetPosition(zoomedGearPos);
+
 			s->SetRotation(gears_[i].angle);
-			s->SetSize({gears_[i].size, gears_[i].size});
+
+			// 3. スケール(サイズ)に globalScale_ を乗算
+			float finalSizeX = gears_[i].size * globalScale_;
+			float finalSizeY = gears_[i].size * globalScale_;
+			s->SetSize({finalSizeX, finalSizeY});
+
 			s->Draw();
 		}
 	}
 
 	// 針の描画
 	if (sprHandHour_) {
-		sprHandHour_->SetPosition(drawPos);
+		sprHandHour_->SetPosition(zoomedClockPos); // ズーム後の座標
 		sprHandHour_->SetRotation(hourAngle_);
-		sprHandHour_->SetSize({sprHandHour_->GetTextureSize().x * currentScale_, sprHandHour_->GetTextureSize().y * currentScale_});
+
+		// 元のサイズに対して currentScale_ と globalScale_ の両方を掛ける
+		float sizeX = sprHandHour_->GetTextureSize().x * currentScale_ * globalScale_;
+		float sizeY = sprHandHour_->GetTextureSize().y * currentScale_ * globalScale_;
+		sprHandHour_->SetSize({sizeX, sizeY});
+
 		sprHandHour_->Draw();
 	}
+
 	if (sprHandMin_) {
-		sprHandMin_->SetPosition(drawPos);
+		sprHandMin_->SetPosition(zoomedClockPos); // ズーム後の座標
 		sprHandMin_->SetRotation(minAngle_);
-		sprHandMin_->SetSize({sprHandMin_->GetTextureSize().x * currentScale_, sprHandMin_->GetTextureSize().y * currentScale_});
+
+		float sizeX = sprHandMin_->GetTextureSize().x * currentScale_ * globalScale_;
+		float sizeY = sprHandMin_->GetTextureSize().y * currentScale_ * globalScale_;
+		sprHandMin_->SetSize({sizeX, sizeY});
+
 		sprHandMin_->Draw();
 	}
 
 	// Space UI 描画（点滅アニメーション）
 	int spaceTexIdx = (spaceAnimTimer_ / 30) % 2;
 	if (!isRotating_ && sprSpace_[spaceTexIdx]) {
-		sprSpace_[spaceTexIdx]->SetPosition({1496.0f, 544.0f});
+		Vector2 originalSpacePos = {1496.0f, 544.0f};
+		// 座標とサイズをズーム対応に
+		sprSpace_[spaceTexIdx]->SetPosition(GetZoomPos(originalSpacePos));
+
+		float sizeX = sprSpace_[spaceTexIdx]->GetTextureSize().x * globalScale_;
+		float sizeY = sprSpace_[spaceTexIdx]->GetTextureSize().y * globalScale_;
+		sprSpace_[spaceTexIdx]->SetSize({sizeX, sizeY});
+
 		sprSpace_[spaceTexIdx]->Draw();
 	}
 
-	// --- 欠片の描画 ---
+	// 欠片の描画
 	for (int i = 0; i < kPieceNum; i++) {
 		if (pieces_[i].isDisplay && pieces_[i].sprite) {
 			Sprite* s = pieces_[i].sprite;
 
-			s->SetPosition(pieces_[i].position);
+			// 座標をズーム対応に
+			s->SetPosition(GetZoomPos(pieces_[i].position));
 			s->SetRotation(pieces_[i].angle);
-			float lifeRatio = pieces_[i].life / pieces_[i].maxLife;
-			s->SetSize({pieces_[i].width * lifeRatio, pieces_[i].height * lifeRatio});
+
+			// サイズをズーム対応に
+			s->SetSize({pieces_[i].width * globalScale_, pieces_[i].height * globalScale_});
+
 			s->Draw();
 		}
 	}
 
-	// --- 光の描画 ---
+	// 光の描画
 	for (int i = 0; i < kSparkleNum; i++) {
 		if (sparkles_[i].isDisplay && sparkles_[i].sprite) {
 			Sprite* s = sparkles_[i].sprite;
-			s->SetPosition(sparkles_[i].position);
+			s->SetPosition(GetZoomPos(sparkles_[i].position));
 			s->SetSize({32.0f * sparkles_[i].alpha, 32.0f * sparkles_[i].alpha});
 			s->Draw();
 		}

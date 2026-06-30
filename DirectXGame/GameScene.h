@@ -110,6 +110,22 @@ private:
 	// Spaceガイドのアニメーション用タイマー
 	int spaceAnimTimer_ = 0;
 
+	// 追加: ズーム用変数
+	float globalScale_ = 1.0f;                           // 現在の画面拡大率
+	float zoomTimer_ = 0.0f;                             // ズームアニメーション用タイマー
+	bool isZooming_ = false;                             // ズーム中フラグ
+	const float kMaxZoom_ = 2.0f;                        // 最大何倍までズームするか
+	const float kZoomSpeed_ = 0.025f;                    // ズームの速さ
+	KamataEngine::Vector2 zoomTargetPos_ = {0.0f, 0.0f}; // ズームの中心（ターゲット）座標
+
+	// 座標をズーム中心に合わせて変換する関数
+	KamataEngine::Vector2 GetZoomPos(const KamataEngine::Vector2& pos) {
+		KamataEngine::Vector2 result;
+		result.x = zoomTargetPos_.x + (pos.x - zoomTargetPos_.x) * globalScale_;
+		result.y = zoomTargetPos_.y + (pos.y - zoomTargetPos_.y) * globalScale_;
+		return result;
+	}
+
 	// 配列データ
 	Piece pieces_[kPieceNum];
 	Sparkle sparkles_[kSparkleNum];
