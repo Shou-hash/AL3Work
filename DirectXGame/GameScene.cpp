@@ -19,6 +19,7 @@ GameScene::~GameScene() {
 	delete mapChipField_;
 	delete modelEnemy_;
 	delete modelPlayer_;
+	delete modelDeathParticles_;
 
 	// 【解放処理】範囲for文（一重）でリスト内の敵を1体ずつ解放
 	for (Enemy* enemy : enemies_) {
@@ -42,6 +43,7 @@ void GameScene::Initialize() {
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
 	modelPlayer_ = Model::CreateFromOBJ("player", true);
 	modelEnemy_ = Model::CreateFromOBJ("player", true);
+	modelDeathParticles_ = Model::CreateFromOBJ("particle", true);
 
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
@@ -63,6 +65,11 @@ void GameScene::Initialize() {
 		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
 		enemies_.push_back(newEnemy);
 	}
+	
+	deathParticles_ = std::make_unique<DeathParticles>();
+	deathParticles_->Initialize(modelDeathParticles_, &camera_, playerPosition);
+
+	deathParticles_ = std::make_unique<DeathParticles>();
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
@@ -112,6 +119,25 @@ void GameScene::Update() {
 	// 【プレイヤーと敵の衝突判定】
 	if (player_) {
 		player_->CheckEnemyCollision(enemies_);
+	}
+
+	// ★ デスパーティクルの発生と更新制御
+	if (player_ && player_->IsDead()) {
+		// まだパーティクルが終了していない場合（＝死亡した瞬間）
+		if (!deathParticles_->IsFinished()) {
+			// 確実な方法として、パーティクルが未駆動かつ未終了の時に位置を設定して起動
+			static bool isTriggered = false; // 簡易的な1回のみ実行フラグ
+			if (!isTriggered) {
+				KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
+				deathParticles_->Initialize(modelDeathParticles_, &camera_, deathPosition);
+				isTriggered = true;
+			}
+		}
+	}
+
+	// パーティクルの更新（初期化された後、終了するまで毎フレーム動かす）
+	if (deathParticles_ && !deathParticles_->IsFinished()) {
+		deathParticles_->Update();
 	}
 
 	// カメラコントローラーの更新
@@ -164,13 +190,22 @@ void GameScene::Draw() {
 
 	// プレイヤーの描画
 	if (player_) {
+		Model::PreDraw();
 		player_->Draw();
+		Model::PostDraw();
 	}
 
 	// 【敵の描画】一重のfor文でリスト内のすべての敵を描画
 	for (Enemy* enemy : enemies_) {
 		if (enemy) {
+			Model::PreDraw();
 			enemy->Draw();
+			Model::PostDraw();
 		}
+	}
+
+	// デスパーティクルの描画
+	if (deathParticles_ && !deathParticles_->IsFinished()) {
+		deathParticles_->Draw();
 	}
 }

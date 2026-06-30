@@ -6,6 +6,7 @@
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "Skydome.h"
+#include "DeathParticles.h"
 #include <list> // std::list を使用するため追加
 #include <memory>
 #include <vector>
@@ -32,7 +33,8 @@ private:
 	// 敵（Wizard）の3Dモデルポインタ
 	KamataEngine::Model* modelEnemy_ = nullptr;
 
-	// 単体用の enemy_ は複数管理を行うため使用しませんが、型互換のために残します
+	// 単体のユニークポインタは複数管理では不要になるため削除、または互換性のために残す場合はそのまま
+	// 今回はスライドの指示通り enemies_ リストで一括管理するため、単体用の enemy_ は使用しません。
 	std::unique_ptr<Enemy> enemy_ = nullptr;
 
 	std::unique_ptr<Skydome> skydome = nullptr;
@@ -47,4 +49,9 @@ private:
 	MapChipField* mapChipField_;
 
 	std::list<Enemy*> enemies_; // 敵のリスト（複数の敵を管理）
+
+	// デスパーティクルの3Dモデルポインタ
+	KamataEngine::Model* modelDeathParticles_ = nullptr;
+	// デスパーティクル（ユニークポインタ）
+	std::unique_ptr<DeathParticles> deathParticles_;
 };
