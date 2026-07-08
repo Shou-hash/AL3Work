@@ -27,6 +27,11 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 
 void Player::KeysPush() {}
 
+// 衝突時処理（スクリーンショット「当たったら死ぬ」の再現）
+void Player::OnCollision() {
+	isDead_ = true; // デスフラグを立てる
+}
+
 void Player::Move() {
 	if (isDead_) {
 		return;
@@ -133,7 +138,7 @@ void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
 		float enemyTop = enemyPos.y + enemyHeight / 2.0f;
 
 		if (playerLeft < enemyRight && playerRight > enemyLeft && playerBottom < enemyTop && playerTop > enemyBottom) {
-			isDead_ = true; // 衝突したら死亡
+			OnCollision(); // 衝突したら死亡
 			break;
 		}
 	}
@@ -183,7 +188,7 @@ void Player::CheckScreenEdgeCollision() {
 		MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(rightTopPos);
 		MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
 		if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
-			isDead_ = true;
+			OnCollision();
 		}
 	}
 }

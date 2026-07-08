@@ -41,6 +41,9 @@ public:
 	// 死亡状態の取得
 	bool IsDead() const { return isDead_; }
 
+	// 衝突時に呼び出される関数（デスフラグを立てる）
+	void OnCollision();
+
 	// 敵との衝突判定
 	void CheckEnemyCollision(const std::list<Enemy*>& enemies);
 
@@ -73,6 +76,7 @@ private:
 	KamataEngine::Vector3 velocity_ = {};
 	bool onGround_ = true;
 	bool isDead_ = false; // 死亡フラグ
+
 	float turnFirstRotationY_ = 0.0f;
 	float turnTimer_ = 0.0f;
 	KamataEngine::Camera* camera_ = nullptr;

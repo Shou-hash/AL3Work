@@ -21,7 +21,7 @@ GameScene::~GameScene() {
 	delete modelPlayer_;
 	delete modelDeathParticles_;
 
-	// 【解放処理】範囲for文（一重）でリスト内の敵を1体ずつ解放
+	// 範囲for文（一重）でリスト内の敵を1体ずつ解放
 	for (Enemy* enemy : enemies_) {
 		delete enemy;
 	}
@@ -29,6 +29,9 @@ GameScene::~GameScene() {
 }
 
 void GameScene::Initialize() {
+
+	phase_ = Phase::kPlay;
+	finished_ = false;
 
 	mapChipField_ = new MapChipField;
 	mapChipField_->LoadMapChipDataFromCSV("Resources/blocks.csv");
@@ -99,44 +102,23 @@ void GameScene::GenerateBlocks() {
 }
 
 void GameScene::Update() {
+
+	// フェーズの切り替え判定
+	ChangePhase();
+
+	// フェーズごとの更新処理
+	switch (phase_) {
+	case Phase::kPlay:
+		UpdatePlay();
+		break;
+
+	case Phase::kDeath:
+		UpdateDeath();
+		break;
+	}
+
+	// 両方のフェーズで共通して行う処理（デバッグカメラや行列更新など）
 	debugCamera_->Update();
-
-	// プレイヤーの更新処理を呼び出す
-	if (player_) {
-		player_->Update();
-	}
-
-	// 【敵の更新】一重のfor文でリスト内のすべての敵を更新
-	for (Enemy* enemy : enemies_) {
-		if (enemy) {
-			enemy->Update();
-		}
-	}
-
-	// 【プレイヤーと敵の衝突判定】
-	if (player_) {
-		player_->CheckEnemyCollision(enemies_);
-	}
-
-	// プレイヤーが死亡したときの処理
-	if (player_ && player_->IsDead()) {
-		if (deathParticles_) {
-			if (!deathParticles_->IsInitialized() || deathParticles_->IsFinished()) {
-				KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
-				deathParticles_->Initialize(modelDeathParticles_, &camera_, deathPosition);
-			}
-		}
-	}
-
-	// パーティクルの更新
-	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
-		deathParticles_->Update();
-	}
-
-	// カメラコントローラーの更新
-	if (!isDebugCameraActive_ && cameraController_) {
-		cameraController_->Update();
-	}
 
 #ifdef _DEBUG
 	if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
@@ -144,14 +126,13 @@ void GameScene::Update() {
 	}
 #endif
 
-	// ★カメラ行列の更新と転送の修正
 	if (isDebugCameraActive_) {
 		camera_.matView = debugCamera_->GetCamera().matView;
 		camera_.matProjection = debugCamera_->GetCamera().matProjection;
 		camera_.TransferMatrix();
 	} else {
 		camera_.UpdateMatrix();
-		camera_.TransferMatrix(); // ★通常カメラの時も行列をGPUに転送する
+		camera_.TransferMatrix();
 	}
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
@@ -164,8 +145,82 @@ void GameScene::Update() {
 			worldTransformBlock->TransferMatrix();
 		}
 	}
+}
 
+//　フェーズの切り替え処理
+void GameScene::ChangePhase() {
+	switch (phase_) {
+	case Phase::kPlay:
+		// プレイヤーが死亡フラグを持っていたらデス演出フェーズへ移行
+		if (player_ && player_->IsDead()) {
+			phase_ = Phase::kDeath;
+
+			// デス演出フェーズに入った瞬間（トリガー）でパーティクルを発生させる
+			if (deathParticles_) {
+				if (!deathParticles_->IsInitialized() || deathParticles_->IsFinished()) {
+					KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
+					deathParticles_->Initialize(modelDeathParticles_, &camera_, deathPosition);
+				}
+			}
+		}
+		break;
+
+	case Phase::kDeath:
+		// 一方通行のため、デス演出フェーズ側では特に切り替え処理は行わない
+		if (deathParticles_ && deathParticles_->IsFinished()) {
+			finished_ = true;
+		}
+		break;
+	}
+}
+
+// ゲームプレイフェーズの更新
+void GameScene::UpdatePlay() {
+	// 天球の更新
 	skydome->Update();
+
+	// 自キャラの更新
+	if (player_) {
+		player_->Update();
+	}
+
+	// 敵の更新（複数）
+	for (Enemy* enemy : enemies_) {
+		if (enemy) {
+			enemy->Update();
+		}
+	}
+
+	// カメラコントローラーの更新
+	if (!isDebugCameraActive_ && cameraController_) {
+		cameraController_->Update();
+	}
+
+	// 全ての当たり判定（自キャラと敵の衝突判定など）
+	if (player_) {
+		player_->CheckEnemyCollision(enemies_);
+	}
+}
+
+// デス演出フェーズの更新
+void GameScene::UpdateDeath() {
+	// 天球の更新
+	skydome->Update();
+
+	// 敵の更新（複数）
+	for (Enemy* enemy : enemies_) {
+		if (enemy) {
+			enemy->Update();
+		}
+	}
+
+	// デスパーティクルの更新（このフェーズでのみ行う）
+	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
+		deathParticles_->Update();
+	}
+
+	// 自キャラの更新とカメラコントローラーの更新を省くことで、
+	// 死亡時にカメラが勝手に動き回ったりプレイヤーが操作できてしまうのを防ぎます。
 }
 
 void GameScene::Draw() {

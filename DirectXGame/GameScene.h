@@ -1,15 +1,20 @@
 #pragma once
 #include "CameraController.h"
+#include "DeathParticles.h"
 #include "Enemy.h"
 #include "Kamataengine.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "Skydome.h"
-#include "DeathParticles.h"
 #include <list> // std::list を使用するため追加
 #include <memory>
 #include <vector>
+
+enum class Phase {
+	kPlay,
+	kDeath,
+};
 
 class GameScene {
 public:
@@ -22,7 +27,27 @@ public:
 
 	void GenerateBlocks();
 
+	// シーンが終了したかを取得
+	bool isFinished() const { return finished_; }
+
 private:
+	// フェーズ管理用関数
+	
+	// フェーズの切り替え条件・処理を管理
+	void ChangePhase();
+	
+	// ゲームプレイフェーズの毎フレーム処理
+	void UpdatePlay();
+
+	// デス演出フェーズの毎フレーム処理
+	void UpdateDeath();
+
+private:
+	// フェイズの状態を管理する変数
+	Phase phase_ = Phase::kPlay;
+
+	bool finished_ = false;
+
 	KamataEngine::Model* model_ = nullptr;
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
 	KamataEngine::Camera camera_{};
