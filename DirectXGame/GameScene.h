@@ -19,6 +19,7 @@ struct Piece {
 	float life;
 	float maxLife;
 	KamataEngine::Sprite* sprite;
+	unsigned int color;
 };
 
 struct Sparkle {
@@ -29,6 +30,7 @@ struct Sparkle {
 	bool isDisplay;
 	float scale;
 	KamataEngine::Sprite* sprite;
+	unsigned int color;
 };
 
 struct Gear {
@@ -38,7 +40,7 @@ struct Gear {
 	float rotateSpeed;
 	float size;
 	int textureIndex;
-	// --- 追加: アニメーション・揺れ用 ---
+	// アニメーション・揺れ用
 	float startupTimer;
 	bool isStadyRotation;
 	float shakeAmount;
@@ -50,6 +52,7 @@ public:
 	~GameScene();
 
 	void Initialize();
+	void ImGuiDraw();
 	void Update();
 	void Draw();
 
@@ -66,10 +69,16 @@ private:
 	uint32_t texSparkle_ = 0;
 	uint32_t texSun_ = 0;
 	uint32_t texMoon_ = 0;
-	// --- 追加: Space操作ガイド用 ---
+
+	uint32_t texSunLight_ = 0;
+	uint32_t texSunLine_ = 0;
+	uint32_t texMonthLight_ = 0;
+	uint32_t texMonthLine_ = 0;
+	uint32_t texBgLight1_ = 0;
+	uint32_t texBgLight2_ = 0;
 	uint32_t texSpace_[2] = {0};
 
-	// --- スプライトポインタ ---
+	// スプライトポインタ
 	KamataEngine::Sprite* sprBg_[3] = {nullptr};
 	KamataEngine::Sprite* sprClock_[3] = {nullptr};
 	KamataEngine::Sprite* sprHandHour_ = nullptr;
@@ -78,6 +87,13 @@ private:
 	KamataEngine::Sprite* sprSun_ = nullptr;
 	KamataEngine::Sprite* sprMoon_ = nullptr;
 	KamataEngine::Sprite* sprSpace_[2] = {nullptr};
+
+	KamataEngine::Sprite* sprSunLight_ = nullptr;
+	KamataEngine::Sprite* sprSunLine_ = nullptr;
+	KamataEngine::Sprite* sprMonthLight_ = nullptr;
+	KamataEngine::Sprite* sprMonthLine_ = nullptr;
+	KamataEngine::Sprite* sprBgLight1_ = nullptr;
+	KamataEngine::Sprite* sprBgLight2_ = nullptr;
 
 	bool isExpanding_ = false;               // 拡大中フラグ
 	float scaleTimer1_ = 0.0f;               // 盤面1用のタイマー
@@ -88,7 +104,7 @@ private:
 	const float kScaleSpeed_ = 1.0f / 20.0f; // アニメーション速度
 	const float kMaxScale_ = 1.5f;           // スケール計算用の定数
 
-	// --- ゲームロジック変数 ---
+	// ゲームロジック変数
 	KamataEngine::Vector2 clockPos_ = {640.0f, 360.0f};
 	float minAngle_ = -1.57f, hourAngle_ = -1.57f;
 	float minTarget_ = -1.57f, hourTarget_ = -1.57f;
@@ -110,7 +126,11 @@ private:
 	// Spaceガイドのアニメーション用タイマー
 	int spaceAnimTimer_ = 0;
 
-	// 追加: ズーム用変数
+	// 太陽・月の回転や拡縮のアニメーション用変数（必要に応じて）
+	float sunAngle_ = 0.0f;
+	float moonAngle_ = 0.0f;
+
+	// ズーム用変数
 	float globalScale_ = 1.0f;                           // 現在の画面拡大率
 	float zoomTimer_ = 0.0f;                             // ズームアニメーション用タイマー
 	bool isZooming_ = false;                             // ズーム中フラグ
@@ -125,6 +145,56 @@ private:
 		result.y = zoomTargetPos_.y + (pos.y - zoomTargetPos_.y) * globalScale_;
 		return result;
 	}
+
+	// 色変え処理用変数
+	// 通常の色
+	unsigned int lightBaseColor[5];
+	// 目標色
+	unsigned int lightTargetBlue[6];
+
+	float colorLerpTimer = 0.0f;
+
+	// 速度
+	const float kColorChangeSpeed = 0.01f;
+
+	// 色を線形補間する関数
+	unsigned int LerpColor(unsigned int src, unsigned int dst, float t) {
+		unsigned char srcR = (src >> 24) & 0xFF;
+		unsigned char srcG = (src >> 16) & 0xFF;
+		unsigned char srcB = (src >> 8) & 0xFF;
+		unsigned char srcA = src & 0xFF;
+
+		unsigned char dstR = (dst >> 24) & 0xFF;
+		unsigned char dstG = (dst >> 16) & 0xFF;
+		unsigned char dstB = (dst >> 8) & 0xFF;
+		unsigned char dstA = dst & 0xFF;
+
+		unsigned char r = (unsigned char)(srcR + (dstR - srcR) * t);
+		unsigned char g = (unsigned char)(srcG + (dstG - srcG) * t);
+		unsigned char b = (unsigned char)(srcB + (dstB - srcB) * t);
+		unsigned char a = (unsigned char)(srcA + (dstA - srcA) * t);
+
+		return (unsigned int)((r << 24) | (g << 16) | (b << 8) | a);
+	};
+
+	KamataEngine::Vector4 UintToVector4(unsigned int color) {
+		KamataEngine::Vector4 result;
+		// 各成分をビットシフトで取り出し、0.0f ～ 1.0f の範囲に変換
+		result.x = ((color >> 24) & 0xFF) / 255.0f; // R
+		result.y = ((color >> 16) & 0xFF) / 255.0f; // G
+		result.z = ((color >> 8) & 0xFF) / 255.0f;  // B
+		result.w = (color & 0xFF) / 255.0f;         // A
+		return result;
+	}
+
+	// 演出管理用フラグ
+	bool isEnableZoom_ = true;
+	bool isEnableColorChange_ = true;
+	bool isEnableScale_ = true;
+	bool isEnableParticles_ = true;
+	bool isEnableShake_ = true;
+	bool isEnableGears_ = true;
+	bool isEnableBlending_ = true;
 
 	// 配列データ
 	Piece pieces_[kPieceNum];

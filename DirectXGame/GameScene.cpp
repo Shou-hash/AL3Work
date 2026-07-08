@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string>
 #include <time.h>
+#include <imgui.h>
 
 using namespace KamataEngine;
 
@@ -78,11 +79,37 @@ void GameScene::Initialize() {
 	std::srand((unsigned int)std::time(nullptr));
 	camera_.Initialize();
 
-	//追加: ズーム変数の初期化
+	// 演出フラグの初期化
+	isEnableZoom_ = true;
+	isEnableColorChange_ = true;
+	isEnableScale_ = true;
+	isEnableParticles_ = true;
+	isEnableShake_ = true;
+	isEnableGears_ = true;
+	isEnableBlending_ = true;
+
+	// ズーム変数の初期化
 	globalScale_ = 1.0f;
 	zoomTimer_ = 0.0f;
 	isZooming_ = false;
 	zoomTargetPos_ = {640.0f, 360.0f}; // デフォルトは画面中心
+
+	// 通常の色
+	lightBaseColor[0] = 0xFFEFEFFF;
+	lightBaseColor[1] = 0xFFDD88BB;
+	lightBaseColor[2] = 0xFFDD8888;
+	lightBaseColor[3] = 0xFFEEEECC;
+	lightBaseColor[4] = 0xFAE4E4FF;
+
+	// 目標の色
+	lightTargetBlue[0] = 0x9999EEFF;
+	lightTargetBlue[1] = 0x5555FFFF;
+	lightTargetBlue[2] = 0xC8C8D2FF;
+	lightTargetBlue[3] = 0xEEEEEEDD;
+	lightTargetBlue[4] = 0xDDDDFBFF;
+	lightTargetBlue[5] = 0xCCCCFBFF;
+
+	colorLerpTimer = 0.0f;
 
 	for (int i = 0; i < 3; i++) {
 		texBg_[i] = TextureManager::Load("./Resource/Clock/Bg/bg" + std::to_string(i + 1) + ".png");
@@ -143,6 +170,42 @@ void GameScene::Initialize() {
 		}
 	}
 
+	texSunLight_ = TextureManager::Load("./Resource/Clock/Light/sun.png");
+	if (texSunLight_) {
+		sprSunLight_ = Sprite::Create(texSunLight_, {0, 0}); // 正しいテクスチャハンドルを指定
+		sprSunLight_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
+	texSunLine_ = TextureManager::Load("./Resource/Clock/Light/sunLine.png");
+	if (texSunLine_) {
+		sprSunLine_ = Sprite::Create(texSunLine_, {0, 0});
+		sprSunLine_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
+	texMonthLight_ = TextureManager::Load("./Resource/Clock/Light/month.png");
+	if (texMonthLight_) {
+		sprMonthLight_ = Sprite::Create(texMonthLight_, {0, 0});
+		sprMonthLight_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
+	texMonthLine_ = TextureManager::Load("./Resource/Clock/Light/monthLine.png");
+	if (texMonthLine_) {
+		sprMonthLine_ = Sprite::Create(texMonthLine_, {0, 0});
+		sprMonthLine_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
+	texBgLight1_ = TextureManager::Load("./Resource/Clock/Light/particle.png");
+	if (texBgLight1_) {
+		sprBgLight1_ = Sprite::Create(texBgLight1_, {0, 0});
+		sprBgLight1_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
+	texBgLight2_ = TextureManager::Load("./Resource/Clock/Light/light.png");
+	if (texBgLight2_) {
+		sprBgLight2_ = Sprite::Create(texBgLight2_, {0, 0});
+		sprBgLight2_->SetAnchorPoint({0.5f, 0.5f});
+	}
+
 	for (int i = 0; i < kGearNum; i++) {
 		gears_[i].position = kGearInitDatas[i].position;
 		gears_[i].radius = kGearInitDatas[i].radius;
@@ -192,101 +255,145 @@ void GameScene::Initialize() {
 void GameScene::Update() {
 	Input* input = Input::GetInstance();
 
-	#pragma region ズーム更新処理
+#pragma region ズーム更新処理
 
-	// ズームの更新処理
-	KamataEngine::Vector2 mousePos = input->GetMousePosition();
+	if (isEnableZoom_) {
+		// ズームの更新処理
+		KamataEngine::Vector2 mousePos = input->GetMousePosition();
 
-	if (input->IsPressMouse(1)) { // 右クリック中
-		if (!isZooming_) {
-			isZooming_ = true;
+		if (input->IsPressMouse(1)) { // 右クリック中
+			if (!isZooming_) {
+				isZooming_ = true;
+			}
+			// 右クリックを押しながら移動したときも、常に最新のマウス位置をズームターゲットにする
+			zoomTargetPos_ = mousePos;
+
+			zoomTimer_ += kZoomSpeed_;
+		} else { // 右クリックを離した
+			isZooming_ = false;
+			zoomTimer_ -= kZoomSpeed_;
 		}
-		// 右クリックを押しながら移動したときも、常に最新のマウス位置をズームターゲットにする
-		zoomTargetPos_ = mousePos;
 
-		zoomTimer_ += kZoomSpeed_;
-	} else { // 右クリックを離した
-		isZooming_ = false;
-		zoomTimer_ -= kZoomSpeed_;
-	}
+		// タイマーを 0.0 ～ 1.0 に制限
+		if (zoomTimer_ > 1.0f) {
+			zoomTimer_ = 1.0f;
+		}
+		if (zoomTimer_ < 0.0f) {
+			zoomTimer_ = 0.0f;
+		}
 
-	// タイマーを 0.0 ～ 1.0 に制限
-	if (zoomTimer_ > 1.0f) {
-		zoomTimer_ = 1.0f;
-	}
-	if (zoomTimer_ < 0.0f) {
+		// イージングを適用して拡大率を計算 (1.0f から kMaxZoom_ まで変化)
+		globalScale_ = 1.0f + (kMaxZoom_ - 1.0f) * EaseOutQuart(zoomTimer_);
+	} else {
+		// 無効時は強制的にズームなし(1倍)に戻す
+		globalScale_ = 1.0f;
 		zoomTimer_ = 0.0f;
+		isZooming_ = false;
 	}
-
-	// イージングを適用して拡大率を計算 (1.0f から kMaxZoom_ まで変化)
-	globalScale_ = 1.0f + (kMaxZoom_ - 1.0f) * EaseOutQuart(zoomTimer_);
 
 #pragma endregion
+
+	// 現在の5つの色を配列にまとめる (Drawで行っているLerp計算を発生時にも利用、またはDraw内で保持)
+	unsigned int currentColors[5] = {
+	    LerpColor(lightBaseColor[0], lightTargetBlue[0], colorLerpTimer), // 光1の色
+	    LerpColor(lightBaseColor[1], lightTargetBlue[1], colorLerpTimer), // 光2の色
+	    LerpColor(lightBaseColor[2], lightTargetBlue[2], colorLerpTimer), // 光3の色
+	    LerpColor(lightBaseColor[3], lightTargetBlue[3], colorLerpTimer), // 針・太陽・月の色
+	    LerpColor(lightBaseColor[4], lightTargetBlue[4], colorLerpTimer)  // 歯車の色
+	};
+
+	// 色変え処理
+	if (isEnableColorChange_) {
+		if (hourCos_ < 0) { // 左半分
+			colorLerpTimer += kColorChangeSpeed;
+		} else { // 右半分
+			colorLerpTimer -= kColorChangeSpeed;
+		}
+
+		// 範囲制限
+		if (colorLerpTimer > 1.0f) {
+			colorLerpTimer = 1.0f;
+		}
+		if (colorLerpTimer < 0.0f) {
+			colorLerpTimer = 0.0f;
+		}
+	} else {
+		colorLerpTimer = 0.0f; // 無効時はデフォルトカラー
+	}
 
 	hourCos_ = cosf(hourAngle_);
 	spaceAnimTimer_++;
 
-	#pragma region 拡大縮小更新処理
+#pragma region 拡大縮小更新処理
+	if (isEnableScale_) {
 
-	// スペースキーの状態
-	if (input->PushKey(DIK_SPACE)) {
-		isExpanding_ = true;
+		// スペースキーの状態
+		if (input->PushKey(DIK_SPACE)) {
+			isExpanding_ = true;
+		} else {
+			isExpanding_ = false;
+		}
+
+		// 盤面2の更新 (先に動く)
+		if (isExpanding_) {
+			scaleTimer2_ += kScaleSpeed_;
+		} else {
+			scaleTimer2_ -= kScaleSpeed_;
+		}
+
+		if (scaleTimer2_ > 1.0f) {
+			scaleTimer2_ = 1.0f;
+		}
+		if (scaleTimer2_ < 0.0f) {
+			scaleTimer2_ = 0.0f;
+		}
+
+		// 盤面1の更新 (盤面2が0.3以上進んだら動き出すディレイ処理)
+		// 拡大時：盤面2がある程度進んだら開始
+		// 縮小時：盤面2がある程度戻ったら開始
+		if (isExpanding_) {
+			if (scaleTimer2_ > 0.3f) { // 0.3秒分のディレイ
+				scaleTimer1_ += kScaleSpeed_;
+			}
+		} else {
+			if (scaleTimer2_ < 0.7f) { // 戻る時も差をつける
+				scaleTimer1_ -= kScaleSpeed_;
+			}
+		}
+
+		if (scaleTimer1_ > 1.0f) {
+			scaleTimer1_ = 1.0f;
+		}
+		if (scaleTimer1_ < 0.0f) {
+			scaleTimer1_ = 0.0f;
+		}
+
+		// 個別にイージングを適用
+		float scaleT1 = EaseInOutQuart(scaleTimer1_);
+		float scaleT2 = EaseInOutQuart(scaleTimer2_);
+
+		// 倍率の計算
+		currentScale1_ = 1.0f + (kMaxScale_ - 1.35f) * scaleT1;
+		currentScale2_ = 1.0f + (kMaxScale_ - 1.35f) * scaleT2;
 	} else {
-		isExpanding_ = false;
-	}
-
-	// 盤面2の更新 (先に動く) 
-	if (isExpanding_) {
-		scaleTimer2_ += kScaleSpeed_;
-	} else {
-		scaleTimer2_ -= kScaleSpeed_;
-	}
-
-	if (scaleTimer2_ > 1.0f) {
-		scaleTimer2_ = 1.0f;
-	}
-	if (scaleTimer2_ < 0.0f) {
+		currentScale1_ = 1.0f;
+		currentScale2_ = 1.0f;
+		scaleTimer1_ = 0.0f;
 		scaleTimer2_ = 0.0f;
 	}
-
-	// 盤面1の更新 (盤面2が0.3以上進んだら動き出すディレイ処理)
-	// 拡大時：盤面2がある程度進んだら開始
-	// 縮小時：盤面2がある程度戻ったら開始
-	if (isExpanding_) {
-		if (scaleTimer2_ > 0.3f) { // 0.3秒分のディレイ
-			scaleTimer1_ += kScaleSpeed_;
-		}
-	} else {
-		if (scaleTimer2_ < 0.7f) { // 戻る時も差をつける
-			scaleTimer1_ -= kScaleSpeed_;
-		}
-	}
-
-	if (scaleTimer1_ > 1.0f) {
-		scaleTimer1_ = 1.0f;
-	}
-	if (scaleTimer1_ < 0.0f) {
-		scaleTimer1_ = 0.0f;
-	}
-
-	// 個別にイージングを適用
-	float scaleT1 = EaseInOutQuart(scaleTimer1_);
-	float scaleT2 = EaseInOutQuart(scaleTimer2_);
-
-	// 倍率の計算
-	currentScale1_ = 1.0f + (kMaxScale_ - 1.35f) * scaleT1;
-	currentScale2_ = 1.0f + (kMaxScale_ - 1.35f) * scaleT2;
-
 #pragma endregion
 
-	#pragma region 時計回転ロジック
+#pragma region 時計回転ロジック
 
+	// 回転中でないときの入力・タイマー受付
 	if (!isRotating_) {
-		bool isSpacePressed = input->TriggerKey(DIK_SPACE);
+		// 長押し（PushKey）でもトリガー（TriggerKey）でも、スペースが押されているかを判定
+		bool isSpacePressed = input->PushKey(DIK_SPACE);
 		bool isAPressed = input->TriggerKey(DIK_A);
 		bool isDPressed = input->TriggerKey(DIK_D);
 		intervalTimer_++;
 
+		// スペース長押し中、またはA/D、または120フレーム経過で回転開始
 		if (intervalTimer_ > 120 || isSpacePressed || isAPressed || isDPressed) {
 			isRotating_ = true;
 			easeTimer_ = 0.0f;
@@ -297,56 +404,57 @@ void GameScene::Update() {
 			float moveAngleMin = 30.0f * kToRad;
 			float moveAngleHour = 2.5f * kToRad;
 
+			// スペースキーが押されている場合は「逆回り（マイナス）」の目標角度を設定
 			if (isSpacePressed) {
 				minTarget_ = minAngle_ - moveAngleMin;
 				hourTarget_ = hourAngle_ - moveAngleHour;
-			}
-			else if (isAPressed) {
+			} else if (isAPressed) {
 				hourTarget_ = hourAngle_ - moveAngleMin;
-			}
-			else if (isDPressed) {
+			} else if (isDPressed) {
 				hourTarget_ = hourAngle_ + moveAngleMin;
-			}
-			else {
+			} else {
 				minTarget_ = minAngle_ + moveAngleMin;
 				hourTarget_ = hourAngle_ + moveAngleHour;
 			}
 
-			shakeTimer_ = 30.0f;
+			if (isEnableShake_) {
+				shakeTimer_ = 30.0f;
+			}
 			intervalTimer_ = 0;
 
 			// 欠片の放出とライフの初期化
-			for (int i = 0; i < kPieceNum; i++) {
-				if (!pieces_[i].isDisplay) {
-					pieces_[i].isDisplay = true;
-					pieces_[i].life = Random(60.0f, 150.0f); // 寿命を設定
-					pieces_[i].maxLife = pieces_[i].life;
+			if (isEnableParticles_) {
+				for (int i = 0; i < kPieceNum; i++) {
+					if (!pieces_[i].isDisplay) {
+						pieces_[i].isDisplay = true;
+						pieces_[i].life = Random(60.0f, 150.0f); // 寿命を設定
+						pieces_[i].maxLife = pieces_[i].life;
 
-					// 三等分して出現位置と飛ぶ方向を分ける
-					if (i < kPieceNum / 3) {
-						// ① 左端側（全体の1/3）: Xは0、Yは0〜720
-						pieces_[i].position = {0.0f, Random(0.0f, 720.0f)};
-						// 右（画面内）へ向かって飛ぶように速度調整
-						pieces_[i].velocity = {Random(2.0f, 6.0f), Random(-6.0f, -1.0f)};
-					} else if (i < (kPieceNum / 3) * 2) {
-						// ② 右端側（全体の1/3）: Xは1280、Yは0〜720
-						pieces_[i].position = {1280.0f, Random(0.0f, 720.0f)};
-						// 左（画面内）へ向かって飛ぶように速度調整
-						pieces_[i].velocity = {Random(-6.0f, -2.0f), Random(-6.0f, -1.0f)};
-					} else {
-						// ③ 上側（全体の1/3）: Xは0〜1280、Yは0
-						pieces_[i].position = {Random(0.0f, 1280.0f), 0.0f};
-						// 下へ向かって落ちるように速度調整（重力と合わせて加速します）
-						pieces_[i].velocity = {Random(-3.0f, 3.0f), Random(0.0f, 3.0f)};
+						// 5つの色の中からランダムに1つを割り当てる
+						int randomColorIdx = std::rand() % 5;
+						pieces_[i].color = currentColors[randomColorIdx];
+
+						// 三等分して出現位置と飛ぶ方向を分ける
+						if (i < kPieceNum / 3) {
+							pieces_[i].position = {0.0f, Random(0.0f, 720.0f)};
+							pieces_[i].velocity = {Random(2.0f, 6.0f), Random(-6.0f, -1.0f)};
+						} else if (i < (kPieceNum / 3) * 2) {
+							pieces_[i].position = {1280.0f, Random(0.0f, 720.0f)};
+							pieces_[i].velocity = {Random(-6.0f, -2.0f), Random(-6.0f, -1.0f)};
+						} else {
+							pieces_[i].position = {Random(0.0f, 1280.0f), 0.0f};
+							pieces_[i].velocity = {Random(-3.0f, 3.0f), Random(0.0f, 3.0f)};
+						}
+						pieces_[i].angularVelocity = Random(-0.1f, 0.1f);
 					}
-					pieces_[i].angularVelocity = Random(-0.1f, 0.1f);
 				}
 			}
 		}
 	} else {
+		// イージングアニメーション進行（元の処理のまま）
 		easeTimer_ += 1.0f / 30.0f;
 		if (easeTimer_ >= 1.0f) {
-			isRotating_ = false;
+			isRotating_ = false; // ★アニメーションが終わるとここが false になり、スペース長押し中なら次フレームで即座に次の逆回転が始まります
 			minAngle_ = minTarget_;
 			hourAngle_ = hourTarget_;
 		} else {
@@ -356,10 +464,10 @@ void GameScene::Update() {
 		}
 	}
 
-	#pragma endregion
+#pragma endregion
 
 	// 時計パルス演出（拡大縮小）
-	if (input->TriggerKey(DIK_SPACE)) {
+	if (isEnableScale_ && input->TriggerKey(DIK_SPACE)) {
 		const float kScaleSpeed = 1.0f / 20.0f;
 		if (isExpanding_) {
 			scaleTimer_ += kScaleSpeed;
@@ -372,76 +480,120 @@ void GameScene::Update() {
 		}
 	} else {
 		scaleTimer_ = 0.0f;
-		isExpanding_ = false;
 	}
+
 	currentScale_ = 1.0f + (1.2f - 1.0f) * EaseInOutQuart(scaleTimer_);
 
 	// 光(星)の放出
-	for (int i = 0; i < kSparkleNum; i++) {
-		if (!sparkles_[i].isDisplay) {
-			sparkles_[i].isDisplay = true;
-			sparkles_[i].position.x = Random(0.0f, 1920.0f);
-			sparkles_[i].position.y = Random(0.0f, 1080.0f);
-			float angle = Random(0.0f, float(M_PI) * 2.0f);
-			float speed = Random(1.0f, 4.0f);
-			sparkles_[i].velocity.x = cosf(angle) * speed;
-			sparkles_[i].velocity.y = sinf(angle) * speed;
-			sparkles_[i].alpha = 1.0f;
-			sparkles_[i].lifeSpeed = Random(0.01f, 0.03f);
+	if (isEnableParticles_) {
+		for (int i = 0; i < kSparkleNum; i++) {
+			if (!sparkles_[i].isDisplay) {
+				sparkles_[i].isDisplay = true;
+				sparkles_[i].position.x = Random(0.0f, 1920.0f);
+				sparkles_[i].position.y = Random(0.0f, 1080.0f);
+				float angle = Random(0.0f, float(M_PI) * 2.0f);
+				float speed = Random(1.0f, 4.0f);
+				sparkles_[i].velocity.x = cosf(angle) * speed;
+				sparkles_[i].velocity.y = sinf(angle) * speed;
+				sparkles_[i].alpha = 1.0f;
+				sparkles_[i].lifeSpeed = Random(0.01f, 0.03f);
+
+				// 5つの色の中からランダムに1つを割り当てる
+				int randomColorIdx = std::rand() % 5;
+				sparkles_[i].color = currentColors[randomColorIdx];
+			}
+		}
+
+		for (int i = 0; i < kSparkleNum; i++) {
+			if (sparkles_[i].isDisplay) {
+				sparkles_[i].position.x += sparkles_[i].velocity.x;
+				sparkles_[i].position.y += sparkles_[i].velocity.y;
+				sparkles_[i].alpha -= sparkles_[i].lifeSpeed;
+				if (sparkles_[i].alpha <= 0.0f)
+					sparkles_[i].isDisplay = false;
+			}
+		}
+	} else {
+		// オフの時は既存のパーティクルも非表示にする
+		for (int i = 0; i < kSparkleNum; i++) {
+			sparkles_[i].isDisplay = false;
 		}
 	}
 
-	for (int i = 0; i < kSparkleNum; i++) {
-		if (sparkles_[i].isDisplay) {
-			sparkles_[i].position.x += sparkles_[i].velocity.x;
-			sparkles_[i].position.y += sparkles_[i].velocity.y;
-			sparkles_[i].alpha -= sparkles_[i].lifeSpeed;
-			if (sparkles_[i].alpha <= 0.0f)
-				sparkles_[i].isDisplay = false;
-		}
-	}
-
-	if (shakeTimer_ > 0) {
+	// シェイク更新
+	if (isEnableShake_ && shakeTimer_ > 0) {
 		shakeTimer_ -= 1.0f;
 		shakeOffset_ = {Random(-5, 5), Random(-5, 5)};
 	} else {
+		shakeTimer_ = 0.0f;
 		shakeOffset_ = {0, 0};
 	}
 
 	// ギヤのアニメーションと回転更新
-	for (int i = 0; i < kGearNum; i++) {
-		if (!gears_[i].isStadyRotation) {
-			gears_[i].startupTimer += 0.02f;
-			if (gears_[i].startupTimer >= 1.0f) {
-				gears_[i].startupTimer = 1.0f;
-				gears_[i].isStadyRotation = true;
-			}
-			// イージングをかけて回転速度を徐々に上げる
-			float easeT = EaseOutBounce(gears_[i].startupTimer);
-			gears_[i].angle += gears_[i].rotateSpeed * easeT;
+	if (isEnableGears_) {
+		for (int i = 0; i < kGearNum; i++) {
+			if (!gears_[i].isStadyRotation) {
+				gears_[i].startupTimer += 0.02f;
+				if (gears_[i].startupTimer >= 1.0f) {
+					gears_[i].startupTimer = 1.0f;
+					gears_[i].isStadyRotation = true;
+				}
+				// イージングをかけて回転速度を徐々に上げる
+				float easeT = EaseOutBounce(gears_[i].startupTimer);
+				gears_[i].angle += gears_[i].rotateSpeed * easeT;
 
-			// 起動時の微小な揺れ
-			gears_[i].position.x = kGearInitDatas[i].position.x + sinf(gears_[i].startupTimer * gears_[i].shakeSpeed) * gears_[i].shakeAmount * 100.0f;
-		} else {
-			gears_[i].angle += gears_[i].rotateSpeed;
-			gears_[i].position.x = kGearInitDatas[i].position.x; // 位置リセット
+				// 起動時の微小な揺れ
+				gears_[i].position.x = kGearInitDatas[i].position.x + sinf(gears_[i].startupTimer * gears_[i].shakeSpeed) * gears_[i].shakeAmount * 100.0f;
+			} else {
+				gears_[i].angle += gears_[i].rotateSpeed;
+				gears_[i].position.x = kGearInitDatas[i].position.x; // 位置リセット
+			}
 		}
 	}
 
 	// 欠片の物理更新と寿命管理
-	for (int i = 0; i < kPieceNum; i++) {
-		if (pieces_[i].isDisplay) {
-			pieces_[i].position.x += pieces_[i].velocity.x;
-			pieces_[i].position.y += pieces_[i].velocity.y;
-			pieces_[i].velocity.y += 0.4f; // 重力
-			pieces_[i].angle += pieces_[i].angularVelocity;
-			pieces_[i].life -= 1.0f;
+	if (isEnableParticles_) {
+		for (int i = 0; i < kPieceNum; i++) {
+			if (pieces_[i].isDisplay) {
+				pieces_[i].position.x += pieces_[i].velocity.x;
+				pieces_[i].position.y += pieces_[i].velocity.y;
+				pieces_[i].velocity.y += 0.4f; // 重力
+				pieces_[i].angle += pieces_[i].angularVelocity;
+				pieces_[i].life -= 1.0f;
 
-			if (pieces_[i].position.y > 1080.0f || pieces_[i].life <= 0.0f) {
-				pieces_[i].isDisplay = false;
+				if (pieces_[i].position.y > 1080.0f || pieces_[i].life <= 0.0f) {
+					pieces_[i].isDisplay = false;
+				}
 			}
 		}
+	} else {
+		for (int i = 0; i < kPieceNum; i++) {
+			pieces_[i].isDisplay = false;
+		}
 	}
+}
+
+void GameScene::ImGuiDraw() {
+ 
+	ImGui::Begin("Debug Window");
+	
+	ImGui::Checkbox("Zoom", &isEnableZoom_);
+ 
+	ImGui::Checkbox("Color Change", &isEnableColorChange_);
+ 
+	ImGui::Checkbox("Board Scale", &isEnableScale_);
+ 
+	ImGui::Checkbox("Particles (Piece/Sparkle)", &isEnableParticles_);
+ 
+	ImGui::Checkbox("Screen Shake", &isEnableShake_);
+ 
+	ImGui::Checkbox("Gear Rotation/Anim", &isEnableGears_);
+ 
+	ImGui::Checkbox("Blending", &isEnableBlending_);
+	
+	ImGui::Checkbox("Space Key Expand", &isExpanding_);
+ 
+	ImGui::End();
 }
 
 void GameScene::Draw() {
@@ -449,40 +601,113 @@ void GameScene::Draw() {
 
 	Vector2 drawPos = {clockPos_.x + shakeOffset_.x, clockPos_.y + shakeOffset_.y};
 	// ズーム変換
-	Vector2 zoomedClockPos = GetZoomPos(drawPos);
+	Vector2 zoomedPos = GetZoomPos(drawPos);
 
-	if (sprBg_[0])
+	unsigned int lightColor1 = LerpColor(lightBaseColor[0], lightTargetBlue[0], colorLerpTimer);
+	unsigned int lightColor2 = LerpColor(lightBaseColor[1], lightTargetBlue[1], colorLerpTimer);
+	unsigned int lightColor3 = LerpColor(lightBaseColor[2], lightTargetBlue[2], colorLerpTimer);
+	unsigned int lightColor4 = LerpColor(lightBaseColor[3], lightTargetBlue[3], colorLerpTimer);
+
+	// unsigned int colorHands = LerpColor(lightBaseColor[3], lightTargetBlue[3], colorLerpTimer);
+	unsigned int colorGears = LerpColor(lightBaseColor[4], lightTargetBlue[4], colorLerpTimer);
+
+	if (sprBg_[0]) {
 		sprBg_[0]->Draw();
+	}
+
+	if (sprBgLight1_ && isEnableBlending_) {
+		sprMonthLine_->PreDraw(nullptr, Sprite::BlendMode::kAdd); // ★ 加算ブレンディング
+		sprBgLight1_->SetPosition(GetZoomPos(drawPos));           // 画面中心など、元コードの基準座標に合わせる
+
+		float sizeX = sprBgLight1_->GetTextureSize().x * globalScale_;
+		float sizeY = sprBgLight1_->GetTextureSize().y * globalScale_;
+		sprBgLight1_->SetSize({sizeX, sizeY});
+		sprBgLight1_->SetColor(UintToVector4(lightColor2));
+		sprBgLight1_->Draw();
+		sprMonthLine_->PreDraw(nullptr, Sprite::BlendMode::kNormal);
+	}
+
+	// 2. bgLightGr2_ の描画 (加算ブレンド)
+	if (sprBgLight2_ && isEnableBlending_) {
+		sprMonthLine_->PreDraw(nullptr, Sprite::BlendMode::kAdd); // ★ 加算ブレンディング
+		sprBgLight2_->SetPosition(GetZoomPos({drawPos}));
+
+		float sizeX = sprBgLight2_->GetTextureSize().x * globalScale_;
+		float sizeY = sprBgLight2_->GetTextureSize().y * globalScale_;
+		sprBgLight2_->SetSize({sizeX, sizeY});
+		sprBgLight2_->SetColor(UintToVector4(lightColor3));
+		sprBgLight2_->Draw();
+		sprBgLight2_->PreDraw(nullptr, Sprite::BlendMode::kNormal);
+	}
 
 	// 昼夜の表現をhourCos_を元に描画（ズーム対応版）
 	if (hourCos_ >= 0) {
+		// 3. sunLightGr_ の描画 (加算ブレンド)
+		if (sprSunLight_ && isEnableBlending_) {
+
+			sprSunLight_->PreDraw(nullptr, Sprite::BlendMode::kAdd); // ★ 加算ブレンディング
+			sprSunLight_->SetPosition(GetZoomPos(drawPos));
+
+			float sizeX = sprSunLight_->GetTextureSize().x * currentScale2_ * globalScale_;
+			float sizeY = sprSunLight_->GetTextureSize().y * currentScale2_ * globalScale_;
+
+			sprSunLight_->SetSize({sizeX, sizeY});
+			sprSunLight_->SetColor(UintToVector4(lightColor4));
+			sprSunLight_->Draw();
+			sprSunLight_->PreDraw(nullptr, Sprite::BlendMode::kNormal);
+		}
+
+		// 4. sunLineGr_ の描画 (加算ブレンド)
+		if (sprSunLine_) {
+			sprSunLine_->SetPosition(GetZoomPos(drawPos));
+			float sizeX = sprSunLine_->GetTextureSize().x * currentScale2_ * globalScale_;
+			float sizeY = sprSunLine_->GetTextureSize().y * currentScale2_ * globalScale_;
+			sprSunLine_->SetSize({sizeX, sizeY});
+			sprSunLine_->SetColor(UintToVector4(lightColor1));
+			sprSunLine_->Draw();
+		}
+
 		if (sprSun_) {
-			// 1. 本来の表示座標を計算
 			Vector2 originalSunPos = {640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y};
-
-			// 2. ズーム適用後の座標に変換
-			sprSun_->SetPosition(GetZoomPos(originalSunPos));
-
-			// 3. 元のサイズ × スケール × 画面全体のズーム倍率(globalScale_)
-			float sizeX = sprSun_->GetTextureSize().x * currentScale_ * globalScale_;
-			float sizeY = sprSun_->GetTextureSize().y * currentScale_ * globalScale_;
+			sprSun_->SetPosition(GetZoomPos(drawPos));
+			float sizeX = sprSun_->GetTextureSize().x * currentScale2_ * globalScale_;
+			float sizeY = sprSun_->GetTextureSize().y * currentScale2_ * globalScale_;
 			sprSun_->SetSize({sizeX, sizeY});
-
+			sprSun_->SetColor(UintToVector4(lightColor1)); // 針等と同じライト用の色を適用
 			sprSun_->Draw();
 		}
+
 	} else {
+		// 5. monthLightGr_ の描画 (加算ブレンド)
+		if (sprMonthLight_ && isEnableBlending_) {
+			sprMonthLight_->PreDraw(nullptr, Sprite::BlendMode::kAdd); // ★ 加算ブレンディング
+			sprMonthLight_->SetPosition(GetZoomPos(drawPos));
+
+			float sizeX = sprMonthLight_->GetTextureSize().x * currentScale1_ * globalScale_;
+			float sizeY = sprMonthLight_->GetTextureSize().y * currentScale1_ * globalScale_;
+
+			sprMonthLight_->SetSize({sizeX, sizeY});
+			sprMonthLight_->SetColor(UintToVector4(lightColor4));
+			sprMonthLight_->Draw();
+			sprMonthLight_->PreDraw(nullptr, Sprite::BlendMode::kNormal);
+		}
+
+		// 6. monthLineGr_ の描画 (加算ブレンド)
+		if (sprMonthLine_) {
+			sprMonthLine_->SetPosition(GetZoomPos(drawPos));
+			float sizeX = sprMonthLine_->GetTextureSize().x * currentScale1_ * globalScale_;
+			float sizeY = sprMonthLine_->GetTextureSize().y * currentScale1_ * globalScale_;
+			sprMonthLine_->SetSize({sizeX, sizeY});
+			sprMonthLine_->SetColor(UintToVector4(lightColor1));
+			sprMonthLine_->Draw();
+		}
+
 		if (sprMoon_) {
-			// 1. 本来の表示座標を計算
-			Vector2 originalMoonPos = {640.0f + shakeOffset_.x, 360.0f + shakeOffset_.y};
-
-			// 2. ズーム適用後の座標に変換
-			sprMoon_->SetPosition(GetZoomPos(originalMoonPos));
-
-			// 3. 元のサイズ × スケール × 画面全体のズーム倍率(globalScale_)
-			float sizeX = sprMoon_->GetTextureSize().x * currentScale_ * globalScale_;
-			float sizeY = sprMoon_->GetTextureSize().y * currentScale_ * globalScale_;
+			sprMoon_->SetPosition(GetZoomPos(drawPos));
+			float sizeX = sprMoon_->GetTextureSize().x * currentScale1_ * globalScale_;
+			float sizeY = sprMoon_->GetTextureSize().y * currentScale1_ * globalScale_;
 			sprMoon_->SetSize({sizeX, sizeY});
-
+			sprMoon_->SetColor(UintToVector4(lightColor1)); // 針等と同じライト用の色を適用
 			sprMoon_->Draw();
 		}
 	}
@@ -527,31 +752,24 @@ void GameScene::Draw() {
 	}
 
 	// ギヤ
-	for (int i = 0; i < kGearNum; i++) {
-		if (gears_[i].textureIndex >= 0 && sprGear_[gears_[i].textureIndex]) {
-			Sprite* s = sprGear_[gears_[i].textureIndex];
+	if (isEnableGears_) {
+		for (int i = 0; i < kGearNum; i++) {
+			if (gears_[i].textureIndex >= 0 && sprGear_[gears_[i].textureIndex]) {
+				Sprite* s = sprGear_[gears_[i].textureIndex];
 
-			// 1. 本来のギヤの位置を計算
-			Vector2 originalGearPos = {gears_[i].position.x + shakeOffset_.x, gears_[i].position.y + shakeOffset_.y};
-
-			// 2. ズーム適用後の座標に変換
-			Vector2 zoomedGearPos = GetZoomPos(originalGearPos);
-			s->SetPosition(zoomedGearPos);
-
-			s->SetRotation(gears_[i].angle);
-
-			// 3. スケール(サイズ)に globalScale_ を乗算
-			float finalSizeX = gears_[i].size * globalScale_;
-			float finalSizeY = gears_[i].size * globalScale_;
-			s->SetSize({finalSizeX, finalSizeY});
-
-			s->Draw();
+				Vector2 originalGearPos = {gears_[i].position.x + shakeOffset_.x, gears_[i].position.y + shakeOffset_.y};
+				s->SetPosition(GetZoomPos(originalGearPos));
+				s->SetRotation(gears_[i].angle);
+				s->SetSize({gears_[i].size * globalScale_, gears_[i].size * globalScale_});
+				s->SetColor(UintToVector4(colorGears)); // 色変え対応 (lightBaseColor[4] -> lightTargetBlue[4])
+				s->Draw();
+			}
 		}
 	}
 
 	// 針の描画
 	if (sprHandHour_) {
-		sprHandHour_->SetPosition(zoomedClockPos); // ズーム後の座標
+		sprHandHour_->SetPosition(zoomedPos); // ズーム後の座標
 		sprHandHour_->SetRotation(hourAngle_);
 
 		// 元のサイズに対して currentScale_ と globalScale_ の両方を掛ける
@@ -563,7 +781,7 @@ void GameScene::Draw() {
 	}
 
 	if (sprHandMin_) {
-		sprHandMin_->SetPosition(zoomedClockPos); // ズーム後の座標
+		sprHandMin_->SetPosition(zoomedPos); // ズーム後の座標
 		sprHandMin_->SetRotation(minAngle_);
 
 		float sizeX = sprHandMin_->GetTextureSize().x * currentScale_ * globalScale_;
@@ -588,28 +806,31 @@ void GameScene::Draw() {
 	}
 
 	// 欠片の描画
-	for (int i = 0; i < kPieceNum; i++) {
-		if (pieces_[i].isDisplay && pieces_[i].sprite) {
-			Sprite* s = pieces_[i].sprite;
+	if (isEnableParticles_) {
+		for (int i = 0; i < kPieceNum; i++) {
+			if (pieces_[i].isDisplay && pieces_[i].sprite) {
+				Sprite* s = pieces_[i].sprite;
 
-			// 座標をズーム対応に
-			s->SetPosition(GetZoomPos(pieces_[i].position));
-			s->SetRotation(pieces_[i].angle);
+				s->SetPosition(GetZoomPos(pieces_[i].position));
+				s->SetRotation(pieces_[i].angle);
+				s->SetSize({pieces_[i].width * globalScale_, pieces_[i].height * globalScale_});
+				s->SetColor(UintToVector4(pieces_[i].color));
 
-			// サイズをズーム対応に
-			s->SetSize({pieces_[i].width * globalScale_, pieces_[i].height * globalScale_});
-
-			s->Draw();
+				s->Draw();
+			}
 		}
 	}
 
 	// 光の描画
-	for (int i = 0; i < kSparkleNum; i++) {
-		if (sparkles_[i].isDisplay && sparkles_[i].sprite) {
-			Sprite* s = sparkles_[i].sprite;
-			s->SetPosition(GetZoomPos(sparkles_[i].position));
-			s->SetSize({32.0f * sparkles_[i].alpha, 32.0f * sparkles_[i].alpha});
-			s->Draw();
+	if (isEnableParticles_) {
+		for (int i = 0; i < kSparkleNum; i++) {
+			if (sparkles_[i].isDisplay && sparkles_[i].sprite) {
+				Sprite* s = sparkles_[i].sprite;
+				s->SetPosition(GetZoomPos(sparkles_[i].position));
+				s->SetSize({32.0f * sparkles_[i].alpha, 32.0f * sparkles_[i].alpha});
+				s->SetColor(UintToVector4(sparkles_[i].color));
+				s->Draw();
+			}
 		}
 	}
 
