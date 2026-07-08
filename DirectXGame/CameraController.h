@@ -57,7 +57,7 @@ private:
 	Rect movableArea_ = {5, 100, 0, 100};
 	static inline const Rect margin_ = {-2.0f, 2.0f, -1.0f, 2.0f};
 
-	// --- 追加パラメータ ---
+	// 追加パラメータ
 	CameraMode mode_ = CameraMode::kFollow;             // 現在のカメラモード
 	static inline const float kScrollSpeed = 0.03f;     // 強制スクロールの速度
 	static inline const float kHalfScreenWidth = 10.0f; // 画面の中心から端までのワールド座標上の幅（調整可能）
