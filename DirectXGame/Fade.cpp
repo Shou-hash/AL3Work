@@ -3,15 +3,15 @@
 using namespace KamataEngine;
 
 void Fade::Initialize() {
-	// 白または黒の1x1ピクセルなどのテクスチャを読み込み、画面全体を覆うスプライトを作成する
-	// プロジェクト環境に合わせたテクスチャハンドルを指定
-	uint32_t textureHandle = TextureManager::Load("white1x1.png");
-
-	// スプライトの生成と初期位置・サイズの設定（画面全体 1280x720 を覆う）
+	// エンジン内蔵のデフォルトホワイトテクスチャ(0)を使用して生成
+	uint32_t textureHandle = 0;
 	sprite_ = Sprite::Create(textureHandle, {0.0f, 0.0f});
+
 	if (sprite_) {
-		sprite_->SetSize(Vector2{1280, 720});
-		sprite_->SetColor(Vector4{0, 0, 0, 1});
+		// 画面全体（1280x720）を覆うサイズに設定
+		sprite_->SetSize(Vector2(1280.0f, 720.0f));
+		// 初期状態は黒・完全透明にしておく
+		sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, 0.0f));
 	}
 
 	status_ = Status::None;
@@ -20,74 +20,69 @@ void Fade::Initialize() {
 }
 
 void Fade::Update() {
+	// フェード中でなければ何もしない
+	if (status_ == Status::None) {
+		return;
+	}
 
-	switch (status_) {
-	case Fade::Status::None:
-		break;
+	// 1フレーム分の時間を進める（1秒を60フレームとして計算）
+	counter_ += 1.0f / 60.0f;
 
-	case Fade::Status::FadeIn:
-		// 1フレーム分の時間を進める (60FPS想定)
-		counter_ += 1.0f / 60.0f;
+	// 目標時間に達したらフェード終了
+	if (counter_ >= duration_) {
+		counter_ = duration_;
 
-		// 終了判定
-		if (counter_ >= duration_) {
-			counter_ = duration_;
-			status_ = Status::None; // フェードイン完了
-		}
-
-		// アルファ値の計算 (1.0 から 0.0 へ減少：画面が徐々に明るくなる)
+		// 終了時の最終色を確定させて状態をNoneに戻す
 		if (sprite_) {
-			float rate = counter_ / duration_;
+			if (status_ == Fade::Status::FadeIn) {
+				sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, 0.0f)); // 完全に透明
+			} else if (status_ == Fade::Status::FadeOut) {
+				sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, 1.0f)); // 完全に真っ黒
+			}
+		}
+		status_ = Status::None;
+		return;
+	}
+
+	// 現在の進行度割合（0.0f ～ 1.0f）を計算
+	float rate = counter_ / duration_;
+
+	if (sprite_) {
+		if (status_ == Fade::Status::FadeIn) {
+			// フェードイン：1.0（真っ黒）から 0.0（透明）へ
 			float alpha = 1.0f - rate;
-			sprite_->SetColor({0.0f, 0.0f, 0.0f, alpha});
-		}
-		break;
-
-	case Fade::Status::FadeOut:
-		// 1フレーム分の時間を進める (60FPS想定)
-		counter_ += 1.0f / 60.0f;
-
-		// 終了判定
-		if (counter_ >= duration_) {
-			counter_ = duration_;
-			status_ = Status::None; // フェードアウト完了
-		}
-
-		// アルファ値の計算 (0.0 から 1.0 へ増加：画面が徐々に暗くなる)
-		if (sprite_) {
-			float rate = counter_ / duration_;
+			sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, alpha));
+		} else if (status_ == Fade::Status::FadeOut) {
+			// フェードアウト：0.0（透明）から 1.0（真っ黒）へ
 			float alpha = rate;
-			sprite_->SetColor({0.0f, 0.0f, 0.0f, alpha});
+			sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, alpha));
 		}
-		break;
-
-	default:
-		break;
 	}
 }
 
 void Fade::Draw() {
-	// フェード状態がNoneではないとき、または画面が暗転しているとき（アルファ値が0より大きいとき）に描画
-	if (status_ != Status::None || (sprite_ && sprite_->GetColor().w > 0.0f)) {
-		if (sprite_) {
-			sprite_->Draw();
-		}
+	if (sprite_) {
+		// KamataEngine必須の前後処理を挟む
+		Sprite::PreDraw();
+
+		sprite_->Draw();
+
+		Sprite::PostDraw();
 	}
 }
 
 void Fade::Start(Status status, float duration) {
 	status_ = status;
-	duration_ = duration;
-	counter_ = 0.0f; // タイマーをリセット
+	// 0除算を防ぐため最低値を保証
+	duration_ = (duration <= 0.0f) ? 0.01f : duration;
+	counter_ = 0.0f;
 
-	// 開始時の初期アルファ値を設定
+	// 開始時のアルファ値を設定
 	if (sprite_) {
-		float initialAlpha = (status_ == Status::FadeIn) ? 1.0f : 0.0f;
-		sprite_->SetColor({0.0f, 0.0f, 0.0f, initialAlpha});
+		if (status_ == Status::FadeIn) {
+			sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, 1.0f)); // 真っ黒からスタート
+		} else if (status_ == Status::FadeOut) {
+			sprite_->SetColor(Vector4(0.0f, 0.0f, 0.0f, 0.0f)); // 透明からスタート
+		}
 	}
-}
-
-bool Fade::IsFinished() const {
-	// ステータスが None に戻っていればフェード処理が完了しているとみなす
-	return status_ == Status::None;
 }

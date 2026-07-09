@@ -1,37 +1,55 @@
 #pragma once
 #include <KamataEngine.h>
 
+/// <summary>
+/// フェード
+/// </summary>
 class Fade {
 public:
 	// フェードの状態
 	enum class Status {
-		None,    // 非表示状態
-		FadeIn,  // フェードイン中（徐々に明るくなる・アルファ値が減る）
-		FadeOut, // フェードアウト中（徐々に暗くなる・アルファ値が増える）
+		None,    // 非表示・通常状態
+		FadeIn,  // フェードイン中（暗 -> 明：アルファ値減少）
+		FadeOut, // フェードアウト中（明 -> 暗：アルファ値増加）
 	};
 
+	/// <summary>
+	/// 初期化
+	/// </summary>
 	void Initialize();
+
+	/// <summary>
+	/// 更新処理
+	/// </summary>
 	void Update();
+
+	/// <summary>
+	/// 描画処理
+	/// </summary>
 	void Draw();
 
-	// フェードを開始する
+	/// <summary>
+	/// フェード処理の開始
+	/// </summary>
+	/// <param name="status">フェードインかフェードアウトか</param>
+	/// <param name="duration">フェードにかける時間（秒）</param>
 	void Start(Status status, float duration);
 
-	// フェードが終了しているかどうか
-	bool IsFinished() const;
-
-	// 現在の状態を取得
-	Status GetStatus() const { return status_; }
+	/// <summary>
+	/// フェードが終了しているかチェック
+	/// </summary>
+	bool IsFinished() const { return status_ == Status::None; }
 
 private:
+	// フェードの中核となる黒スプライト（ポインタ）
 	KamataEngine::Sprite* sprite_ = nullptr;
 
-	// フェードの状態を管理する変数
+	// 現在のフェードステータス
 	Status status_ = Status::None;
 
-	// フェードの経過時間タイマー
+	// 経過時間カウント用タイマー
 	float counter_ = 0.0f;
 
-	// フェードにかける合計時間
+	// フェードの総所要時間
 	float duration_ = 0.0f;
 };
