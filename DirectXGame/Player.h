@@ -3,6 +3,7 @@
 #include <3d/WorldTransform.h>
 #include <array>
 #include <list>
+#include <optional>
 
 class MapChipField;
 class CameraController;
@@ -11,6 +12,11 @@ class Enemy;
 enum class LRDirection {
 	kLeft,
 	kRight,
+};
+
+enum class Behavior {
+	kRoot,   // 通常行動
+	kAttack, // 攻撃行動
 };
 
 class Player {
@@ -47,17 +53,12 @@ public:
 	// 敵との衝突判定
 	void CheckEnemyCollision(const std::list<Enemy*>& enemies);
 
-	static inline const float kAcceleration = 0.03f;
-	static inline const float kAttenuation = 0.5f;
-	static inline const float kLimitRunSpeed = 2.0f;
-	static inline const float kTimeTurn = 0.8f;
-	static inline const float kGravityAcceleration = 0.08f;
-	static inline const float kLimitFallSpeed = 1.0f;
-	static inline const float kJumpAcceleration = 1.0f;
-	static inline const float kAttenuationLanding = 0.2f;
-	static inline const float kGroundSearchOffset = 0.01f;
+	void BehaviorRootUpdate();
+	void BehaviorAttackUpdate();
 
-private:
+	void BehaviorRootInit();
+	void BehaviorAttackInit();
+
 	void Move();
 	void MapCollision(CollisionMapInfo& info);
 	void MapCollisionTop(CollisionMapInfo& info);
@@ -69,6 +70,25 @@ private:
 	KamataEngine::Vector3 CornerPosition(const KamataEngine::Vector3& center, Corner corner);
 
 private:
+
+	// ★ 状態管理用の変数群を追加
+	Behavior behavior_ = Behavior::kRoot;                    // 現在のビヘイビア
+	std::optional<Behavior> behaviorRequest_ = std::nullopt; // 状態遷移へのリクエスト
+
+	uint32_t attackTimer_ = 0;
+	static inline const uint32_t kAttackDuration = 7; // 攻撃の持続フレーム数（例: 0.5秒）
+	static inline const float kAttackSpeed = 1.0f;     // ★ 攻撃の突進速度
+	
+	static inline const float kAcceleration = 0.03f;
+	static inline const float kAttenuation = 0.5f;
+	static inline const float kLimitRunSpeed = 2.0f;
+	static inline const float kTimeTurn = 0.8f;
+	static inline const float kGravityAcceleration = 0.08f;
+	static inline const float kLimitFallSpeed = 1.0f;
+	static inline const float kJumpAcceleration = 1.0f;
+	static inline const float kAttenuationLanding = 0.2f;
+	static inline const float kGroundSearchOffset = 0.01f;
+
 	MapChipField* mapChipField_ = nullptr;
 	CameraController* cameraController_ = nullptr;
 	static inline const float kWidth = 0.8f;

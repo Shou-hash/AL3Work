@@ -23,6 +23,10 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	velocity_ = {0.0f, 0.0f, 0.0f};
 	onGround_ = true;
 	isDead_ = false; // 初期化時は生存
+
+	behavior_ = Behavior::kRoot;
+	behaviorRequest_ = std::nullopt;
+	attackTimer_ = 0;
 }
 
 void Player::KeysPush() {}
@@ -76,34 +80,46 @@ void Player::Move() {
 	}
 }
 
-void Player::Update() {
-	if (isDead_) {
-		return;
+// 通常行動の初期化（空のままで構いません）
+void Player::BehaviorRootInit() {}
+
+// 通常行動の更新処理
+void Player::BehaviorRootUpdate() {
+	// 1. キー入力などによる通常の移動処理
+	Move();
+
+	// 2. 攻撃ボタン（SPACEキー）が押されたら攻撃状態へリクエスト
+	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_D)) {
+		behaviorRequest_ = Behavior::kAttack;
 	}
 
-	Move();
+	// 3. 衝突判定と座標の加算
 	CollisionMapInfo collisionMapInfo;
 	collisionMapInfo.moveAmount = velocity_;
 	collisionMapInfo.onGround = onGround_;
 	MapCollision(collisionMapInfo);
+
 	worldTransform_.translation_.x += collisionMapInfo.moveAmount.x;
 	worldTransform_.translation_.y += collisionMapInfo.moveAmount.y;
 	worldTransform_.translation_.z += collisionMapInfo.moveAmount.z;
 	ApplyGroundingStatus(collisionMapInfo);
+
 	if (collisionMapInfo.ceilingCollision) {
 		velocity_.y = 0.0f;
 	}
 	if (collisionMapInfo.wallCollision) {
 		velocity_.x = 0.0f;
 	}
+
 	CheckScreenEdgeCollision();
+
+	// 4. 旋回と行列の更新
 	if (turnTimer_ < kTimeTurn) {
 		turnTimer_ += 1.0f / 60.0f;
 		if (turnTimer_ > kTimeTurn) {
 			turnTimer_ = kTimeTurn;
 		}
 	}
-
 	float destinationRotationYTable[] = {
 	    std::numbers::pi_v<float> * 3.0f / 2.0f,
 	    std::numbers::pi_v<float> / 2.0f,
@@ -111,8 +127,94 @@ void Player::Update() {
 	float destinationRotationY = destinationRotationYTable[static_cast<uint32_t>(lrDirection_)];
 	float ratio = turnTimer_ / kTimeTurn;
 	worldTransform_.rotation_.y = turnFirstRotationY_ + (destinationRotationY - turnFirstRotationY_) * ratio;
+
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
+}
+
+// ★ 攻撃行動の初期化（突進速度に定数を適用）
+void Player::BehaviorAttackInit() {
+	// 攻撃タイマーをセット
+	attackTimer_ = kAttackDuration;
+
+	// プレイヤーの向いている方向に応じて、定数から突進速度を設定
+	if (lrDirection_ == LRDirection::kRight) {
+		velocity_.x = kAttackSpeed; // ★ 定数を使用
+	} else {
+		velocity_.x = -kAttackSpeed; // ★ 定数を使用
+	}
+	velocity_.y = 0.0f; // 必要に応じてY軸の速度をリセット（空中突進時の落下を防ぐ場合）
+}
+
+// ★ 攻撃行動の更新処理（スクショの指示通りに完成）
+void Player::BehaviorAttackUpdate() {
+	// 1. タイマーのカウントダウンと通常行動への復帰
+	if (attackTimer_ > 0) {
+		attackTimer_--;
+	}
+	if (attackTimer_ == 0) {
+		behaviorRequest_ = Behavior::kRoot;
+	}
+
+	// 2. 攻撃中の移動とマップ衝突判定（Move()は呼ばず、Initで決めた速度を維持）
+	CollisionMapInfo collisionMapInfo;
+	collisionMapInfo.moveAmount = velocity_;
+	collisionMapInfo.onGround = onGround_;
+	MapCollision(collisionMapInfo);
+
+	// 座標への加算
+	worldTransform_.translation_.x += collisionMapInfo.moveAmount.x;
+	worldTransform_.translation_.y += collisionMapInfo.moveAmount.y;
+	worldTransform_.translation_.z += collisionMapInfo.moveAmount.z;
+
+	// 必要に応じて着地状態や壁衝突状態を適用
+	ApplyGroundingStatus(collisionMapInfo);
+	if (collisionMapInfo.ceilingCollision) {
+		velocity_.y = 0.0f;
+	}
+	if (collisionMapInfo.wallCollision) {
+		velocity_.x = 0.0f;
+	}
+
+	// 画面端の衝突判定
+	CheckScreenEdgeCollision();
+
+	// 3. アフィニティ行列の計算と転送（描画用）
+	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
+	worldTransform_.TransferMatrix();
+}
+
+void Player::Update() {
+	if (isDead_) {
+		return;
+	}
+
+	// ★ 状態遷移のリクエストがあるか確認
+	if (behaviorRequest_) {
+		// 振る舞いを変更
+		behavior_ = behaviorRequest_.value();
+		// 各状態の初期化関数を呼び出す
+		switch (behavior_) {
+		case Behavior::kRoot:
+			BehaviorRootInit();
+			break;
+		case Behavior::kAttack:
+			BehaviorAttackInit();
+			break;
+		}
+		// リクエストをリセット
+		behaviorRequest_ = std::nullopt;
+	}
+
+	// ★ 現在の状態に応じて実行する更新処理を切り替える
+	switch (behavior_) {
+	case Behavior::kRoot:
+		BehaviorRootUpdate();
+		break;
+	case Behavior::kAttack:
+		BehaviorAttackUpdate();
+		break;
+	}
 }
 
 void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
