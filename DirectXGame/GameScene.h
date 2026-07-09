@@ -59,7 +59,7 @@ public:
 private:
 	KamataEngine::Camera camera_{};
 
-	// --- テクスチャハンドル ---
+	// テクスチャハンドル
 	uint32_t texBg_[3] = {0};
 	uint32_t texClock_[3] = {0};
 	uint32_t texHandHour_ = 0;
