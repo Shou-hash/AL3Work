@@ -19,6 +19,12 @@ enum class Behavior {
 	kAttack, // 攻撃行動
 };
 
+enum class AttackPhase {
+	kCharge, // 溜め
+	kDash,   // 突進
+	kRecoil, // 余韻
+};
+
 class Player {
 public:
 	enum Corner { kRightBottom, kLeftBottom, kRightTop, kLeftTop, kNumCorner };
@@ -30,8 +36,16 @@ public:
 		KamataEngine::Vector3 moveAmount;
 	};
 
+	// ★ ヒートエフェクト管理用の構造体
+	struct HitEffect {
+		KamataEngine::WorldTransform worldTransform;
+		uint32_t timer = 0;
+		uint32_t duration = 20; // エフェクトの生存フレーム数
+		bool isDead = false;
+	};
+
 	Player();
-	~Player();
+	~Player(); // デストラクタで残ったエフェクトやモデルを破棄します
 
 	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
 	void KeysPush();
@@ -69,16 +83,26 @@ public:
 	void CheckScreenEdgeCollision();
 	KamataEngine::Vector3 CornerPosition(const KamataEngine::Vector3& center, Corner corner);
 
-private:
+	// エフェクト発生用の関数
+	void CreateHitEffect(const KamataEngine::Vector3& position);
 
-	// ★ 状態管理用の変数群を追加
+private:
+	// だんだん減速する（EaseOut）
+	float EaseOut(float start, float end, float t) {
+		float easing = 1.0f - std::pow(1.0f - t, 3.0f);
+		return start + (end - start) * easing;
+	}
+
+	// だんだん加速する（EaseIn）
+	float EaseIn(float start, float end, float t) {
+		float easing = std::pow(t, 3.0f);
+		return start + (end - start) * easing;
+	}
+
+	// 状態管理用の変数群
 	Behavior behavior_ = Behavior::kRoot;                    // 現在のビヘイビア
 	std::optional<Behavior> behaviorRequest_ = std::nullopt; // 状態遷移へのリクエスト
 
-	uint32_t attackTimer_ = 0;
-	static inline const uint32_t kAttackDuration = 7; // 攻撃の持続フレーム数（例: 0.5秒）
-	static inline const float kAttackSpeed = 1.0f;     // ★ 攻撃の突進速度
-	
 	static inline const float kAcceleration = 0.03f;
 	static inline const float kAttenuation = 0.5f;
 	static inline const float kLimitRunSpeed = 2.0f;
@@ -103,4 +127,18 @@ private:
 	KamataEngine::Model* modelPlayer_ = nullptr;
 	KamataEngine::WorldTransform worldTransform_;
 	LRDirection lrDirection_ = LRDirection::kRight;
+
+	// 攻撃行動用（サブフェーズ定義）
+	AttackPhase attackPhase_ = AttackPhase::kCharge; // 現在の攻撃フェーズ
+	uint32_t attackParameter_ = 0;                   // 各フェーズの進捗タイマー
+
+	static inline const uint32_t kChargeDuration = 8;  // 溜め動作時間
+	static inline const uint32_t kDashDuration = 8;    // 突進動作時間
+	static inline const uint32_t kRecoilDuration = 10; // 余韻動作時間
+
+	static inline const float kAttackVelocity = 0.85f; // 攻撃突進時の移動速度
+
+	// ヒートエフェクト用のメンバ変数群
+	KamataEngine::Model* modelHitEffect_ = nullptr; // エフェクトのモデルポインタ
+	std::list<HitEffect*> hitEffects_;
 };

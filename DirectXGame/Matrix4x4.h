@@ -2,7 +2,7 @@
 #include "Kamataengine.h"
 #include <cmath>
 
-    inline KamataEngine::Matrix4x4 MakeAffineMatrix(const KamataEngine::Vector3& scale, const KamataEngine::Vector3& rot, const KamataEngine::Vector3& translate) {
+inline KamataEngine::Matrix4x4 MakeAffineMatrix(const KamataEngine::Vector3& scale, const KamataEngine::Vector3& rot, const KamataEngine::Vector3& translate) {
 
 	KamataEngine::Matrix4x4 result{};
 

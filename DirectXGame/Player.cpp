@@ -9,7 +9,19 @@
 #include <numbers>
 
 Player::Player() {}
-Player::~Player() {}
+
+// デストラクタでモデルのメモリおよび残ったエフェクトを解放
+Player::~Player() {
+	if (modelHitEffect_) {
+		delete modelHitEffect_;
+		modelHitEffect_ = nullptr;
+	}
+	// リスト内に残っているエフェクトのメモリを全て解放
+	for (auto* effect : hitEffects_) {
+		delete effect;
+	}
+	hitEffects_.clear();
+}
 
 void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
 	modelPlayer_ = model;
@@ -26,12 +38,24 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 
 	behavior_ = Behavior::kRoot;
 	behaviorRequest_ = std::nullopt;
-	attackTimer_ = 0;
+
+	// 指定されたモデルファイル名 "hit_effect" をロード
+	if (modelHitEffect_ == nullptr) {
+		modelHitEffect_ = KamataEngine::Model::CreateFromOBJ("hit_effect", true);
+
+		assert(modelHitEffect_ != nullptr);
+	}
+
+	// 既存のエフェクトリストがあれば一度全て解放してクリア
+	for (auto* effect : hitEffects_) {
+		delete effect;
+	}
+	hitEffects_.clear();
 }
 
 void Player::KeysPush() {}
 
-// 衝突時処理（スクリーンショット「当たったら死ぬ」の再現）
+// 衝突時処理
 void Player::OnCollision() {
 	isDead_ = true; // デスフラグを立てる
 }
@@ -80,20 +104,17 @@ void Player::Move() {
 	}
 }
 
-// 通常行動の初期化（空のままで構いません）
+// 通常行動の初期化
 void Player::BehaviorRootInit() {}
 
 // 通常行動の更新処理
 void Player::BehaviorRootUpdate() {
-	// 1. キー入力などによる通常の移動処理
 	Move();
 
-	// 2. 攻撃ボタン（SPACEキー）が押されたら攻撃状態へリクエスト
 	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_D)) {
 		behaviorRequest_ = Behavior::kAttack;
 	}
 
-	// 3. 衝突判定と座標の加算
 	CollisionMapInfo collisionMapInfo;
 	collisionMapInfo.moveAmount = velocity_;
 	collisionMapInfo.onGround = onGround_;
@@ -113,7 +134,6 @@ void Player::BehaviorRootUpdate() {
 
 	CheckScreenEdgeCollision();
 
-	// 4. 旋回と行列の更新
 	if (turnTimer_ < kTimeTurn) {
 		turnTimer_ += 1.0f / 60.0f;
 		if (turnTimer_ > kTimeTurn) {
@@ -132,42 +152,76 @@ void Player::BehaviorRootUpdate() {
 	worldTransform_.TransferMatrix();
 }
 
-// ★ 攻撃行動の初期化（突進速度に定数を適用）
+// 攻撃行動の初期化
 void Player::BehaviorAttackInit() {
-	// 攻撃タイマーをセット
-	attackTimer_ = kAttackDuration;
-
-	// プレイヤーの向いている方向に応じて、定数から突進速度を設定
-	if (lrDirection_ == LRDirection::kRight) {
-		velocity_.x = kAttackSpeed; // ★ 定数を使用
-	} else {
-		velocity_.x = -kAttackSpeed; // ★ 定数を使用
-	}
-	velocity_.y = 0.0f; // 必要に応じてY軸の速度をリセット（空中突進時の落下を防ぐ場合）
+	attackPhase_ = AttackPhase::kCharge;
+	attackParameter_ = 0;
 }
 
-// ★ 攻撃行動の更新処理（スクショの指示通りに完成）
+// 攻撃行動の更新処理
 void Player::BehaviorAttackUpdate() {
-	// 1. タイマーのカウントダウンと通常行動への復帰
-	if (attackTimer_ > 0) {
-		attackTimer_--;
-	}
-	if (attackTimer_ == 0) {
-		behaviorRequest_ = Behavior::kRoot;
+	attackParameter_++;
+	KamataEngine::Vector3 velocity = {};
+
+	switch (attackPhase_) {
+	case AttackPhase::kCharge:
+	default: {
+		float t = static_cast<float>(attackParameter_) / static_cast<float>(kChargeDuration);
+		t = std::min(t, 1.0f);
+
+		worldTransform_.scale_.z = EaseOut(1.0f, 0.3f, t);
+		worldTransform_.scale_.y = EaseOut(1.0f, 1.6f, t);
+
+		if (attackParameter_ >= kChargeDuration) {
+			attackPhase_ = AttackPhase::kDash;
+			attackParameter_ = 0;
+		}
+		break;
 	}
 
-	// 2. 攻撃中の移動とマップ衝突判定（Move()は呼ばず、Initで決めた速度を維持）
+	case AttackPhase::kDash: {
+		float t = static_cast<float>(attackParameter_) / static_cast<float>(kDashDuration);
+		t = std::min(t, 1.0f);
+
+		worldTransform_.scale_.z = EaseOut(0.3f, 1.3f, t);
+		worldTransform_.scale_.y = EaseIn(1.6f, 0.7f, t);
+
+		if (lrDirection_ == LRDirection::kRight) {
+			velocity.x = +kAttackVelocity;
+		} else {
+			velocity.x = -kAttackVelocity;
+		}
+
+		if (attackParameter_ >= kDashDuration) {
+			attackPhase_ = AttackPhase::kRecoil;
+			attackParameter_ = 0;
+		}
+		break;
+	}
+
+	case AttackPhase::kRecoil: {
+		float t = static_cast<float>(attackParameter_) / static_cast<float>(kRecoilDuration);
+		t = std::min(t, 1.0f);
+
+		worldTransform_.scale_.z = EaseOut(1.3f, 1.0f, t);
+		worldTransform_.scale_.y = EaseOut(0.7f, 1.0f, t);
+
+		if (attackParameter_ >= kRecoilDuration) {
+			behaviorRequest_ = Behavior::kRoot;
+		}
+		break;
+	}
+	}
+
 	CollisionMapInfo collisionMapInfo;
-	collisionMapInfo.moveAmount = velocity_;
+	collisionMapInfo.moveAmount = velocity;
 	collisionMapInfo.onGround = onGround_;
 	MapCollision(collisionMapInfo);
 
-	// 座標への加算
 	worldTransform_.translation_.x += collisionMapInfo.moveAmount.x;
 	worldTransform_.translation_.y += collisionMapInfo.moveAmount.y;
 	worldTransform_.translation_.z += collisionMapInfo.moveAmount.z;
 
-	// 必要に応じて着地状態や壁衝突状態を適用
 	ApplyGroundingStatus(collisionMapInfo);
 	if (collisionMapInfo.ceilingCollision) {
 		velocity_.y = 0.0f;
@@ -176,12 +230,35 @@ void Player::BehaviorAttackUpdate() {
 		velocity_.x = 0.0f;
 	}
 
-	// 画面端の衝突判定
 	CheckScreenEdgeCollision();
 
-	// 3. アフィニティ行列の計算と転送（描画用）
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
+}
+
+// ヒートエフェクトを動的に生成する関数
+void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
+	// メモリ確保
+	HitEffect* newEffect = new HitEffect();
+
+	// 1. 完全に初期化
+	newEffect->worldTransform.Initialize();
+
+	// 2. 座標・回転・スケールを明示的にセット（最初は見えやすいように 1.0f で固定してテストします）
+	newEffect->worldTransform.translation_ = position;
+	newEffect->worldTransform.rotation_ = {0.0f, 0.0f, 0.0f};
+	newEffect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f};
+
+	newEffect->timer = 0;
+	newEffect->duration = 30; // 30フレーム表示
+	newEffect->isDead = false;
+
+	// 3. アフィン変換行列の合成と即時転送
+	newEffect->worldTransform.matWorld_ = MakeAffineMatrix(newEffect->worldTransform.scale_, newEffect->worldTransform.rotation_, newEffect->worldTransform.translation_);
+	newEffect->worldTransform.TransferMatrix();
+
+	// リストに追加
+	hitEffects_.push_back(newEffect);
 }
 
 void Player::Update() {
@@ -189,11 +266,13 @@ void Player::Update() {
 		return;
 	}
 
-	// ★ 状態遷移のリクエストがあるか確認
+	// デバッグ用：【Tキー】を押したらプレイヤーの目の前に強制的にエフェクトを生成する（判定の不具合を切り分けるため）
+	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_T)) {
+		CreateHitEffect(worldTransform_.translation_);
+	}
+
 	if (behaviorRequest_) {
-		// 振る舞いを変更
 		behavior_ = behaviorRequest_.value();
-		// 各状態の初期化関数を呼び出す
 		switch (behavior_) {
 		case Behavior::kRoot:
 			BehaviorRootInit();
@@ -202,11 +281,9 @@ void Player::Update() {
 			BehaviorAttackInit();
 			break;
 		}
-		// リクエストをリセット
 		behaviorRequest_ = std::nullopt;
 	}
 
-	// ★ 現在の状態に応じて実行する更新処理を切り替える
 	switch (behavior_) {
 	case Behavior::kRoot:
 		BehaviorRootUpdate();
@@ -214,6 +291,33 @@ void Player::Update() {
 	case Behavior::kAttack:
 		BehaviorAttackUpdate();
 		break;
+	}
+
+	// ヒートエフェクトの一斉更新処理
+	for (auto* effect : hitEffects_) {
+		effect->timer++;
+		if (effect->timer >= effect->duration) {
+			effect->isDead = true;
+		} else {
+			// 徐々に大きくするイージング（ここが原因で消えている可能性を考慮し、一旦単純な加算にします）
+			float t = static_cast<float>(effect->timer) / static_cast<float>(effect->duration);
+			float scaleVal = 1.0f + t * 2.0f; // 1.0倍から3.0倍へ徐々に拡大
+			effect->worldTransform.scale_ = {scaleVal, scaleVal, scaleVal};
+
+			// 毎フレーム必ず行列を再計算してGPUに転送する
+			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);
+			effect->worldTransform.TransferMatrix();
+		}
+	}
+
+	// 寿命を迎えたエフェクトのメモリを解放し、リストから削除
+	for (auto it = hitEffects_.begin(); it != hitEffects_.end();) {
+		if ((*it)->isDead) {
+			delete *it;
+			it = hitEffects_.erase(it);
+		} else {
+			++it;
+		}
 	}
 }
 
@@ -228,9 +332,11 @@ void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
 	float playerTop = worldTransform_.translation_.y + kHeight / 2.0f;
 
 	for (Enemy* enemy : enemies) {
+		
 		if (!enemy) {
 			continue;
 		}
+		
 		KamataEngine::Vector3 enemyPos = enemy->GetWorldTransform().translation_;
 		float enemyWidth = 0.8f;
 		float enemyHeight = 0.8f;
@@ -240,7 +346,15 @@ void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
 		float enemyTop = enemyPos.y + enemyHeight / 2.0f;
 
 		if (playerLeft < enemyRight && playerRight > enemyLeft && playerBottom < enemyTop && playerTop > enemyBottom) {
-			OnCollision(); // 衝突したら死亡
+
+			if (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) {
+				KamataEngine::Vector3 hitPos = {(worldTransform_.translation_.x + enemyPos.x) / 2.0f, (worldTransform_.translation_.y + enemyPos.y) / 2.0f, worldTransform_.translation_.z};
+				CreateHitEffect(hitPos);
+
+				// 必要に応じてここに敵撃破の処理を記述
+			} else {
+				OnCollision();
+			}
 			break;
 		}
 	}
@@ -250,7 +364,9 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 	if (!mapChipField_) {
 		return;
 	}
+	
 	if (onGround_) {
+		
 		if (velocity_.y > 0.0f) {
 			onGround_ = false;
 		} else {
@@ -263,6 +379,7 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 			MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(leftBottomPos);
 			MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
 			bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
+			
 			if (!hit) {
 				onGround_ = false;
 			}
@@ -280,8 +397,10 @@ void Player::CheckScreenEdgeCollision() {
 	if (!cameraController_ || !mapChipField_) {
 		return;
 	}
+	
 	float cameraLeftX = cameraController_->GetCameraLeftX();
 	float playerLeftX = worldTransform_.translation_.x - (kWidth / 2.0f);
+	
 	if (playerLeftX < cameraLeftX) {
 		worldTransform_.translation_.x = cameraLeftX + (kWidth / 2.0f);
 		KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
@@ -289,6 +408,7 @@ void Player::CheckScreenEdgeCollision() {
 		KamataEngine::Vector3 rightBottomPos = CornerPosition(currentCenter, kRightBottom);
 		MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(rightTopPos);
 		MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
+		
 		if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
 			OnCollision();
 		}
@@ -315,6 +435,7 @@ void Player::MapCollision(CollisionMapInfo& info) {
 	if (!mapChipField_) {
 		return;
 	}
+	
 	MapCollisionRight(info);
 	MapCollisionLeft(info);
 	MapCollisionTop(info);
@@ -325,19 +446,24 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 	if (info.moveAmount.y <= 0.0f) {
 		return;
 	}
+	
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
+	
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
+	
 	MapChipType chipLeftTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftTop]);
 	MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightTop]);
+	
 	if (chipLeftTop == MapChipType::kBlock || chipRightTop == MapChipType::kBlock) {
 		Corner targetCorner = (chipLeftTop == MapChipType::kBlock) ? kLeftTop : kRightTop;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockBottomY = blockPos.y - 0.5f;
 		float previousTopY = worldTransform_.translation_.y + kHeight / 2.0f;
+		
 		if (previousTopY <= blockBottomY + 0.05f) {
 			info.ceilingCollision = true;
 			info.moveAmount.y = blockBottomY - previousTopY - 0.005f;
@@ -347,17 +473,22 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
+	
 	if (info.moveAmount.y >= 0.0f) {
 		return;
 	}
+	
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
+	
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
+	
 	MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftBottom]);
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
 	bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
+	
 	if (hit) {
 		Corner targetCorner = (chipLeftBottom == MapChipType::kBlock) ? kLeftBottom : kRightBottom;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
@@ -365,11 +496,13 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 		float blockTopY = blockPos.y + 0.5f;
 		float previousBottomY = worldTransform_.translation_.y - kHeight / 2.0f;
 		float nextBottomY = nextCenter.y - kHeight / 2.0f;
+		
 		if (previousBottomY >= blockTopY - 0.2f && nextBottomY <= blockTopY) {
 			info.onGround = true;
 			info.moveAmount.y = blockTopY - previousBottomY;
 			return;
 		}
+		
 		if (nextBottomY < blockTopY) {
 			info.onGround = true;
 			info.moveAmount.y = blockTopY - previousBottomY;
@@ -383,13 +516,17 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 	if (info.moveAmount.x <= 0.0f) {
 		return;
 	}
+	
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
+	
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
+	
 	MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightTop]);
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
+	
 	if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
 		info.wallCollision = true;
 		Corner targetCorner = (chipRightTop == MapChipType::kBlock) ? kRightTop : kRightBottom;
@@ -404,13 +541,17 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 	if (info.moveAmount.x >= 0.0f) {
 		return;
 	}
+	
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
+	
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
+	
 	MapChipType chipLeftTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftTop]);
 	MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftBottom]);
+	
 	if (chipLeftTop == MapChipType::kBlock || chipLeftBottom == MapChipType::kBlock) {
 		info.wallCollision = true;
 		Corner targetCorner = (chipLeftTop == MapChipType::kBlock) ? kLeftTop : kLeftBottom;
@@ -423,11 +564,23 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 
 void Player::Draw() {
 	if (isDead_) {
-		return; // 死亡時は描画しない（敵と当たったら消える）
+		return;
 	}
+
+	// プレイヤーモデルの描画
 	if (modelPlayer_ && camera_) {
 		KamataEngine::Model::PreDraw();
 		modelPlayer_->Draw(worldTransform_, *camera_);
 		KamataEngine::Model::PostDraw();
 	}
+
+	// 生成されているすべてのヒートエフェクトを描画
+	if (modelHitEffect_ && camera_ && !hitEffects_.empty()) {
+		KamataEngine::Model::PreDraw();
+		for (const auto* effect : hitEffects_) {
+			modelHitEffect_->Draw(effect->worldTransform, *camera_);
+		}
+		KamataEngine::Model::PostDraw();
+	}
+	
 }
