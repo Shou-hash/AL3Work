@@ -7,13 +7,16 @@
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "Skydome.h"
+#include "Fade.h"
 #include <list> // std::list を使用するため追加
 #include <memory>
 #include <vector>
 
 enum class Phase {
-	kPlay,
-	kDeath,
+	kFadeIn,  // フェードイン
+	kPlay,    // ゲームプレイ
+	kDeath,   // デス演出
+	kFadeOut, // フェードアウト
 };
 
 class GameScene {
@@ -30,23 +33,25 @@ public:
 	// シーンが終了したかを取得
 	bool isFinished() const { return finished_; }
 
-private:
 	// フェーズ管理用関数
-	
-	// フェーズの切り替え条件・処理を管理
 	void ChangePhase();
-	
-	// ゲームプレイフェーズの毎フレーム処理
-	void UpdatePlay();
 
-	// デス演出フェーズの毎フレーム処理
-	void UpdateDeath();
+	void UpdateFadeIn();  // フェードイン処理
+
+	void UpdatePlay();    // ゲームプレイ処理
+
+	void UpdateDeath();   // デス演出処理
+
+	void UpdateFadeOut(); // フェードアウト処理
 
 private:
+
 	// フェイズの状態を管理する変数
-	Phase phase_ = Phase::kPlay;
+	Phase phase_ = Phase::kFadeIn;
 
 	bool finished_ = false;
+
+	Fade* fade_ = nullptr;
 
 	KamataEngine::Model* model_ = nullptr;
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;

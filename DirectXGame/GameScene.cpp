@@ -5,6 +5,9 @@
 using namespace KamataEngine;
 
 GameScene::~GameScene() {
+
+	delete fade_;
+
 	delete model_;
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
@@ -30,8 +33,12 @@ GameScene::~GameScene() {
 
 void GameScene::Initialize() {
 
-	phase_ = Phase::kPlay;
+	phase_ = Phase::kFadeIn;
 	finished_ = false;
+
+	fade_ = new Fade();
+	fade_->Initialize();
+	fade_->Start(Fade::Status::FadeIn, 1.0f);
 
 	mapChipField_ = new MapChipField;
 	mapChipField_->LoadMapChipDataFromCSV("Resources/blocks.csv");
@@ -108,12 +115,20 @@ void GameScene::Update() {
 
 	// フェーズごとの更新処理
 	switch (phase_) {
+	case Phase::kFadeIn:
+		UpdateFadeIn();
+		break;
+
 	case Phase::kPlay:
 		UpdatePlay();
 		break;
 
 	case Phase::kDeath:
 		UpdateDeath();
+		break;
+
+	case Phase::kFadeOut:
+		UpdateFadeOut();
 		break;
 	}
 
@@ -150,6 +165,13 @@ void GameScene::Update() {
 //　フェーズの切り替え処理
 void GameScene::ChangePhase() {
 	switch (phase_) {
+	case Phase::kFadeIn:
+		// フェードインが終了したらプレイフェーズへ
+		if (fade_ && fade_->IsFinished()) {
+			phase_ = Phase::kPlay;
+		}
+		break;
+
 	case Phase::kPlay:
 		// プレイヤーが死亡フラグを持っていたらデス演出フェーズへ移行
 		if (player_ && player_->IsDead()) {
@@ -166,11 +188,36 @@ void GameScene::ChangePhase() {
 		break;
 
 	case Phase::kDeath:
-		// 一方通行のため、デス演出フェーズ側では特に切り替え処理は行わない
+		// デス演出が終了したらフェードアウトを開始し、フェードアウトフェーズへ
 		if (deathParticles_ && deathParticles_->IsFinished()) {
+			phase_ = Phase::kFadeOut;
+			if (fade_) {
+				fade_->Start(Fade::Status::FadeOut, 1.0f);
+			}
+		}
+		break;
+
+	case Phase::kFadeOut:
+		// フェードアウトが終了したらシーン終了フラグを立てる
+		if (fade_ && fade_->IsFinished()) {
 			finished_ = true;
 		}
 		break;
+	}
+}
+
+// フェードイン処理
+void GameScene::UpdateFadeIn() {
+	if (fade_) {
+		fade_->Update();
+	}
+
+	// 背景などの描画物は動かすために更新
+	skydome->Update();
+
+	// カメラコントローラーの更新
+	if (!isDebugCameraActive_ && cameraController_) {
+		cameraController_->Update();
 	}
 }
 
@@ -223,6 +270,26 @@ void GameScene::UpdateDeath() {
 	// 死亡時にカメラが勝手に動き回ったりプレイヤーが操作できてしまうのを防ぎます。
 }
 
+// フェードアウト処理
+void GameScene::UpdateFadeOut() {
+	if (fade_) {
+		fade_->Update();
+	}
+
+	// フェードアウト中も背景やパーティクルの最後の余韻を描画・更新し続ける
+	skydome->Update();
+
+	for (Enemy* enemy : enemies_) {
+		if (enemy) {
+			enemy->Update();
+		}
+	}
+
+	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
+		deathParticles_->Update();
+	}
+}
+
 void GameScene::Draw() {
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
@@ -255,5 +322,10 @@ void GameScene::Draw() {
 	// デスパーティクルの描画
 	if (deathParticles_ && !deathParticles_->IsFinished()) {
 		deathParticles_->Draw();
+	}
+
+	// 最前面にフェードのスプレイトを描画
+	if (fade_) {
+		fade_->Draw();
 	}
 }
