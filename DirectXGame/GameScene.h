@@ -11,6 +11,7 @@
 #include <list> // std::list を使用するため追加
 #include <memory>
 #include <vector>
+#include"HitEffect.h"
 
 enum class Phase {
 	kFadeIn,  // フェードイン
@@ -45,6 +46,12 @@ public:
 	void UpdateFadeOut(); // フェードアウト処理
 
 private:
+
+	// ヒットエフェクトの3Dモデルポインタ
+	KamataEngine::Model* modelHitEffect_ = nullptr;
+
+	// 複数のヒットエフェクトを管理するリスト
+	std::list<HitEffect*> hitEffects_;
 
 	// フェイズの状態を管理する変数
 	Phase phase_ = Phase::kFadeIn;

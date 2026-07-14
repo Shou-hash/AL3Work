@@ -29,6 +29,14 @@ GameScene::~GameScene() {
 		delete enemy;
 	}
 	enemies_.clear();
+
+	delete modelHitEffect_;
+
+	// ヒットエフェクトリストの解放
+	for (HitEffect* effect : hitEffects_) {
+		delete effect;
+	}
+	hitEffects_.clear();
 }
 
 void GameScene::Initialize() {
@@ -54,6 +62,10 @@ void GameScene::Initialize() {
 	modelPlayer_ = Model::CreateFromOBJ("player", true);
 	modelEnemy_ = Model::CreateFromOBJ("player", true);
 	modelDeathParticles_ = Model::CreateFromOBJ("particle", true);
+	modelHitEffect_ = Model::CreateFromOBJ("particle", true);
+
+	HitEffect::SetModel(modelHitEffect_);
+	HitEffect::SetCamera(&camera_);
 
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
@@ -70,7 +82,7 @@ void GameScene::Initialize() {
 	for (int32_t i = 0; i < 3; i++) {
 		// インデックス(10, 18)を基準に、1体ごとにX軸方向にずらして異なる座標を作成
 		Enemy* newEnemy = new Enemy();
-		Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18);
+		Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18 - i);
 
 		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
 		enemies_.push_back(newEnemy);
@@ -247,15 +259,60 @@ void GameScene::UpdatePlay() {
 		auto attackAABB = player_->GetAttackAABB();
 		if (attackAABB.has_value()) {
 			for (Enemy* enemy : enemies_) {
-				if (enemy && IsCollision(attackAABB.value(), enemy->GetAABB())) {
-					// 即座に消さず、死亡アニメーションを開始させる
+				if (enemy && !enemy->IsDead() && IsCollision(attackAABB.value(), enemy->GetAABB())) {
+
+					// エフェクトをインスタンス化
+					HitEffect* newEffect = new HitEffect();
+
+					// 敵の位置を渡して初期化するだけ（モデル・カメラのセットは不要）
+					newEffect->Initialize(enemy->GetWorldTransform().translation_);
+
+					// リストに登録
+					hitEffects_.push_back(newEffect);
+
+					// 敵の死亡処理へ
 					enemy->OnDead();
 				}
 			}
 		}
 	}
 
-	// 2. 死亡演出が完了した敵をリストからクリーンアップしてメモリ解放
+	// ヒットエフェクトの更新 (既存の処理)
+	for (HitEffect* effect : hitEffects_) {
+		if (effect) {
+			effect->Update();
+		}
+	}
+
+	// 終了したヒットエフェクトのメモリ解放と削除
+	for (auto it = hitEffects_.begin(); it != hitEffects_.end();) {
+		if (*it) {
+			(*it)->Update(); // 更新処理
+
+			// エフェクトが生存時間を超えて終了（デス状態）になった場合
+			if ((*it)->IsFinished()) {
+				delete (*it);               // メモリの解放
+				it = hitEffects_.erase(it); // リストから除外し、次の要素へ進む
+			} else {
+				++it; // 次の要素へ進む
+			}
+		} else {
+			it = hitEffects_.erase(it);
+		}
+	}
+
+	// 死亡演出が完了した敵のクリーンアップ（既存処理）
+	for (auto it = enemies_.begin(); it != enemies_.end();) {
+		Enemy* enemy = *it;
+		if (enemy && enemy->IsDead()) {
+			delete enemy;
+			it = enemies_.erase(it);
+		} else {
+			++it;
+		}
+	}
+	
+	// 死亡演出が完了した敵をリストからクリーンアップしてメモリ解放
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		Enemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
@@ -296,6 +353,13 @@ void GameScene::UpdateDeath() {
 
 	// 自キャラの更新とカメラコントローラーの更新を省くことで、
 	// 死亡時にカメラが勝手に動き回ったりプレイヤーが操作できてしまうのを防ぎます。
+
+	// ヒットエフェクトの更新
+	for (HitEffect* effect : hitEffects_) {
+		if (effect) {
+			effect->Update();
+		}
+	}
 }
 
 // フェードアウト処理
@@ -331,6 +395,15 @@ void GameScene::Draw() {
 	}
 	skydome->Draw();
 
+	// ヒットエフェクトの描画
+	for (HitEffect* effect : hitEffects_) {
+		if (effect) {
+			Model::PreDraw();
+			effect->Draw();
+			Model::PostDraw();
+		}
+	}
+
 	// プレイヤーの描画
 	if (player_) {
 		Model::PreDraw();
@@ -349,11 +422,17 @@ void GameScene::Draw() {
 
 	// デスパーティクルの描画
 	if (deathParticles_ && !deathParticles_->IsFinished()) {
+		Model::PreDraw();
 		deathParticles_->Draw();
+		Model::PostDraw();
 	}
 
 	// 最前面にフェードのスプレイトを描画
 	if (fade_) {
+		Model::PreDraw();
 		fade_->Draw();
+		Model::PostDraw();
 	}
+
+	
 }
