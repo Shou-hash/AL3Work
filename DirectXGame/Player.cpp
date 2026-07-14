@@ -57,6 +57,10 @@ void Player::KeysPush() {}
 
 // 衝突時処理
 void Player::OnCollision() {
+	// 攻撃（突進）中であればダメージを受けない（相打ち回避）
+	if (IsAttacking()) {
+		return;
+	}
 	isDead_ = true; // デスフラグを立てる
 }
 

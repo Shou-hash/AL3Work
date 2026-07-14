@@ -72,6 +72,9 @@ public:
 	// 死亡状態の取得
 	bool IsDead() const { return isDead_; }
 
+	// 攻撃中（突進中）かどうかの取得
+	bool IsAttacking() const { return behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash; }
+
 	// 衝突時に呼び出される関数（デスフラグを立てる）
 	void OnCollision();
 

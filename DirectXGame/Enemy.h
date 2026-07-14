@@ -63,6 +63,7 @@ private:
 	// 死亡演出用に追加するメンバ変数
 	Behavior behavior_ = Behavior::kRoot;           // 現在の状態
 	bool isDead_ = false;                           // 完全に消滅したかどうかのフラグ
+	bool isCollisionDisabled_ = false;
 	float deadTimer_ = 0.0f;                        // 死亡アニメーション用タイマー
 	static inline const float kDeadDuration = 1.0f; // 死亡演出の長さ（秒）
 

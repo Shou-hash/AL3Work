@@ -25,6 +25,7 @@ void Enemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera,
 	// 状態リセット
 	behavior_ = Behavior::kRoot;
 	isDead_ = false;
+	isCollisionDisabled_ = false;
 	deadTimer_ = 0.0f;
 }
 
@@ -38,6 +39,7 @@ void Enemy::OnDead() {
 	}
 
 	behavior_ = Behavior::kDead;
+	isCollisionDisabled_ = true;
 	deadTimer_ = 0.0f;
 	velocity_ = {0.0f, 0.0f, 0.0f}; // 移動を停止
 }
@@ -115,10 +117,10 @@ void Enemy::Draw() {
 
 Enemy::AABB Enemy::GetAABB() const {
 	// 既に死亡状態の場合は当たり判定を無くす（あるいは無効な値を返す）
-	if (behavior_ == Behavior::kDead) {
+	if (isCollisionDisabled_) {
 		return AABB{
-		    {0, 0, 0},
-            {0, 0, 0}
+		    {0.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 0.0f}
         };
 	}
 
