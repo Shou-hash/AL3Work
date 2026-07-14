@@ -108,6 +108,10 @@ void GameScene::GenerateBlocks() {
 	}
 }
 
+bool IsCollision(const Player::AABB& a, const Enemy::AABB& b) {
+	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
+
 void GameScene::Update() {
 
 	// フェーズの切り替え判定
@@ -235,6 +239,30 @@ void GameScene::UpdatePlay() {
 	for (Enemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
+		}
+	}
+
+	// プレイヤー攻撃と敵の当たり判定
+	if (player_) {
+		auto attackAABB = player_->GetAttackAABB();
+		if (attackAABB.has_value()) {
+			for (Enemy* enemy : enemies_) {
+				if (enemy && IsCollision(attackAABB.value(), enemy->GetAABB())) {
+					// 即座に消さず、死亡アニメーションを開始させる
+					enemy->OnDead();
+				}
+			}
+		}
+	}
+
+	// 2. 死亡演出が完了した敵をリストからクリーンアップしてメモリ解放
+	for (auto it = enemies_.begin(); it != enemies_.end();) {
+		Enemy* enemy = *it;
+		if (enemy && enemy->IsDead()) {
+			delete enemy;
+			it = enemies_.erase(it); // 安全に削除
+		} else {
+			++it;
 		}
 	}
 

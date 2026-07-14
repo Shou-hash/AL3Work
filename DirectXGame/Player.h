@@ -42,7 +42,18 @@ public:
 		uint32_t timer = 0;
 		uint32_t duration = 20; // エフェクトの生存フレーム数
 		bool isDead = false;
+		LRDirection direction = LRDirection::kRight;
 	};
+
+	struct AABB {
+		KamataEngine::Vector3 min;
+		KamataEngine::Vector3 max;
+	};
+
+	AABB GetAABB() const;
+
+	// 攻撃用のAABBを取得する関数
+	std::optional<AABB> GetAttackAABB() const;
 
 	Player();
 	~Player(); // デストラクタで残ったエフェクトやモデルを破棄します

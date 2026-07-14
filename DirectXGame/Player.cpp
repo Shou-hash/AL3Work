@@ -175,6 +175,8 @@ void Player::BehaviorAttackUpdate() {
 		if (attackParameter_ >= kChargeDuration) {
 			attackPhase_ = AttackPhase::kDash;
 			attackParameter_ = 0;
+
+			CreateHitEffect(worldTransform_.translation_);
 		}
 		break;
 	}
@@ -238,27 +240,43 @@ void Player::BehaviorAttackUpdate() {
 
 // ヒートエフェクトを動的に生成する関数
 void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
-	// メモリ確保
 	HitEffect* newEffect = new HitEffect();
 
-	// 1. 完全に初期化
 	newEffect->worldTransform.Initialize();
-
-	// 2. 座標・回転・スケールを明示的にセット（最初は見えやすいように 1.0f で固定してテストします）
 	newEffect->worldTransform.translation_ = position;
-	newEffect->worldTransform.rotation_ = {0.0f, 0.0f, 0.0f};
-	newEffect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f};
+	newEffect->direction = lrDirection_;
+
+	// 【修正】個別で0度や180度にするのではなく、プレイヤーの現在のY軸回転角度をそのままコピーする
+	newEffect->worldTransform.rotation_ = {0.0f, worldTransform_.rotation_.y, 0.0f};
+
+	newEffect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f}; // 拡大演出はいらないので等倍固定
 
 	newEffect->timer = 0;
-	newEffect->duration = 30; // 30フレーム表示
+	newEffect->duration = 15;
 	newEffect->isDead = false;
 
-	// 3. アフィン変換行列の合成と即時転送
 	newEffect->worldTransform.matWorld_ = MakeAffineMatrix(newEffect->worldTransform.scale_, newEffect->worldTransform.rotation_, newEffect->worldTransform.translation_);
 	newEffect->worldTransform.TransferMatrix();
 
-	// リストに追加
 	hitEffects_.push_back(newEffect);
+}
+
+std::optional<Player::AABB> Player::GetAttackAABB() const {
+	// 攻撃行動かつ突進中以外は判定を返さない
+	if (behavior_ != Behavior::kAttack || attackPhase_ != AttackPhase::kDash) {
+		return std::nullopt;
+	}
+
+	AABB aabb;
+	// プレイヤーの中心座標
+	const auto& pos = worldTransform_.translation_;
+
+	// プレイヤーのサイズ（kWidth, kHeight）を基準に AABB を設定
+	// ※奥行き(z)の判定幅は適宜調整（ここでは 1.0f としています）
+	aabb.min = {pos.x - kWidth / 2.0f, pos.y - kHeight / 2.0f, pos.z - 0.5f};
+	aabb.max = {pos.x + kWidth / 2.0f, pos.y + kHeight / 2.0f, pos.z + 0.5f};
+
+	return aabb;
 }
 
 void Player::Update() {
@@ -299,12 +317,16 @@ void Player::Update() {
 		if (effect->timer >= effect->duration) {
 			effect->isDead = true;
 		} else {
-			// 徐々に大きくするイージング（ここが原因で消えている可能性を考慮し、一旦単純な加算にします）
-			float t = static_cast<float>(effect->timer) / static_cast<float>(effect->duration);
-			float scaleVal = 1.0f + t * 2.0f; // 1.0倍から3.0倍へ徐々に拡大
-			effect->worldTransform.scale_ = {scaleVal, scaleVal, scaleVal};
+			// 1. 座標を常にプレイヤーの現在位置へ完全に追従させる
+			effect->worldTransform.translation_ = worldTransform_.translation_;
 
-			// 毎フレーム必ず行列を再計算してGPUに転送する
+			// 2. 【修正】向き（角度）もプレイヤーの現在の回転角度にリアルタイムで同期させる
+			effect->worldTransform.rotation_ = {0.0f, worldTransform_.rotation_.y, 0.0f};
+
+			// 3. 拡大演出は一切行わず、スケールは常に等倍（1.0f）を維持
+			effect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f};
+
+			// 4. 毎フレーム必ず行列を再計算してGPUに転送
 			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);
 			effect->worldTransform.TransferMatrix();
 		}
@@ -322,39 +344,38 @@ void Player::Update() {
 }
 
 void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
+	// デス演出中（isDead_ が true）なら判定しない
 	if (isDead_) {
 		return;
 	}
 
-	float playerLeft = worldTransform_.translation_.x - kWidth / 2.0f;
-	float playerRight = worldTransform_.translation_.x + kWidth / 2.0f;
-	float playerBottom = worldTransform_.translation_.y - kHeight / 2.0f;
-	float playerTop = worldTransform_.translation_.y + kHeight / 2.0f;
+	// プレイヤーのAABBを取得
+	AABB aabbPlayer = GetAABB();
 
 	for (Enemy* enemy : enemies) {
-		
-		if (!enemy) {
+		// すでに死亡している敵は判定をスキップ
+		if (enemy->IsDead()) {
 			continue;
 		}
-		
-		KamataEngine::Vector3 enemyPos = enemy->GetWorldTransform().translation_;
-		float enemyWidth = 0.8f;
-		float enemyHeight = 0.8f;
-		float enemyLeft = enemyPos.x - enemyWidth / 2.0f;
-		float enemyRight = enemyPos.x + enemyWidth / 2.0f;
-		float enemyBottom = enemyPos.y - enemyHeight / 2.0f;
-		float enemyTop = enemyPos.y + enemyHeight / 2.0f;
 
-		if (playerLeft < enemyRight && playerRight > enemyLeft && playerBottom < enemyTop && playerTop > enemyBottom) {
+		// 敵のAABBを取得
+		Enemy::AABB aabbEnemy = enemy->GetAABB();
 
+		// 衝突判定 (AABB 同士の重なり)
+		if (aabbPlayer.min.x < aabbEnemy.max.x && aabbPlayer.max.x > aabbEnemy.min.x &&
+			aabbPlayer.min.y < aabbEnemy.max.y && aabbPlayer.max.y > aabbEnemy.min.y &&
+			aabbPlayer.min.z < aabbEnemy.max.z && aabbPlayer.max.z > aabbEnemy.min.z) {
+
+			// === スライド指示の「コリジョン無効コード」===
+			// プレイヤーが攻撃状態（突進中）の場合
 			if (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) {
-				KamataEngine::Vector3 hitPos = {(worldTransform_.translation_.x + enemyPos.x) / 2.0f, (worldTransform_.translation_.y + enemyPos.y) / 2.0f, worldTransform_.translation_.z};
-				CreateHitEffect(hitPos);
-
-				// 必要に応じてここに敵撃破の処理を記述
+				// 敵の死亡演出を開始
+				enemy->OnDead();
 			} else {
+				// 通常時はプレイヤーがダメージを受ける
 				OnCollision();
 			}
+			// 1回のフレームで処理する衝突は1体のみとするためループを抜ける
 			break;
 		}
 	}
@@ -581,4 +602,28 @@ void Player::Draw() {
 		}
 	}
 	
+}
+
+Player::AABB Player::GetAABB() const {
+	AABB aabb;
+
+	// プレイヤーの中心座標
+	KamataEngine::Vector3 center = worldTransform_.translation_;
+
+	// 横幅と高さの半分を計算
+	float halfWidth = kWidth / 2.0f;
+	float halfHeight = kHeight / 2.0f;
+	float halfDepth = kWidth / 2.0f; // 奥行き（Z軸）も横幅と同じサイズにする場合
+
+	// 最小値 (左下の手前)
+	aabb.min.x = center.x - halfWidth;
+	aabb.min.y = center.y - halfHeight;
+	aabb.min.z = center.z - halfDepth;
+
+	// 最大値 (右上のお奥)
+	aabb.max.x = center.x + halfWidth;
+	aabb.max.y = center.y + halfHeight;
+	aabb.max.z = center.z + halfDepth;
+
+	return aabb;
 }
