@@ -569,18 +569,16 @@ void Player::Draw() {
 
 	// プレイヤーモデルの描画
 	if (modelPlayer_ && camera_) {
-		KamataEngine::Model::PreDraw();
+		// ※ GameScene側で PreDraw / PostDraw されているため、ここでは描画のみ行う
 		modelPlayer_->Draw(worldTransform_, *camera_);
-		KamataEngine::Model::PostDraw();
 	}
 
 	// 生成されているすべてのヒートエフェクトを描画
 	if (modelHitEffect_ && camera_ && !hitEffects_.empty()) {
-		KamataEngine::Model::PreDraw();
+		// エフェクトもGameScene側の描画パス（PreDraw〜PostDraw）の中で描画されるようにします
 		for (const auto* effect : hitEffects_) {
 			modelHitEffect_->Draw(effect->worldTransform, *camera_);
 		}
-		KamataEngine::Model::PostDraw();
 	}
 	
 }
