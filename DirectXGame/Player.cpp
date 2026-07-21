@@ -288,55 +288,65 @@ void Player::Update() {
 		return;
 	}
 
-	// デバッグ用：【Tキー】を押したらプレイヤーの目の前に強制的にエフェクトを生成する（判定の不具合を切り分けるため）
+	// デバッグ用：【Tキー】を押したらプレイヤーの目の前に強制的にエフェクトを生成する
 	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_T)) {
 		CreateHitEffect(worldTransform_.translation_);
 	}
 
+	// 外部からのノックバック要求チェック（状態リクエストに変換）
+	if (isKnockbackRequested_) {
+		behaviorRequest_ = Behavior::kKnockback;
+		isKnockbackRequested_ = false;
+	}
+
+	// ビヘイビアの切り替え処理
 	if (behaviorRequest_) {
 		behavior_ = behaviorRequest_.value();
+
+		// 各状態の初期化
 		switch (behavior_) {
 		case Behavior::kRoot:
-			BehaviorRootInit();
+			BehaviorRootInit(); // ← 【修正】コメントアウトを解除
 			break;
 		case Behavior::kAttack:
-			BehaviorAttackInit();
+			BehaviorAttackInit(); // ← 【修正】コメントアウトを解除
+			break;
+		case Behavior::kKnockback:
+			BehaviorKnockbackInitialize();
 			break;
 		}
+
 		behaviorRequest_ = std::nullopt;
 	}
 
+	// 現在のビヘイビアの毎フレーム更新処理
 	switch (behavior_) {
 	case Behavior::kRoot:
-		BehaviorRootUpdate();
+		BehaviorRootUpdate(); // ← 【修正】コメントアウトを解除
 		break;
 	case Behavior::kAttack:
-		BehaviorAttackUpdate();
+		BehaviorAttackUpdate(); // ← 【修正】コメントアウトを解除
+		break;
+	case Behavior::kKnockback:
+		BehaviorKnockbackUpdate();
 		break;
 	}
 
-	// ヒートエフェクトの一斉更新処理
+	// ヒットエフェクトの一斉更新処理
 	for (auto* effect : hitEffects_) {
 		effect->timer++;
 		if (effect->timer >= effect->duration) {
 			effect->isDead = true;
 		} else {
-			// 1. 座標を常にプレイヤーの現在位置へ完全に追従させる
 			effect->worldTransform.translation_ = worldTransform_.translation_;
-
-			// 2. 【修正】向き（角度）もプレイヤーの現在の回転角度にリアルタイムで同期させる
 			effect->worldTransform.rotation_ = {0.0f, worldTransform_.rotation_.y, 0.0f};
-
-			// 3. 拡大演出は一切行わず、スケールは常に等倍（1.0f）を維持
 			effect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f};
-
-			// 4. 毎フレーム必ず行列を再計算してGPUに転送
 			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);
 			effect->worldTransform.TransferMatrix();
 		}
 	}
 
-	// 寿命を迎えたエフェクトのメモリを解放し、リストから削除
+	// 寿命を迎えたエフェクトのメモリを解放
 	for (auto it = hitEffects_.begin(); it != hitEffects_.end();) {
 		if ((*it)->isDead) {
 			delete *it;
@@ -344,6 +354,36 @@ void Player::Update() {
 		} else {
 			++it;
 		}
+	}
+}
+
+// ノックバック開始時の初期化
+void Player::BehaviorKnockbackInitialize() { knockbackTimer_ = 0.0f; }
+
+void Player::BehaviorKnockbackUpdate() {
+	knockbackTimer_ += 1.0f / 60.0f;
+
+	// フェーズ 1: 「強い初速で弾き飛ばされる」
+	if (knockbackTimer_ < kKnockbackSpeedDuration) {
+		float knockbackSpeed = 0.15f;
+		if (lrDirection_ == LRDirection::kRight) {
+			worldTransform_.translation_.x -= knockbackSpeed; // 右向き時は左へ弾かれる
+		} else {
+			worldTransform_.translation_.x += knockbackSpeed; // 左向き時は右へ弾かれる
+		}
+	}
+	// フェーズ 2: 「移動が停止し、体勢を立て直す」
+	else {
+		// 移動は停止して硬直のみ
+	}
+
+	// 【追加】行列計算と転送を行わないと描画座標が更新されません
+	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
+	worldTransform_.TransferMatrix();
+
+	// 時間経過で通常状態（kRoot）へ復帰
+	if (knockbackTimer_ >= kKnockbackTotalDuration) {
+		behaviorRequest_ = Behavior::kRoot;
 	}
 }
 

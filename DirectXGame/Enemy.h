@@ -50,7 +50,7 @@ private:
 
 	KamataEngine::Vector3 velocity_ = {0, 0, 0}; // 敵の現在の速度
 
-	static inline const float kWalkspeed = 0.00f; // 敵の移動速度
+	static inline const float kWalkspeed = 0.05f; // 敵の移動速度
 
 	static inline const float kWalkMotionAnglestart = -20.0f;
 

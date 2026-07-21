@@ -21,12 +21,17 @@ GameScene::~GameScene() {
 	delete modelSkydome_;
 	delete mapChipField_;
 	delete modelEnemy_;
+	delete modelShieldEnemy_;
 	delete modelPlayer_;
 	delete modelDeathParticles_;
 
 	// 範囲for文（一重）でリスト内の敵を1体ずつ解放
 	for (Enemy* enemy : enemies_) {
 		delete enemy;
+	}
+	
+	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
+		delete shieldEnemy;
 	}
 	enemies_.clear();
 
@@ -60,7 +65,8 @@ void GameScene::Initialize() {
 	debugCamera_ = new DebugCamera(1280, 720);
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
 	modelPlayer_ = Model::CreateFromOBJ("player", true);
-	modelEnemy_ = Model::CreateFromOBJ("player", true);
+	modelEnemy_ = Model::CreateFromOBJ("enemy", true);
+	modelShieldEnemy_ = Model::CreateFromOBJ("shieldEnemy", true);
 	modelDeathParticles_ = Model::CreateFromOBJ("particle", true);
 	modelHitEffect_ = Model::CreateFromOBJ("particle", true);
 
@@ -86,6 +92,15 @@ void GameScene::Initialize() {
 
 		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
 		enemies_.push_back(newEnemy);
+	}
+
+	for (int32_t i = 0; i < 3; i++) {
+		// インデックス(10, 18)を基準に、1体ごとにX軸方向にずらして異なる座標を作成
+		ShieldEnemy* newShieldEnemy = new ShieldEnemy();
+		Vector3 shieldEnemyPosition = mapChipField_->GetMapChipPositionByIndex(20, 18 - i);
+
+		newShieldEnemy->Initialize(modelShieldEnemy_, &camera_, shieldEnemyPosition);
+		shieldEnemies_.push_back(newShieldEnemy);
 	}
 	
 	deathParticles_ = std::make_unique<DeathParticles>();
@@ -121,6 +136,11 @@ void GameScene::GenerateBlocks() {
 }
 
 bool IsCollision(const Player::AABB& a, const Enemy::AABB& b) {
+	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
+
+// ShieldEnemy用の IsCollision オーバーロード
+bool IsCollision(const Player::AABB& a, const ShieldEnemy::AABB& b) {
 	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
@@ -254,54 +274,53 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
+	// 敵の更新（盾敵）
+	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
+		if (shieldEnemy) {
+			shieldEnemy->Update();
+		}
+	}
+
 	// プレイヤー攻撃と敵の当たり判定
 	if (player_) {
 		auto attackAABB = player_->GetAttackAABB();
 		if (attackAABB.has_value()) {
+			// 通常敵との判定
 			for (Enemy* enemy : enemies_) {
 				if (enemy && !enemy->IsDead() && IsCollision(attackAABB.value(), enemy->GetAABB())) {
-
-					// エフェクトをインスタンス化
 					HitEffect* newEffect = new HitEffect();
-
-					// 敵の位置を渡して初期化するだけ（モデル・カメラのセットは不要）
 					newEffect->Initialize(enemy->GetWorldTransform().translation_);
-
-					// リストに登録
 					hitEffects_.push_back(newEffect);
-
-					// 敵の死亡処理へ
 					enemy->OnDead();
+				}
+			}
+
+			// 盾敵との判定 (追加)
+			for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
+				if (shieldEnemy && !shieldEnemy->IsDead() && IsCollision(attackAABB.value(), shieldEnemy->GetAABB())) {
+					// ShieldEnemy 内部で正面判定・ガードエフェクト生成・または OnDead() を行う
+					shieldEnemy->OnCollision(player_.get());
 				}
 			}
 		}
 	}
 
-	// ヒットエフェクトの更新 (既存の処理)
-	for (HitEffect* effect : hitEffects_) {
-		if (effect) {
-			effect->Update();
-		}
-	}
-
-	// 終了したヒットエフェクトのメモリ解放と削除
+	// ヒットエフェクトの更新と解放
 	for (auto it = hitEffects_.begin(); it != hitEffects_.end();) {
 		if (*it) {
-			(*it)->Update(); // 更新処理
-
-			// エフェクトが生存時間を超えて終了（デス状態）になった場合
+			(*it)->Update();
 			if ((*it)->IsFinished()) {
-				delete (*it);               // メモリの解放
-				it = hitEffects_.erase(it); // リストから除外し、次の要素へ進む
+				delete (*it);
+				it = hitEffects_.erase(it);
 			} else {
-				++it; // 次の要素へ進む
+				++it;
 			}
 		} else {
 			it = hitEffects_.erase(it);
 		}
 	}
 
-	// 死亡演出が完了した敵のクリーンアップ（既存処理）
+	// 通常敵のクリーンアップ
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		Enemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
@@ -311,18 +330,18 @@ void GameScene::UpdatePlay() {
 			++it;
 		}
 	}
-	
-	// 死亡演出が完了した敵をリストからクリーンアップしてメモリ解放
-	for (auto it = enemies_.begin(); it != enemies_.end();) {
-		Enemy* enemy = *it;
-		if (enemy && enemy->IsDead()) {
-			delete enemy;
-			it = enemies_.erase(it); // 安全に削除
+
+	// 盾敵のクリーンアップ (追加)
+	for (auto it = shieldEnemies_.begin(); it != shieldEnemies_.end();) {
+		ShieldEnemy* shieldEnemy = *it;
+		if (shieldEnemy && shieldEnemy->IsDead()) {
+			delete shieldEnemy;
+			it = shieldEnemies_.erase(it);
 		} else {
 			++it;
 		}
 	}
-
+	
 	// カメラコントローラーの更新
 	if (!isDebugCameraActive_ && cameraController_) {
 		cameraController_->Update();
@@ -344,6 +363,12 @@ void GameScene::UpdateDeath() {
 		if (enemy) {
 			enemy->Update();
 		}
+	}
+
+	// 盾敵の更新
+	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
+		if (shieldEnemy)
+			shieldEnemy->Update();
 	}
 
 	// デスパーティクルの更新（このフェーズでのみ行う）
@@ -383,6 +408,7 @@ void GameScene::UpdateFadeOut() {
 }
 
 void GameScene::Draw() {
+	// ブロック描画
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
 			if (!worldTransformBlock) {
@@ -411,11 +437,20 @@ void GameScene::Draw() {
 		Model::PostDraw();
 	}
 
-	// 【敵の描画】一重のfor文でリスト内のすべての敵を描画
+	// 敵の描画 一重のfor文でリスト内のすべての敵を描画
 	for (Enemy* enemy : enemies_) {
 		if (enemy) {
 			Model::PreDraw();
 			enemy->Draw();
+			Model::PostDraw();
+		}
+	}
+
+	// 盾敵の描画 (追加)
+	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
+		if (shieldEnemy) {
+			Model::PreDraw();
+			shieldEnemy->Draw();
 			Model::PostDraw();
 		}
 	}

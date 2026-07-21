@@ -17,6 +17,7 @@ enum class LRDirection {
 enum class Behavior {
 	kRoot,   // 通常行動
 	kAttack, // 攻撃行動
+	kKnockback // ノックバック状態
 };
 
 enum class AttackPhase {
@@ -75,6 +76,9 @@ public:
 	// 攻撃中（突進中）かどうかの取得
 	bool IsAttacking() const { return behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash; }
 
+	// 向きを取得するGetter（publicの中に書く）
+	LRDirection GetLRDirection() const { return lrDirection_; }
+
 	// 衝突時に呼び出される関数（デスフラグを立てる）
 	void OnCollision();
 
@@ -100,7 +104,16 @@ public:
 	// エフェクト発生用の関数
 	void CreateHitEffect(const KamataEngine::Vector3& position);
 
+	// ノックバックリクエストを受ける関数
+	void RequestKnockback() { isKnockbackRequested_ = true; }
+	// ノックバック用の更新関数・初期化関数
+	void BehaviorKnockbackInitialize();
+	void BehaviorKnockbackUpdate();
+
 private:
+	Behavior behavior_ = Behavior::kRoot;
+	std::optional<Behavior> behaviorRequest_ = std::nullopt;
+
 	// だんだん減速する（EaseOut）
 	float EaseOut(float start, float end, float t) {
 		float easing = 1.0f - std::pow(1.0f - t, 3.0f);
@@ -112,10 +125,6 @@ private:
 		float easing = std::pow(t, 3.0f);
 		return start + (end - start) * easing;
 	}
-
-	// 状態管理用の変数群
-	Behavior behavior_ = Behavior::kRoot;                    // 現在のビヘイビア
-	std::optional<Behavior> behaviorRequest_ = std::nullopt; // 状態遷移へのリクエスト
 
 	static inline const float kAcceleration = 0.03f;
 	static inline const float kAttenuation = 0.5f;
@@ -134,6 +143,7 @@ private:
 	KamataEngine::Vector3 velocity_ = {};
 	bool onGround_ = true;
 	bool isDead_ = false; // 死亡フラグ
+	bool isKnockbackRequested_ = false;
 
 	float turnFirstRotationY_ = 0.0f;
 	float turnTimer_ = 0.0f;
@@ -155,4 +165,9 @@ private:
 	// ヒートエフェクト用のメンバ変数群
 	KamataEngine::Model* modelHitEffect_ = nullptr; // エフェクトのモデルポインタ
 	std::list<HitEffect*> hitEffects_;
+
+	// ノックバック演出用タイマーとフェーズ管理
+	float knockbackTimer_ = 0.0f;
+	static inline const float kKnockbackSpeedDuration = 0.2f; // 「強い初速で弾き飛ばされる」時間
+	static inline const float kKnockbackTotalDuration = 0.5f; // ノックバック全体の時間
 };
