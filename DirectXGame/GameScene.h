@@ -1,5 +1,5 @@
 #pragma once
-#include "BaseEffect.h" // ★ 基底クラスのインクルード
+#include "BaseEffect.h"
 #include "BaseEnemy.h"
 #include "CameraController.h"
 #include "Enemy.h"
@@ -14,6 +14,9 @@
 #include <memory>
 #include <vector>
 
+// ★ クラスの前方宣言
+class StageManager;
+
 enum class Phase {
 	kFadeIn,  // フェードイン
 	kPlay,    // ゲームプレイ
@@ -25,7 +28,8 @@ class GameScene {
 public:
 	~GameScene();
 
-	void Initialize();
+	// ★ 初期化関数で StageManager のポインタを受け取るように変更
+	void Initialize(StageManager* stageDataManager);
 	void Update();
 	void Draw();
 	KamataEngine::Camera& GetCamera() { return camera_; }
@@ -68,9 +72,11 @@ private:
 	std::unique_ptr<CameraController> cameraController_ = nullptr;
 	MapChipField* mapChipField_ = nullptr;
 
-	// ポリモーフィズムで管理する敵とエフェクトのリスト
 	std::list<BaseEnemy*> enemies_;
-	std::list<BaseEffect*> effects_; // ★ 統合されたエフェクトリスト
+	std::list<BaseEffect*> effects_;
 
 	bool reloadRequested_ = false;
+
+	// ★ ステージマネージャ参照用のポインタ
+	StageManager* stageManager_ = nullptr;
 };

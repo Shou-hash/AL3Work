@@ -9,12 +9,13 @@ void StageManager::LoadStageDatas() {
 	// 念のため以前のデータをクリア
 	stageDatas_.clear();
 
-	// ★ CSVの文字列から変換するための参照表（変換テーブル）
+	// 文字列の置き換え用参照表（変換テーブル）
+	// 必要に応じて項目を追加してください（例: "B1" -> "2" など）
 	const std::map<std::string, std::string> replaceTable = {
-	    {"B0", "1"}, // ブロック
-	    {"P0", "2"}, // プレイヤー
-	    {"E0", "3"}, // 普通の敵 (Enemy)
-	    {"E1", "4"}, // 盾敵 (ShieldEnemy) ★ 追加
+	    {",", "0"},
+	    {"B0", "1"},// {"B1", "2"}, // 他に特殊な記号記法があればここに追加
+	    {"P0", "2"},
+	    {"E0", "3"},
 	};
 
 	const std::string filePath = "Resources/stageDatas.csv";

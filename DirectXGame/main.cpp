@@ -1,5 +1,6 @@
 #include "GameScene.h"
 #include "Kamataengine.h"
+#include "StageManager.h" // ★ GameScene.h より前にインクルード
 #include "TitleScene.h"
 #include <Windows.h>
 #include <imgui.h>
@@ -14,6 +15,7 @@ enum class Scene {
 Scene scene = Scene::kUnknown;
 TitleScene* titleScene = nullptr;
 GameScene* gameScene = nullptr;
+StageManager* stageManager = nullptr;
 
 // シーン切り替え関数
 void ChangeScene(Scene newScene) { scene = newScene; }
@@ -28,7 +30,7 @@ void UpdateScene() {
 			// タイトルシーンが終了したらゲームシーンへ切り替え
 			ChangeScene(Scene::kGame);
 			// ゲームシーンを最初から遊べるように初期化
-			gameScene->Initialize();
+			gameScene->Initialize(stageManager); // ★ 引数を追加
 		}
 		break;
 
@@ -52,7 +54,7 @@ void UpdateScene() {
 			delete gameScene;
 			gameScene = nullptr;
 			gameScene = new GameScene();
-			gameScene->Initialize();
+			gameScene->Initialize(stageManager); // ★ 引数を追加
 		}
 		break;
 	}
@@ -80,12 +82,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Initialize(L"LE2C_12_ショウ_ズーウェン_AL3");
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 
-	// 各シーンのインスタンス生成と初期化
-	gameScene = new GameScene();
-	gameScene->Initialize();
+	// ★1. まず最初に StageManager を生成＆CSV読み込みする
+	stageManager = new StageManager();
+	stageManager->LoadStageDatas();
 
+	// ★2. シーンのインスタンス生成（この時点では Initialize は Title だけでもOKですが、生成はここで行う）
 	titleScene = new TitleScene();
 	titleScene->Initialize();
+
+	gameScene = new GameScene();
+	// ※タイトルの時点では Initialize を呼ばず、タイトル終了時に呼ぶ形にするか、ここで呼ぶ場合は stageManager を渡す
+	gameScene->Initialize(stageManager);
 
 	ImGuiManager* imguiManager = ImGuiManager::GetInstance();
 
@@ -94,37 +101,30 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// メインループ
 	while (true) {
-		// エンジンの更新
 		if (KamataEngine::Update()) {
 			break;
 		}
 
 		imguiManager->Begin();
-
-		// シーンの更新・切り替え判定を関数化
 		UpdateScene();
-
 		imguiManager->End();
 
-		// 描画処理
 		dxCommon->PreDraw();
-
 		DrawScene();
 		imguiManager->Draw();
-
-		// 描画処理を関数化
-
 		dxCommon->PostDraw();
 	}
 
 	// エンジンの終了処理
 	Finalize();
 
-	// 開放処理
+	// 解放処理
 	delete titleScene;
 	titleScene = nullptr;
 	delete gameScene;
 	gameScene = nullptr;
+	delete stageManager;
+	stageManager = nullptr;
 
 	return 0;
 }

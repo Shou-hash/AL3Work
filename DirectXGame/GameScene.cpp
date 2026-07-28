@@ -3,6 +3,7 @@
 #include "HitEffect.h"
 #include "Matrix4x4.h"
 #include "Player.h"
+#include "StageManager.h" // ★ インクルードを追加
 
 using namespace KamataEngine;
 
@@ -32,14 +33,17 @@ GameScene::~GameScene() {
 	}
 	enemies_.clear();
 
-	// ★ 全てのエフェクトを1つのループで解放
+	// 全てのエフェクトを解放
 	for (BaseEffect* effect : effects_) {
 		delete effect;
 	}
 	effects_.clear();
 }
 
-void GameScene::Initialize() {
+void GameScene::Initialize(StageManager* stageDataManager) {
+	// 引数をメンバ変数に記録する
+	stageManager_ = stageDataManager;
+
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 
@@ -47,8 +51,15 @@ void GameScene::Initialize() {
 	fade_->Initialize();
 	fade_->Start(Fade::Status::FadeIn, 1.0f);
 
+	// マップチップフィールドの生成と現在のステージCSV読み込み
 	mapChipField_ = new MapChipField;
-	mapChipField_->LoadMapChipDataFromCSV("Resources/blocks.csv");
+
+	// 現在のステージデータを取得
+	const StageData& stageData = stageManager_->GetCurrentStageData(); // ★ const参照に変更
+	// ステージファイルパスの生成 ("Resources/fields/" + ファイル名 + ".csv")
+	std::string stageFileName = "Resources/fields/" + stageData.name + ".csv";
+	// ステージファイルの読み込み
+	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
 
 	model_ = Model::CreateFromOBJ("block", true);
 
@@ -215,7 +226,6 @@ void GameScene::ChangePhase() {
 		if (player_ && player_->IsDead()) {
 			phase_ = Phase::kDeath;
 
-			// ★ デスパーティクルを BaseEffect として生成・リストに追加
 			DeathParticles* deathParticles = new DeathParticles();
 			KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
 			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
@@ -224,7 +234,6 @@ void GameScene::ChangePhase() {
 		break;
 
 	case Phase::kDeath:
-		// エフェクトが全て終了していればフェードアウトへ移行
 		if (effects_.empty()) {
 			phase_ = Phase::kFadeOut;
 			if (fade_) {
@@ -265,7 +274,6 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// プレイヤー攻撃と敵の当たり判定
 	if (player_) {
 		auto attackAABB = player_->GetAttackAABB();
 		if (attackAABB.has_value()) {
@@ -274,7 +282,6 @@ void GameScene::UpdatePlay() {
 					enemy->OnCollision(player_.get());
 
 					if (dynamic_cast<Enemy*>(enemy)) {
-						// ★ ヒットエフェクトを BaseEffect として生成・リストに追加
 						HitEffect* newEffect = new HitEffect();
 						newEffect->Initialize(enemy->GetWorldTransform().translation_);
 						effects_.push_back(newEffect);
@@ -285,7 +292,6 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// ★ 全てのエフェクトを一括更新・終了削除
 	for (auto it = effects_.begin(); it != effects_.end();) {
 		if (*it) {
 			(*it)->Update();
@@ -300,7 +306,6 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// 敵の削除処理
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
@@ -329,7 +334,6 @@ void GameScene::UpdateDeath() {
 		}
 	}
 
-	// ★ 全てのエフェクトを一括更新・終了削除
 	for (auto it = effects_.begin(); it != effects_.end();) {
 		if (*it) {
 			(*it)->Update();
@@ -357,7 +361,6 @@ void GameScene::UpdateFadeOut() {
 		}
 	}
 
-	// ★ 残存エフェクトの更新
 	for (auto it = effects_.begin(); it != effects_.end();) {
 		if (*it) {
 			(*it)->Update();
@@ -374,7 +377,6 @@ void GameScene::UpdateFadeOut() {
 }
 
 void GameScene::Draw() {
-	// ブロック描画
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
 			if (!worldTransformBlock) {
@@ -387,7 +389,6 @@ void GameScene::Draw() {
 	}
 	skydome->Draw();
 
-	// ★ 全てのエフェクトを一括描画
 	for (BaseEffect* effect : effects_) {
 		if (effect) {
 			Model::PreDraw();
@@ -396,14 +397,12 @@ void GameScene::Draw() {
 		}
 	}
 
-	// プレイヤー描画
 	if (player_) {
 		Model::PreDraw();
 		player_->Draw();
 		Model::PostDraw();
 	}
 
-	// 敵描画
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			Model::PreDraw();
@@ -412,7 +411,6 @@ void GameScene::Draw() {
 		}
 	}
 
-	// フェード描画
 	if (fade_) {
 		Model::PreDraw();
 		fade_->Draw();
