@@ -31,7 +31,11 @@ public:
 	void Draw();
 	KamataEngine::Camera& GetCamera() { return camera_; }
 
-	void GenerateBlocks();
+	// 関数名を GenerateBlocks から GenerateFieldObjects に変更
+	void GenerateFieldObjects();
+
+	// 敵の個別生成関数
+	void GenerateEnemy(uint32_t xIndex, uint32_t yIndex);
 
 	// シーンが終了したかを取得
 	bool isFinished() const { return finished_; }

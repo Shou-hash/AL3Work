@@ -8,7 +8,9 @@
 namespace {
 // マップチップ種別テーブル
 std::map<char, MapChipType> mapChipTypeTable = {
-    {'B', MapChipType::kBlock},
+    {'B', MapChipType::kBlock },
+    {'P', MapChipType::kPlayer},
+    {'E', MapChipType::kEnemy }, // 追加（E0, E1 などで指定可能になります）
 };
 } // namespace
 
@@ -42,7 +44,7 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 			std::string word;
 			std::getline(lineStream, word, ',');
 
-			// 空白の場合はスキル
+			// 空白の場合はスキップ
 			if (word.empty()) {
 				continue;
 			}
@@ -55,7 +57,7 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 			// 先頭文字でマップチップのタイプを判別
 			mapChipData_.data[i][j].type = mapChipTypeTable[word[kChipType]];
 
-			// サブIDを含まない場合はスキル（0番で確定）
+			// サブIDを含まない場合はスキップ（0番で確定）
 			if (word.size() <= kChipSubID) {
 				continue;
 			}

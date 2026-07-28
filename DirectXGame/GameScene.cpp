@@ -25,7 +25,7 @@ GameScene::~GameScene() {
 	delete modelPlayer_;
 	delete modelDeathParticles_;
 
-	// 全ての敵を1つのループで解放（仮想デストラクタにより正しく破棄される）
+	// 全ての敵を1つのループで解放
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
 	}
@@ -52,8 +52,6 @@ void GameScene::Initialize() {
 	mapChipField_ = new MapChipField;
 	mapChipField_->LoadMapChipDataFromCSV("Resources/blocks.csv");
 
-	GenerateBlocks();
-
 	model_ = Model::CreateFromOBJ("block", true);
 
 	worldTransform_.Initialize();
@@ -72,37 +70,18 @@ void GameScene::Initialize() {
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
-	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2, 18);
-
-	// プレイヤーの生成と初期化
-	player_ = std::make_unique<Player>();
-	player_->Initialize(modelPlayer_, &camera_, playerPosition);
-
-	player_->SetMapChipField(mapChipField_);
-
-	// 【通常の敵の生成】
-	for (int32_t i = 0; i < 3; i++) {
-		Enemy* enemy = new Enemy();
-		Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18 - i);
-		enemy->Initialize(modelEnemy_, &camera_, enemyPosition);
-		enemies_.push_back(enemy);
-	}
-
-	// 【盾敵の生成】
-	for (int32_t i = 0; i < 3; i++) {
-		ShieldEnemy* enemy = new ShieldEnemy();
-		Vector3 shieldEnemyPosition = mapChipField_->GetMapChipPositionByIndex(20, 18 - i);
-		enemy->Initialize(modelShieldEnemy_, &camera_, shieldEnemyPosition);
-		enemies_.push_back(enemy);
-	}
+	// フィールドオブジェクト（ブロック・プレイヤー等）を生成
+	GenerateFieldObjects();
 
 	deathParticles_ = std::make_unique<DeathParticles>();
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
-	cameraController_->SetTarget(player_.get());
 
-	player_->SetCameraController(cameraController_.get());
+	if (player_) {
+		cameraController_->SetTarget(player_.get());
+		player_->SetCameraController(cameraController_.get());
+	}
 
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
 	cameraController_->SetMovableArea(stageArea);
@@ -110,7 +89,8 @@ void GameScene::Initialize() {
 	cameraController_->Reset();
 }
 
-void GameScene::GenerateBlocks() {
+
+void GameScene::GenerateFieldObjects() {
 	uint32_t numBlockVirtical = mapChipField_->GetNumBlockVertical();
 	uint32_t numBlockHorizontal = mapChipField_->GetNumBlockHorizontal();
 
@@ -118,15 +98,61 @@ void GameScene::GenerateBlocks() {
 	for (uint32_t i = 0; i < numBlockVirtical; ++i) {
 		worldTransformBlocks_[i].resize(numBlockHorizontal);
 		for (uint32_t j = 0; j < numBlockHorizontal; ++j) {
-			if (mapChipField_->GetMapChipTypeByIndex(j, i) == MapChipType::kBlock) {
+			MapChipType type = mapChipField_->GetMapChipTypeByIndex(j, i);
+
+			switch (type) {
+			case MapChipType::kBlock: {
 				WorldTransform* worldTransform = new WorldTransform();
 				worldTransform->Initialize();
 				worldTransformBlocks_[i][j] = worldTransform;
 				worldTransformBlocks_[i][j]->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
+				break;
+			}
+			case MapChipType::kPlayer: {
+				if (player_ != nullptr) {
+					break;
+				}
+				Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(j, i);
+				player_ = std::make_unique<Player>();
+				player_->Initialize(modelPlayer_, &camera_, playerPosition);
+				player_->SetMapChipField(mapChipField_);
+				break;
+			}
+			case MapChipType::kEnemy: { // 追加
+				GenerateEnemy(j, i);
+				break;
+			}
+			default:
+				break;
 			}
 		}
 	}
 }
+
+void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
+	uint8_t subID = mapChipField_->GetMapChipSubIDByIndex(xIndex, yIndex);
+	Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(xIndex, yIndex);
+
+	switch (subID) {
+	case 0: {
+		// 歩行敵 (E0) の生成
+		Enemy* enemy = new Enemy();
+		enemy->Initialize(modelEnemy_, &camera_, enemyPosition);
+		enemies_.push_back(enemy);
+		break;
+	}
+	case 1: {
+		// 盾敵 (E1) の生成
+		ShieldEnemy* enemy = new ShieldEnemy();
+		enemy->Initialize(modelShieldEnemy_, &camera_, enemyPosition);
+		enemies_.push_back(enemy);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 
 // 共通 AABB 当たり判定
 bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
@@ -262,11 +288,8 @@ void GameScene::UpdatePlay() {
 		if (attackAABB.has_value()) {
 			for (BaseEnemy* enemy : enemies_) {
 				if (enemy && !enemy->IsDead() && IsCollision(attackAABB.value(), enemy->GetAABB())) {
-					// 各敵の衝突応答（ShieldEnemyならガード判定、通常敵なら無視など）
 					enemy->OnCollision(player_.get());
 
-					// 通常敵で OnCollision で死亡処理を行わない場合は追加でエフェクト生成・OnDead呼び出し
-					// （※ShieldEnemy以外の通常敵ヒット時処理）
 					if (dynamic_cast<Enemy*>(enemy)) {
 						HitEffect* newEffect = new HitEffect();
 						newEffect->Initialize(enemy->GetWorldTransform().translation_);
@@ -293,7 +316,7 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// 全ての敵のクリーンアップ（1つのループに統合）
+	// 全ての敵のクリーンアップ
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
@@ -309,7 +332,7 @@ void GameScene::UpdatePlay() {
 		cameraController_->Update();
 	}
 
-	// 全ての当たり判定（自キャラと敵の衝突判定など）
+	// 全ての当たり判定
 	if (player_) {
 		player_->CheckEnemyCollision(enemies_);
 	}
@@ -319,7 +342,6 @@ void GameScene::UpdatePlay() {
 void GameScene::UpdateDeath() {
 	skydome->Update();
 
-	// 全ての敵を更新
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
@@ -345,7 +367,6 @@ void GameScene::UpdateFadeOut() {
 
 	skydome->Update();
 
-	// 全ての敵を更新
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
@@ -387,7 +408,7 @@ void GameScene::Draw() {
 		Model::PostDraw();
 	}
 
-	// 全ての敵を描画（ポリモーフィズム）
+	// 全ての敵を描画
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			Model::PreDraw();

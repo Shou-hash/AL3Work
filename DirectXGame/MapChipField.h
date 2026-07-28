@@ -2,9 +2,12 @@
 #include "Kamataengine.h"
 #include <map>
 
+// マップチップ種別
 enum class MapChipType {
-	kBlank,
-	kBlock,
+	kBlank,  // 空白
+	kBlock,  // ブロック
+	kPlayer, // プレイヤー
+	kEnemy,  // 敵
 };
 
 // 1マス分のデータ
