@@ -2,6 +2,7 @@
 #include "Kamataengine.h"
 #include "TitleScene.h"
 #include <Windows.h>
+#include <imgui.h>
 
 enum class Scene {
 	kUnknown = 0,
