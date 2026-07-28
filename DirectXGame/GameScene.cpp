@@ -1,13 +1,13 @@
 #include "GameScene.h"
+#include "Enemy.h"
 #include "Matrix4x4.h"
 #include "Player.h"
+#include "ShieldEnemy.h"
 
 using namespace KamataEngine;
 
 GameScene::~GameScene() {
-
 	delete fade_;
-
 	delete model_;
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
@@ -25,19 +25,14 @@ GameScene::~GameScene() {
 	delete modelPlayer_;
 	delete modelDeathParticles_;
 
-	// 範囲for文（一重）でリスト内の敵を1体ずつ解放
-	for (Enemy* enemy : enemies_) {
+	// 全敵の一括解放（仮想デストラクタにより正しく派生クラスのデストラクタが呼ばれます）
+	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
-	}
-	
-	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
-		delete shieldEnemy;
 	}
 	enemies_.clear();
 
 	delete modelHitEffect_;
 
-	// ヒットエフェクトリストの解放
 	for (HitEffect* effect : hitEffects_) {
 		delete effect;
 	}
@@ -45,7 +40,6 @@ GameScene::~GameScene() {
 }
 
 void GameScene::Initialize() {
-
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 
@@ -78,31 +72,27 @@ void GameScene::Initialize() {
 
 	KamataEngine::Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(2, 18);
 
-	// プレイヤーの生成と初期化
 	player_ = std::make_unique<Player>();
 	player_->Initialize(modelPlayer_, &camera_, playerPosition);
-
 	player_->SetMapChipField(mapChipField_);
 
-	// 【敵の生成】スライドの指示通り new Enemy() で生成し、1体ずつ異なる座標をセットしてリストに追加
+	// --- 敵の生成と統合リストへの追加 ---
+	// 1. 通常敵の追加
 	for (int32_t i = 0; i < 3; i++) {
-		// インデックス(10, 18)を基準に、1体ごとにX軸方向にずらして異なる座標を作成
-		Enemy* newEnemy = new Enemy();
+		Enemy* enemy = new Enemy();
 		Vector3 enemyPosition = mapChipField_->GetMapChipPositionByIndex(10 + i, 18 - i);
-
-		newEnemy->Initialize(modelEnemy_, &camera_, enemyPosition);
-		enemies_.push_back(newEnemy);
+		enemy->Initialize(modelEnemy_, &camera_, enemyPosition);
+		enemies_.push_back(enemy); // BaseEnemy* 型リストに追加
 	}
 
+	// 2. 盾敵の追加
 	for (int32_t i = 0; i < 3; i++) {
-		// インデックス(10, 18)を基準に、1体ごとにX軸方向にずらして異なる座標を作成
-		ShieldEnemy* newShieldEnemy = new ShieldEnemy();
+		ShieldEnemy* enemy = new ShieldEnemy();
 		Vector3 shieldEnemyPosition = mapChipField_->GetMapChipPositionByIndex(20, 18 - i);
-
-		newShieldEnemy->Initialize(modelShieldEnemy_, &camera_, shieldEnemyPosition);
-		shieldEnemies_.push_back(newShieldEnemy);
+		enemy->Initialize(modelShieldEnemy_, &camera_, shieldEnemyPosition);
+		enemies_.push_back(enemy); // BaseEnemy* 型リストに追加
 	}
-	
+
 	deathParticles_ = std::make_unique<DeathParticles>();
 
 	cameraController_ = std::make_unique<CameraController>();
@@ -113,7 +103,6 @@ void GameScene::Initialize() {
 
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
 	cameraController_->SetMovableArea(stageArea);
-
 	cameraController_->Reset();
 }
 
@@ -135,40 +124,29 @@ void GameScene::GenerateBlocks() {
 	}
 }
 
-bool IsCollision(const Player::AABB& a, const Enemy::AABB& b) {
-	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
-}
-
-// ShieldEnemy用の IsCollision オーバーロード
-bool IsCollision(const Player::AABB& a, const ShieldEnemy::AABB& b) {
+// 共通AABB当たり判定関数
+bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
 	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
 void GameScene::Update() {
-
-	// フェーズの切り替え判定
 	ChangePhase();
 
-	// フェーズごとの更新処理
 	switch (phase_) {
 	case Phase::kFadeIn:
 		UpdateFadeIn();
 		break;
-
 	case Phase::kPlay:
 		UpdatePlay();
 		break;
-
 	case Phase::kDeath:
 		UpdateDeath();
 		break;
-
 	case Phase::kFadeOut:
 		UpdateFadeOut();
 		break;
 	}
 
-	// 両方のフェーズで共通して行う処理（デバッグカメラや行列更新など）
 	debugCamera_->Update();
 
 #ifdef _DEBUG
@@ -198,22 +176,18 @@ void GameScene::Update() {
 	}
 }
 
-//　フェーズの切り替え処理
 void GameScene::ChangePhase() {
 	switch (phase_) {
 	case Phase::kFadeIn:
-		// フェードインが終了したらプレイフェーズへ
 		if (fade_ && fade_->IsFinished()) {
 			phase_ = Phase::kPlay;
 		}
 		break;
 
 	case Phase::kPlay:
-		// プレイヤーが死亡フラグを持っていたらデス演出フェーズへ移行
 		if (player_ && player_->IsDead()) {
 			phase_ = Phase::kDeath;
 
-			// デス演出フェーズに入った瞬間（トリガー）でパーティクルを発生させる
 			if (deathParticles_) {
 				if (!deathParticles_->IsInitialized() || deathParticles_->IsFinished()) {
 					KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
@@ -224,7 +198,6 @@ void GameScene::ChangePhase() {
 		break;
 
 	case Phase::kDeath:
-		// デス演出が終了したらフェードアウトを開始し、フェードアウトフェーズへ
 		if (deathParticles_ && deathParticles_->IsFinished()) {
 			phase_ = Phase::kFadeOut;
 			if (fade_) {
@@ -234,7 +207,6 @@ void GameScene::ChangePhase() {
 		break;
 
 	case Phase::kFadeOut:
-		// フェードアウトが終了したらシーン終了フラグを立てる
 		if (fade_ && fade_->IsFinished()) {
 			finished_ = true;
 		}
@@ -242,64 +214,51 @@ void GameScene::ChangePhase() {
 	}
 }
 
-// フェードイン処理
 void GameScene::UpdateFadeIn() {
 	if (fade_) {
 		fade_->Update();
 	}
-
-	// 背景などの描画物は動かすために更新
 	skydome->Update();
 
-	// カメラコントローラーの更新
 	if (!isDebugCameraActive_ && cameraController_) {
 		cameraController_->Update();
 	}
 }
 
-// ゲームプレイフェーズの更新
 void GameScene::UpdatePlay() {
-	// 天球の更新
 	skydome->Update();
 
-	// 自キャラの更新
 	if (player_) {
 		player_->Update();
 	}
 
-	// 敵の更新（複数）
-	for (Enemy* enemy : enemies_) {
+	// 1つのループで全種類の敵を更新（ポリモーフィズム）
+	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
 		}
 	}
 
-	// 敵の更新（盾敵）
-	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
-		if (shieldEnemy) {
-			shieldEnemy->Update();
-		}
-	}
-
-	// プレイヤー攻撃と敵の当たり判定
+	// プレイヤー攻撃と敵の判定（1つのループで全敵に対応）
 	if (player_) {
 		auto attackAABB = player_->GetAttackAABB();
 		if (attackAABB.has_value()) {
-			// 通常敵との判定
-			for (Enemy* enemy : enemies_) {
-				if (enemy && !enemy->IsDead() && IsCollision(attackAABB.value(), enemy->GetAABB())) {
-					HitEffect* newEffect = new HitEffect();
-					newEffect->Initialize(enemy->GetWorldTransform().translation_);
-					hitEffects_.push_back(newEffect);
-					enemy->OnDead();
-				}
-			}
+			for (BaseEnemy* enemy : enemies_) {
+				// 死亡・食らい無効化中でない敵と判定
+				if (enemy && !enemy->IsDead()) {
+					if (IsCollision(attackAABB.value(), enemy->GetAABB())) {
 
-			// 盾敵との判定 (追加)
-			for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
-				if (shieldEnemy && !shieldEnemy->IsDead() && IsCollision(attackAABB.value(), shieldEnemy->GetAABB())) {
-					// ShieldEnemy 内部で正面判定・ガードエフェクト生成・または OnDead() を行う
-					shieldEnemy->OnCollision(player_.get());
+						// 衝突直前の座標を記録（HitEffect表示用）
+						Vector3 effectPos = enemy->GetWorldTransform().translation_;
+
+						// 衝突処理（通常敵はOnDead、盾敵はガード等）
+						enemy->OnCollision(player_.get());
+
+						// ★ ヒットエフェクト（HitEffect）を生成して追加
+						HitEffect* newEffect = new HitEffect();
+						newEffect->Initialize(effectPos);
+						hitEffects_.push_back(newEffect);
+					}
 				}
 			}
 		}
@@ -320,9 +279,9 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// 通常敵のクリーンアップ
+	// 全敵のクリーンアップ（死亡アニメーションが完了して IsDead() == true になったものだけ解放）
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
-		Enemy* enemy = *it;
+		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
 			delete enemy;
 			it = enemies_.erase(it);
@@ -331,55 +290,29 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// 盾敵のクリーンアップ (追加)
-	for (auto it = shieldEnemies_.begin(); it != shieldEnemies_.end();) {
-		ShieldEnemy* shieldEnemy = *it;
-		if (shieldEnemy && shieldEnemy->IsDead()) {
-			delete shieldEnemy;
-			it = shieldEnemies_.erase(it);
-		} else {
-			++it;
-		}
-	}
-	
-	// カメラコントローラーの更新
 	if (!isDebugCameraActive_ && cameraController_) {
 		cameraController_->Update();
 	}
 
-	// 全ての当たり判定（自キャラと敵の衝突判定など）
 	if (player_) {
 		player_->CheckEnemyCollision(enemies_);
 	}
 }
 
-// デス演出フェーズの更新
 void GameScene::UpdateDeath() {
-	// 天球の更新
 	skydome->Update();
 
-	// 敵の更新（複数）
-	for (Enemy* enemy : enemies_) {
+	// 全敵の更新
+	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
 		}
 	}
 
-	// 盾敵の更新
-	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
-		if (shieldEnemy)
-			shieldEnemy->Update();
-	}
-
-	// デスパーティクルの更新（このフェーズでのみ行う）
 	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
 		deathParticles_->Update();
 	}
 
-	// 自キャラの更新とカメラコントローラーの更新を省くことで、
-	// 死亡時にカメラが勝手に動き回ったりプレイヤーが操作できてしまうのを防ぎます。
-
-	// ヒットエフェクトの更新
 	for (HitEffect* effect : hitEffects_) {
 		if (effect) {
 			effect->Update();
@@ -387,16 +320,14 @@ void GameScene::UpdateDeath() {
 	}
 }
 
-// フェードアウト処理
 void GameScene::UpdateFadeOut() {
 	if (fade_) {
 		fade_->Update();
 	}
 
-	// フェードアウト中も背景やパーティクルの最後の余韻を描画・更新し続ける
 	skydome->Update();
 
-	for (Enemy* enemy : enemies_) {
+	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
 		}
@@ -408,7 +339,6 @@ void GameScene::UpdateFadeOut() {
 }
 
 void GameScene::Draw() {
-	// ブロック描画
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
 			if (!worldTransformBlock) {
@@ -421,7 +351,6 @@ void GameScene::Draw() {
 	}
 	skydome->Draw();
 
-	// ヒットエフェクトの描画
 	for (HitEffect* effect : hitEffects_) {
 		if (effect) {
 			Model::PreDraw();
@@ -430,15 +359,14 @@ void GameScene::Draw() {
 		}
 	}
 
-	// プレイヤーの描画
 	if (player_) {
 		Model::PreDraw();
 		player_->Draw();
 		Model::PostDraw();
 	}
 
-	// 敵の描画 一重のfor文でリスト内のすべての敵を描画
-	for (Enemy* enemy : enemies_) {
+	// 全敵の描画（1つのループに統一）
+	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			Model::PreDraw();
 			enemy->Draw();
@@ -446,28 +374,15 @@ void GameScene::Draw() {
 		}
 	}
 
-	// 盾敵の描画 (追加)
-	for (ShieldEnemy* shieldEnemy : shieldEnemies_) {
-		if (shieldEnemy) {
-			Model::PreDraw();
-			shieldEnemy->Draw();
-			Model::PostDraw();
-		}
-	}
-
-	// デスパーティクルの描画
 	if (deathParticles_ && !deathParticles_->IsFinished()) {
 		Model::PreDraw();
 		deathParticles_->Draw();
 		Model::PostDraw();
 	}
 
-	// 最前面にフェードのスプレイトを描画
 	if (fade_) {
 		Model::PreDraw();
 		fade_->Draw();
 		Model::PostDraw();
 	}
-
-	
 }

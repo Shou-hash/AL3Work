@@ -1,7 +1,7 @@
 #define NOMINMAX
 #include "Player.h"
+#include "BaseEnemy.h" // ★ Enemy.h ではなく BaseEnemy.h を使用
 #include "CameraController.h"
-#include "Enemy.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include <algorithm>
@@ -16,7 +16,6 @@ Player::~Player() {
 		delete modelHitEffect_;
 		modelHitEffect_ = nullptr;
 	}
-	// リスト内に残っているエフェクトのメモリを全て解放
 	for (auto* effect : hitEffects_) {
 		delete effect;
 	}
@@ -34,19 +33,16 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	turnFirstRotationY_ = worldTransform_.rotation_.y;
 	velocity_ = {0.0f, 0.0f, 0.0f};
 	onGround_ = true;
-	isDead_ = false; // 初期化時は生存
+	isDead_ = false;
 
 	behavior_ = Behavior::kRoot;
 	behaviorRequest_ = std::nullopt;
 
-	// 指定されたモデルファイル名 "hit_effect" をロード
 	if (modelHitEffect_ == nullptr) {
 		modelHitEffect_ = KamataEngine::Model::CreateFromOBJ("hit_effect", true);
-
 		assert(modelHitEffect_ != nullptr);
 	}
 
-	// 既存のエフェクトリストがあれば一度全て解放してクリア
 	for (auto* effect : hitEffects_) {
 		delete effect;
 	}
@@ -57,11 +53,10 @@ void Player::KeysPush() {}
 
 // 衝突時処理
 void Player::OnCollision() {
-	// 攻撃（突進）中であればダメージを受けない（相打ち回避）
 	if (IsAttacking()) {
 		return;
 	}
-	isDead_ = true; // デスフラグを立てる
+	isDead_ = true;
 }
 
 void Player::Move() {
@@ -108,10 +103,8 @@ void Player::Move() {
 	}
 }
 
-// 通常行動の初期化
 void Player::BehaviorRootInit() {}
 
-// 通常行動の更新処理
 void Player::BehaviorRootUpdate() {
 	Move();
 
@@ -156,13 +149,11 @@ void Player::BehaviorRootUpdate() {
 	worldTransform_.TransferMatrix();
 }
 
-// 攻撃行動の初期化
 void Player::BehaviorAttackInit() {
 	attackPhase_ = AttackPhase::kCharge;
 	attackParameter_ = 0;
 }
 
-// 攻撃行動の更新処理
 void Player::BehaviorAttackUpdate() {
 	attackParameter_++;
 	KamataEngine::Vector3 velocity = {};
@@ -242,7 +233,6 @@ void Player::BehaviorAttackUpdate() {
 	worldTransform_.TransferMatrix();
 }
 
-// ヒートエフェクトを動的に生成する関数
 void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 	HitEffect* newEffect = new HitEffect();
 
@@ -250,10 +240,8 @@ void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 	newEffect->worldTransform.translation_ = position;
 	newEffect->direction = lrDirection_;
 
-	// 【修正】個別で0度や180度にするのではなく、プレイヤーの現在のY軸回転角度をそのままコピーする
 	newEffect->worldTransform.rotation_ = {0.0f, worldTransform_.rotation_.y, 0.0f};
-
-	newEffect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f}; // 拡大演出はいらないので等倍固定
+	newEffect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f};
 
 	newEffect->timer = 0;
 	newEffect->duration = 15;
@@ -266,17 +254,13 @@ void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 }
 
 std::optional<Player::AABB> Player::GetAttackAABB() const {
-	// 攻撃行動かつ突進中以外は判定を返さない
 	if (behavior_ != Behavior::kAttack || attackPhase_ != AttackPhase::kDash) {
 		return std::nullopt;
 	}
 
 	AABB aabb;
-	// プレイヤーの中心座標
 	const auto& pos = worldTransform_.translation_;
 
-	// プレイヤーのサイズ（kWidth, kHeight）を基準に AABB を設定
-	// ※奥行き(z)の判定幅は適宜調整（ここでは 1.0f としています）
 	aabb.min = {pos.x - kWidth / 2.0f, pos.y - kHeight / 2.0f, pos.z - 0.5f};
 	aabb.max = {pos.x + kWidth / 2.0f, pos.y + kHeight / 2.0f, pos.z + 0.5f};
 
@@ -288,28 +272,24 @@ void Player::Update() {
 		return;
 	}
 
-	// デバッグ用：【Tキー】を押したらプレイヤーの目の前に強制的にエフェクトを生成する
 	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_T)) {
 		CreateHitEffect(worldTransform_.translation_);
 	}
 
-	// 外部からのノックバック要求チェック（状態リクエストに変換）
 	if (isKnockbackRequested_) {
 		behaviorRequest_ = Behavior::kKnockback;
 		isKnockbackRequested_ = false;
 	}
 
-	// ビヘイビアの切り替え処理
 	if (behaviorRequest_) {
 		behavior_ = behaviorRequest_.value();
 
-		// 各状態の初期化
 		switch (behavior_) {
 		case Behavior::kRoot:
-			BehaviorRootInit(); // ← 【修正】コメントアウトを解除
+			BehaviorRootInit();
 			break;
 		case Behavior::kAttack:
-			BehaviorAttackInit(); // ← 【修正】コメントアウトを解除
+			BehaviorAttackInit();
 			break;
 		case Behavior::kKnockback:
 			BehaviorKnockbackInitialize();
@@ -319,20 +299,18 @@ void Player::Update() {
 		behaviorRequest_ = std::nullopt;
 	}
 
-	// 現在のビヘイビアの毎フレーム更新処理
 	switch (behavior_) {
 	case Behavior::kRoot:
-		BehaviorRootUpdate(); // ← 【修正】コメントアウトを解除
+		BehaviorRootUpdate();
 		break;
 	case Behavior::kAttack:
-		BehaviorAttackUpdate(); // ← 【修正】コメントアウトを解除
+		BehaviorAttackUpdate();
 		break;
 	case Behavior::kKnockback:
 		BehaviorKnockbackUpdate();
 		break;
 	}
 
-	// ヒットエフェクトの一斉更新処理
 	for (auto* effect : hitEffects_) {
 		effect->timer++;
 		if (effect->timer >= effect->duration) {
@@ -346,7 +324,6 @@ void Player::Update() {
 		}
 	}
 
-	// 寿命を迎えたエフェクトのメモリを解放
 	for (auto it = hitEffects_.begin(); it != hitEffects_.end();) {
 		if ((*it)->isDead) {
 			delete *it;
@@ -357,71 +334,25 @@ void Player::Update() {
 	}
 }
 
-// ノックバック開始時の初期化
 void Player::BehaviorKnockbackInitialize() { knockbackTimer_ = 0.0f; }
 
 void Player::BehaviorKnockbackUpdate() {
 	knockbackTimer_ += 1.0f / 60.0f;
 
-	// フェーズ 1: 「強い初速で弾き飛ばされる」
 	if (knockbackTimer_ < kKnockbackSpeedDuration) {
 		float knockbackSpeed = 0.15f;
 		if (lrDirection_ == LRDirection::kRight) {
-			worldTransform_.translation_.x -= knockbackSpeed; // 右向き時は左へ弾かれる
+			worldTransform_.translation_.x -= knockbackSpeed;
 		} else {
-			worldTransform_.translation_.x += knockbackSpeed; // 左向き時は右へ弾かれる
+			worldTransform_.translation_.x += knockbackSpeed;
 		}
 	}
-	// フェーズ 2: 「移動が停止し、体勢を立て直す」
-	else {
-		// 移動は停止して硬直のみ
-	}
 
-	// 【追加】行列計算と転送を行わないと描画座標が更新されません
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// 時間経過で通常状態（kRoot）へ復帰
 	if (knockbackTimer_ >= kKnockbackTotalDuration) {
 		behaviorRequest_ = Behavior::kRoot;
-	}
-}
-
-void Player::CheckEnemyCollision(const std::list<Enemy*>& enemies) {
-	// デス演出中（isDead_ が true）なら判定しない
-	if (isDead_) {
-		return;
-	}
-
-	// プレイヤーのAABBを取得
-	AABB aabbPlayer = GetAABB();
-
-	for (Enemy* enemy : enemies) {
-		// すでに死亡している敵は判定をスキップ
-		if (enemy->IsDead()) {
-			continue;
-		}
-
-		// 敵のAABBを取得
-		Enemy::AABB aabbEnemy = enemy->GetAABB();
-
-		// 衝突判定 (AABB 同士の重なり)
-		if (aabbPlayer.min.x < aabbEnemy.max.x && aabbPlayer.max.x > aabbEnemy.min.x &&
-			aabbPlayer.min.y < aabbEnemy.max.y && aabbPlayer.max.y > aabbEnemy.min.y &&
-			aabbPlayer.min.z < aabbEnemy.max.z && aabbPlayer.max.z > aabbEnemy.min.z) {
-
-			// === スライド指示の「コリジョン無効コード」===
-			// プレイヤーが攻撃状態（突進中）の場合
-			if (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) {
-				// 敵の死亡演出を開始
-				enemy->OnDead();
-			} else {
-				// 通常時はプレイヤーがダメージを受ける
-				OnCollision();
-			}
-			// 1回のフレームで処理する衝突は1体のみとするためループを抜ける
-			break;
-		}
 	}
 }
 
@@ -429,9 +360,8 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 	if (!mapChipField_) {
 		return;
 	}
-	
+
 	if (onGround_) {
-		
 		if (velocity_.y > 0.0f) {
 			onGround_ = false;
 		} else {
@@ -444,7 +374,7 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 			MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(leftBottomPos);
 			MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
 			bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
-			
+
 			if (!hit) {
 				onGround_ = false;
 			}
@@ -462,10 +392,10 @@ void Player::CheckScreenEdgeCollision() {
 	if (!cameraController_ || !mapChipField_) {
 		return;
 	}
-	
+
 	float cameraLeftX = cameraController_->GetCameraLeftX();
 	float playerLeftX = worldTransform_.translation_.x - (kWidth / 2.0f);
-	
+
 	if (playerLeftX < cameraLeftX) {
 		worldTransform_.translation_.x = cameraLeftX + (kWidth / 2.0f);
 		KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
@@ -473,9 +403,48 @@ void Player::CheckScreenEdgeCollision() {
 		KamataEngine::Vector3 rightBottomPos = CornerPosition(currentCenter, kRightBottom);
 		MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(rightTopPos);
 		MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
-		
+
 		if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
 			OnCollision();
+		}
+	}
+}
+
+// ★ BaseEnemy* 対応の CheckEnemyCollision（1つだけ保持）
+void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
+	if (isDead_) {
+		return;
+	}
+
+	AABB aabbPlayer = GetAABB();
+
+	for (BaseEnemy* enemy : enemies) {
+		if (!enemy || enemy->IsDead()) {
+			continue;
+		}
+
+		BaseEnemy::AABB aabbEnemy = enemy->GetAABB();
+
+		// AABB交差判定
+		if (aabbPlayer.min.x < aabbEnemy.max.x && aabbPlayer.max.x > aabbEnemy.min.x && aabbPlayer.min.y < aabbEnemy.max.y && aabbPlayer.max.y > aabbEnemy.min.y &&
+		    aabbPlayer.min.z < aabbEnemy.max.z && aabbPlayer.max.z > aabbEnemy.min.z) {
+
+			// ★ 攻撃中（Dash）の場合
+			if (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) {
+				enemy->OnCollision(this);
+
+				// ★ 盾敵などにガードされてノックバックが要求された場合は即座に状態反映
+				if (isKnockbackRequested_) {
+					behavior_ = Behavior::kKnockback;
+					BehaviorKnockbackInitialize();
+					isKnockbackRequested_ = false;
+				}
+			}
+			// ★ ノックバック中でない通常時のみプレイヤー死亡
+			else if (behavior_ != Behavior::kKnockback) {
+				OnCollision();
+			}
+			break;
 		}
 	}
 }
@@ -500,7 +469,7 @@ void Player::MapCollision(CollisionMapInfo& info) {
 	if (!mapChipField_) {
 		return;
 	}
-	
+
 	MapCollisionRight(info);
 	MapCollisionLeft(info);
 	MapCollisionTop(info);
@@ -511,24 +480,24 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 	if (info.moveAmount.y <= 0.0f) {
 		return;
 	}
-	
+
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
-	
+
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
-	
+
 	MapChipType chipLeftTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftTop]);
 	MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightTop]);
-	
+
 	if (chipLeftTop == MapChipType::kBlock || chipRightTop == MapChipType::kBlock) {
 		Corner targetCorner = (chipLeftTop == MapChipType::kBlock) ? kLeftTop : kRightTop;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockBottomY = blockPos.y - 0.5f;
 		float previousTopY = worldTransform_.translation_.y + kHeight / 2.0f;
-		
+
 		if (previousTopY <= blockBottomY + 0.05f) {
 			info.ceilingCollision = true;
 			info.moveAmount.y = blockBottomY - previousTopY - 0.005f;
@@ -538,22 +507,21 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
-	
 	if (info.moveAmount.y >= 0.0f) {
 		return;
 	}
-	
+
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
-	
+
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
-	
+
 	MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftBottom]);
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
 	bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
-	
+
 	if (hit) {
 		Corner targetCorner = (chipLeftBottom == MapChipType::kBlock) ? kLeftBottom : kRightBottom;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
@@ -561,13 +529,13 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 		float blockTopY = blockPos.y + 0.5f;
 		float previousBottomY = worldTransform_.translation_.y - kHeight / 2.0f;
 		float nextBottomY = nextCenter.y - kHeight / 2.0f;
-		
+
 		if (previousBottomY >= blockTopY - 0.2f && nextBottomY <= blockTopY) {
 			info.onGround = true;
 			info.moveAmount.y = blockTopY - previousBottomY;
 			return;
 		}
-		
+
 		if (nextBottomY < blockTopY) {
 			info.onGround = true;
 			info.moveAmount.y = blockTopY - previousBottomY;
@@ -581,17 +549,17 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 	if (info.moveAmount.x <= 0.0f) {
 		return;
 	}
-	
+
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
-	
+
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
-	
+
 	MapChipType chipRightTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightTop]);
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
-	
+
 	if (chipRightTop == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock) {
 		info.wallCollision = true;
 		Corner targetCorner = (chipRightTop == MapChipType::kBlock) ? kRightTop : kRightBottom;
@@ -606,17 +574,17 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 	if (info.moveAmount.x >= 0.0f) {
 		return;
 	}
-	
+
 	KamataEngine::Vector3 nextCenter = {worldTransform_.translation_.x + info.moveAmount.x, worldTransform_.translation_.y + info.moveAmount.y, worldTransform_.translation_.z};
 	std::array<KamataEngine::Vector3, kNumCorner> positionsNew;
-	
+
 	for (uint32_t i = 0; i < kNumCorner; ++i) {
 		positionsNew[i] = CornerPosition(nextCenter, static_cast<Corner>(i));
 	}
-	
+
 	MapChipType chipLeftTop = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftTop]);
 	MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftBottom]);
-	
+
 	if (chipLeftTop == MapChipType::kBlock || chipLeftBottom == MapChipType::kBlock) {
 		info.wallCollision = true;
 		Corner targetCorner = (chipLeftTop == MapChipType::kBlock) ? kLeftTop : kLeftBottom;
@@ -632,39 +600,29 @@ void Player::Draw() {
 		return;
 	}
 
-	// プレイヤーモデルの描画
 	if (modelPlayer_ && camera_) {
-		// ※ GameScene側で PreDraw / PostDraw されているため、ここでは描画のみ行う
 		modelPlayer_->Draw(worldTransform_, *camera_);
 	}
 
-	// 生成されているすべてのヒートエフェクトを描画
 	if (modelHitEffect_ && camera_ && !hitEffects_.empty()) {
-		// エフェクトもGameScene側の描画パス（PreDraw〜PostDraw）の中で描画されるようにします
 		for (const auto* effect : hitEffects_) {
 			modelHitEffect_->Draw(effect->worldTransform, *camera_);
 		}
 	}
-	
 }
 
 Player::AABB Player::GetAABB() const {
 	AABB aabb;
-
-	// プレイヤーの中心座標
 	KamataEngine::Vector3 center = worldTransform_.translation_;
 
-	// 横幅と高さの半分を計算
 	float halfWidth = kWidth / 2.0f;
 	float halfHeight = kHeight / 2.0f;
-	float halfDepth = kWidth / 2.0f; // 奥行き（Z軸）も横幅と同じサイズにする場合
+	float halfDepth = kWidth / 2.0f;
 
-	// 最小値 (左下の手前)
 	aabb.min.x = center.x - halfWidth;
 	aabb.min.y = center.y - halfHeight;
 	aabb.min.z = center.z - halfDepth;
 
-	// 最大値 (右上のお奥)
 	aabb.max.x = center.x + halfWidth;
 	aabb.max.y = center.y + halfHeight;
 	aabb.max.z = center.z + halfDepth;

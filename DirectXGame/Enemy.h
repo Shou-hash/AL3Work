@@ -1,70 +1,52 @@
 #pragma once
-#include "Kamataengine.h"
+#include "BaseEnemy.h"
+#include "KamataEngine.h"
 #include <3d/WorldTransform.h>
 
 class Player;
 
-class Enemy {
+/// <summary>
+/// 基本の敵
+/// </summary>
+class Enemy final : public BaseEnemy {
 public:
-
 	enum class Behavior {
 		kRoot, // 通常状態
 		kDead, // 死亡状態
 	};
 
-	// プレイヤーを参考に、モデル・カメラ・初期位置を受け取る初期化関数
-	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
+	// 初期化関数（override を明記）
+	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) override;
 
-	void Update();
-	void Draw();
-
-	// ワールドトランスフォームの取得（当たり判定用）
-	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
-
-	void OnCollision(const Player* player);
+	// BaseEnemyからのオーバーライド関数
+	void Update() override;
+	void Draw() override;
+	void OnCollision(Player* player) override;
+	void OnDead() override;
+	bool IsDead() const override { return isDead_; }
+	AABB GetAABB() const override;
+	const KamataEngine::WorldTransform& GetWorldTransform() const override { return worldTransform_; }
 
 	// 通常状態の更新
 	void BehaviorRootUpdate();
-	// 死亡状態の更新 (追加)
+	// 死亡状態の更新
 	void BehaviorDeadUpdate();
 
-	// 死亡演出を開始する関数 (追加)
-	void OnDead();
-
-	bool IsDead() const { return isDead_; }
-
-	struct AABB {
-		KamataEngine::Vector3 min;
-		KamataEngine::Vector3 max;
-	};
-
-	AABB GetAABB() const;
-
 private:
-	// 描画に必要なエンジン系のポインタ
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelEnemy_ = nullptr;
-
-	// 位置・回転・スケールを管理するワールドトランスフォーム
 	KamataEngine::WorldTransform worldTransform_;
 
-	KamataEngine::Vector3 velocity_ = {0, 0, 0}; // 敵の現在の速度
-
-	static inline const float kWalkspeed = 0.05f; // 敵の移動速度
-
+	KamataEngine::Vector3 velocity_ = {0, 0, 0};
+	static inline const float kWalkspeed = 0.05f;
 	static inline const float kWalkMotionAnglestart = -20.0f;
-
 	static inline const float kWalkMotionAngleEnd = 30.0f;
-
 	static inline const float kWalkMotionTime = 1.0f;
+	float walkTimer_ = 0.0f;
 
-	float walkTimer_ = 0.0f; // 歩行モーションのタイマー
-
-	// 死亡演出用に追加するメンバ変数
-	Behavior behavior_ = Behavior::kRoot;           // 現在の状態
-	bool isDead_ = false;                           // 完全に消滅したかどうかのフラグ
+	Behavior behavior_ = Behavior::kRoot;
+	bool isDead_ = false;
 	bool isCollisionDisabled_ = false;
-	float deadTimer_ = 0.0f;                        // 死亡アニメーション用タイマー
-	static inline const float kDeadDuration = 1.0f; // 死亡演出の長さ（秒）
-
+	float deadTimer_ = 0.0f;
+	static inline const float kDeadDuration = 1.0f;
 };

@@ -1,5 +1,6 @@
 #pragma once
-#include "Kamataengine.h"
+#include "BaseEnemy.h" // ★ Enemy.h ではなく BaseEnemy.h をインクルード
+#include "KamataEngine.h"
 #include <3d/WorldTransform.h>
 #include <array>
 #include <list>
@@ -7,7 +8,6 @@
 
 class MapChipField;
 class CameraController;
-class Enemy;
 
 enum class LRDirection {
 	kLeft,
@@ -15,8 +15,8 @@ enum class LRDirection {
 };
 
 enum class Behavior {
-	kRoot,   // 通常行動
-	kAttack, // 攻撃行動
+	kRoot,     // 通常行動
+	kAttack,   // 攻撃行動
 	kKnockback // ノックバック状態
 };
 
@@ -37,7 +37,7 @@ public:
 		KamataEngine::Vector3 moveAmount;
 	};
 
-	// ★ ヒートエフェクト管理用の構造体
+	// ヒットエフェクト管理用の構造体
 	struct HitEffect {
 		KamataEngine::WorldTransform worldTransform;
 		uint32_t timer = 0;
@@ -76,14 +76,14 @@ public:
 	// 攻撃中（突進中）かどうかの取得
 	bool IsAttacking() const { return behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash; }
 
-	// 向きを取得するGetter（publicの中に書く）
+	// 向きを取得するGetter
 	LRDirection GetLRDirection() const { return lrDirection_; }
 
 	// 衝突時に呼び出される関数（デスフラグを立てる）
 	void OnCollision();
 
-	// 敵との衝突判定
-	void CheckEnemyCollision(const std::list<Enemy*>& enemies);
+	// ★ 敵との衝突判定（引数を BaseEnemy のリストに変更）
+	void CheckEnemyCollision(const std::list<BaseEnemy*>& enemies);
 
 	void BehaviorRootUpdate();
 	void BehaviorAttackUpdate();
@@ -162,7 +162,7 @@ private:
 
 	static inline const float kAttackVelocity = 0.85f; // 攻撃突進時の移動速度
 
-	// ヒートエフェクト用のメンバ変数群
+	// ヒットエフェクト用のメンバ変数群
 	KamataEngine::Model* modelHitEffect_ = nullptr; // エフェクトのモデルポインタ
 	std::list<HitEffect*> hitEffects_;
 

@@ -1,18 +1,17 @@
 #pragma once
+#include "BaseEnemy.h"
 #include "CameraController.h"
 #include "DeathParticles.h"
-#include "Enemy.h"
-#include "ShieldEnemy.h"
-#include "Kamataengine.h"
+#include "Fade.h"
+#include "HitEffect.h"
+#include "KamataEngine.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "Skydome.h"
-#include "Fade.h"
-#include <list> // std::list を使用するため追加
+#include <list>
 #include <memory>
 #include <vector>
-#include"HitEffect.h"
 
 enum class Phase {
 	kFadeIn,  // フェードイン
@@ -31,34 +30,20 @@ public:
 	KamataEngine::Camera& GetCamera() { return camera_; }
 
 	void GenerateBlocks();
-
-	// シーンが終了したかを取得
 	bool isFinished() const { return finished_; }
 
-	// フェーズ管理用関数
 	void ChangePhase();
-
-	void UpdateFadeIn();  // フェードイン処理
-
-	void UpdatePlay();    // ゲームプレイ処理
-
-	void UpdateDeath();   // デス演出処理
-
-	void UpdateFadeOut(); // フェードアウト処理
+	void UpdateFadeIn();
+	void UpdatePlay();
+	void UpdateDeath();
+	void UpdateFadeOut();
 
 private:
-
-	// ヒットエフェクトの3Dモデルポインタ
 	KamataEngine::Model* modelHitEffect_ = nullptr;
-
-	// 複数のヒットエフェクトを管理するリスト
 	std::list<HitEffect*> hitEffects_;
 
-	// フェイズの状態を管理する変数
 	Phase phase_ = Phase::kFadeIn;
-
 	bool finished_ = false;
-
 	Fade* fade_ = nullptr;
 
 	KamataEngine::Model* model_ = nullptr;
@@ -68,34 +53,20 @@ private:
 	bool isDebugCameraActive_ = false;
 	KamataEngine::DebugCamera* debugCamera_ = nullptr;
 
-	// 敵（Wizard）の3Dモデルポインタ
 	KamataEngine::Model* modelEnemy_ = nullptr;
-
 	KamataEngine::Model* modelShieldEnemy_ = nullptr;
 
-	// 単体のユニークポインタは複数管理では不要になるため削除、または互換性のために残す場合はそのまま
-	// 今回はスライドの指示通り enemies_ リストで一括管理するため、単体用の enemy_ は使用しません。
-	std::unique_ptr<Enemy> enemy_ = nullptr;
-
-	std::unique_ptr<ShieldEnemy> Shieldenemy_ = nullptr;
-
 	std::unique_ptr<Skydome> skydome = nullptr;
-
-	// ポインタではなく、安全な unique_ptr で管理
 	std::unique_ptr<Player> player_ = nullptr;
-
 	std::unique_ptr<CameraController> cameraController_ = nullptr;
 
 	KamataEngine::Model* modelSkydome_ = nullptr;
 	KamataEngine::Model* modelPlayer_ = nullptr;
 	MapChipField* mapChipField_;
 
-	std::list<Enemy*> enemies_; // 敵のリスト（複数の敵を管理）
+	// ポリモーフィズム対応：全種類の敵を統一管理するリスト
+	std::list<BaseEnemy*> enemies_;
 
-	std::list<ShieldEnemy*> shieldEnemies_; // 強敵のリスト（複数の敵を管理）
-
-	// デスパーティクルの3Dモデルポインタ
 	KamataEngine::Model* modelDeathParticles_ = nullptr;
-	// デスパーティクル（ユニークポインタ）
 	std::unique_ptr<DeathParticles> deathParticles_;
 };
