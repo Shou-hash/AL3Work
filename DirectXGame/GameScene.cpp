@@ -1,13 +1,13 @@
 #include "GameScene.h"
+#include "DeathParticles.h"
+#include "HitEffect.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 
 using namespace KamataEngine;
 
 GameScene::~GameScene() {
-
 	delete fade_;
-
 	delete model_;
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
@@ -24,24 +24,22 @@ GameScene::~GameScene() {
 	delete modelShieldEnemy_;
 	delete modelPlayer_;
 	delete modelDeathParticles_;
+	delete modelHitEffect_;
 
-	// 全ての敵を1つのループで解放
+	// 全ての敵を解放
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
 	}
 	enemies_.clear();
 
-	delete modelHitEffect_;
-
-	// ヒットエフェクトリストの解放
-	for (HitEffect* effect : hitEffects_) {
+	// ★ 全てのエフェクトを1つのループで解放
+	for (BaseEffect* effect : effects_) {
 		delete effect;
 	}
-	hitEffects_.clear();
+	effects_.clear();
 }
 
 void GameScene::Initialize() {
-
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 
@@ -70,10 +68,7 @@ void GameScene::Initialize() {
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
-	// フィールドオブジェクト（ブロック・プレイヤー等）を生成
 	GenerateFieldObjects();
-
-	deathParticles_ = std::make_unique<DeathParticles>();
 
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
@@ -85,7 +80,6 @@ void GameScene::Initialize() {
 
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
 	cameraController_->SetMovableArea(stageArea);
-
 	cameraController_->Reset();
 }
 
@@ -117,7 +111,7 @@ void GameScene::GenerateFieldObjects() {
 				player_->SetMapChipField(mapChipField_);
 				break;
 			}
-			case MapChipType::kEnemy: { // 追加
+			case MapChipType::kEnemy: {
 				GenerateEnemy(j, i);
 				break;
 			}
@@ -134,14 +128,12 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 
 	switch (subID) {
 	case 0: {
-		// 歩行敵 (E0) の生成
 		Enemy* enemy = new Enemy();
 		enemy->Initialize(modelEnemy_, &camera_, enemyPosition);
 		enemies_.push_back(enemy);
 		break;
 	}
 	case 1: {
-		// 盾敵 (E1) の生成
 		ShieldEnemy* enemy = new ShieldEnemy();
 		enemy->Initialize(modelShieldEnemy_, &camera_, enemyPosition);
 		enemies_.push_back(enemy);
@@ -152,15 +144,12 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 	}
 }
 
-// 共通 AABB 当たり判定
 bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
 	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
 void GameScene::Update() {
-
 #ifdef _DEBUG
-	// ImGuiによるホットリロードボタンの配置（追加）
 	ImGui::Begin("Debug");
 	if (ImGui::Button("Reload")) {
 		reloadRequested_ = true;
@@ -168,29 +157,23 @@ void GameScene::Update() {
 	ImGui::End();
 #endif
 
-	// フェーズの切り替え判定
 	ChangePhase();
 
-	// フェーズごとの更新処理
 	switch (phase_) {
 	case Phase::kFadeIn:
 		UpdateFadeIn();
 		break;
-
 	case Phase::kPlay:
 		UpdatePlay();
 		break;
-
 	case Phase::kDeath:
 		UpdateDeath();
 		break;
-
 	case Phase::kFadeOut:
 		UpdateFadeOut();
 		break;
 	}
 
-	// 両方のフェーズで共通して行う処理（デバッグカメラや行列更新など）
 	debugCamera_->Update();
 
 #ifdef _DEBUG
@@ -220,7 +203,6 @@ void GameScene::Update() {
 	}
 }
 
-// フェーズの切り替え処理
 void GameScene::ChangePhase() {
 	switch (phase_) {
 	case Phase::kFadeIn:
@@ -233,17 +215,17 @@ void GameScene::ChangePhase() {
 		if (player_ && player_->IsDead()) {
 			phase_ = Phase::kDeath;
 
-			if (deathParticles_) {
-				if (!deathParticles_->IsInitialized() || deathParticles_->IsFinished()) {
-					KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
-					deathParticles_->Initialize(modelDeathParticles_, &camera_, deathPosition);
-				}
-			}
+			// ★ デスパーティクルを BaseEffect として生成・リストに追加
+			DeathParticles* deathParticles = new DeathParticles();
+			KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
+			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
+			effects_.push_back(deathParticles);
 		}
 		break;
 
 	case Phase::kDeath:
-		if (deathParticles_ && deathParticles_->IsFinished()) {
+		// エフェクトが全て終了していればフェードアウトへ移行
+		if (effects_.empty()) {
 			phase_ = Phase::kFadeOut;
 			if (fade_) {
 				fade_->Start(Fade::Status::FadeOut, 1.0f);
@@ -259,12 +241,10 @@ void GameScene::ChangePhase() {
 	}
 }
 
-// フェードイン処理
 void GameScene::UpdateFadeIn() {
 	if (fade_) {
 		fade_->Update();
 	}
-
 	skydome->Update();
 
 	if (!isDebugCameraActive_ && cameraController_) {
@@ -272,17 +252,13 @@ void GameScene::UpdateFadeIn() {
 	}
 }
 
-// ゲームプレイフェーズの更新
 void GameScene::UpdatePlay() {
-	// 天球の更新
 	skydome->Update();
 
-	// 自キャラの更新
 	if (player_) {
 		player_->Update();
 	}
 
-	// 全ての敵を更新（ポリモーフィズム）
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
@@ -298,9 +274,10 @@ void GameScene::UpdatePlay() {
 					enemy->OnCollision(player_.get());
 
 					if (dynamic_cast<Enemy*>(enemy)) {
+						// ★ ヒットエフェクトを BaseEffect として生成・リストに追加
 						HitEffect* newEffect = new HitEffect();
 						newEffect->Initialize(enemy->GetWorldTransform().translation_);
-						hitEffects_.push_back(newEffect);
+						effects_.push_back(newEffect);
 						enemy->OnDead();
 					}
 				}
@@ -308,22 +285,22 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// ヒットエフェクトの更新と解放
-	for (auto it = hitEffects_.begin(); it != hitEffects_.end();) {
+	// ★ 全てのエフェクトを一括更新・終了削除
+	for (auto it = effects_.begin(); it != effects_.end();) {
 		if (*it) {
 			(*it)->Update();
 			if ((*it)->IsFinished()) {
 				delete (*it);
-				it = hitEffects_.erase(it);
+				it = effects_.erase(it);
 			} else {
 				++it;
 			}
 		} else {
-			it = hitEffects_.erase(it);
+			it = effects_.erase(it);
 		}
 	}
 
-	// 全ての敵のクリーンアップ
+	// 敵の削除処理
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
@@ -334,18 +311,15 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// カメラコントローラーの更新
 	if (!isDebugCameraActive_ && cameraController_) {
 		cameraController_->Update();
 	}
 
-	// 全ての当たり判定
 	if (player_) {
 		player_->CheckEnemyCollision(enemies_);
 	}
 }
 
-// デス演出フェーズの更新
 void GameScene::UpdateDeath() {
 	skydome->Update();
 
@@ -355,23 +329,26 @@ void GameScene::UpdateDeath() {
 		}
 	}
 
-	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
-		deathParticles_->Update();
-	}
-
-	for (HitEffect* effect : hitEffects_) {
-		if (effect) {
-			effect->Update();
+	// ★ 全てのエフェクトを一括更新・終了削除
+	for (auto it = effects_.begin(); it != effects_.end();) {
+		if (*it) {
+			(*it)->Update();
+			if ((*it)->IsFinished()) {
+				delete (*it);
+				it = effects_.erase(it);
+			} else {
+				++it;
+			}
+		} else {
+			it = effects_.erase(it);
 		}
 	}
 }
 
-// フェードアウト処理
 void GameScene::UpdateFadeOut() {
 	if (fade_) {
 		fade_->Update();
 	}
-
 	skydome->Update();
 
 	for (BaseEnemy* enemy : enemies_) {
@@ -380,8 +357,19 @@ void GameScene::UpdateFadeOut() {
 		}
 	}
 
-	if (deathParticles_ && deathParticles_->IsInitialized() && !deathParticles_->IsFinished()) {
-		deathParticles_->Update();
+	// ★ 残存エフェクトの更新
+	for (auto it = effects_.begin(); it != effects_.end();) {
+		if (*it) {
+			(*it)->Update();
+			if ((*it)->IsFinished()) {
+				delete (*it);
+				it = effects_.erase(it);
+			} else {
+				++it;
+			}
+		} else {
+			it = effects_.erase(it);
+		}
 	}
 }
 
@@ -399,8 +387,8 @@ void GameScene::Draw() {
 	}
 	skydome->Draw();
 
-	// ヒットエフェクトの描画
-	for (HitEffect* effect : hitEffects_) {
+	// ★ 全てのエフェクトを一括描画
+	for (BaseEffect* effect : effects_) {
 		if (effect) {
 			Model::PreDraw();
 			effect->Draw();
@@ -408,14 +396,14 @@ void GameScene::Draw() {
 		}
 	}
 
-	// プレイヤーの描画
+	// プレイヤー描画
 	if (player_) {
 		Model::PreDraw();
 		player_->Draw();
 		Model::PostDraw();
 	}
 
-	// 全ての敵を描画
+	// 敵描画
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			Model::PreDraw();
@@ -424,14 +412,7 @@ void GameScene::Draw() {
 		}
 	}
 
-	// デスパーティクルの描画
-	if (deathParticles_ && !deathParticles_->IsFinished()) {
-		Model::PreDraw();
-		deathParticles_->Draw();
-		Model::PostDraw();
-	}
-
-	// 最前面にフェードのスプライトを描画
+	// フェード描画
 	if (fade_) {
 		Model::PreDraw();
 		fade_->Draw();

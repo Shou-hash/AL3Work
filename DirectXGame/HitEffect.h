@@ -1,8 +1,9 @@
 #pragma once
+#include "BaseEffect.h"
 #include <3d/WorldTransform.h>
 #include <KamataEngine.h>
 
-class HitEffect {
+class HitEffect : public BaseEffect {
 public:
 	// 静的メンバ変数のセッター (静的関数)
 	static void SetModel(KamataEngine::Model* model) { model_ = model; }
@@ -17,17 +18,17 @@ public:
 	/// <summary>
 	/// 更新
 	/// </summary>
-	void Update();
+	void Update() override;
 
 	/// <summary>
 	/// 描画
 	/// </summary>
-	void Draw();
+	void Draw() override;
 
 	/// <summary>
 	/// デスフラグ（終了判定）の取得
 	/// </summary>
-	bool IsFinished() const { return isFinished_; }
+	bool IsFinished() const override { return isFinished_; }
 
 private:
 	// 通常エフェクト用のトランスフォーム

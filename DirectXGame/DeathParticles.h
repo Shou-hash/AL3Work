@@ -1,11 +1,12 @@
 #pragma once
-#include<KamataEngine.h>
+#include "BaseEffect.h"
+#include <KamataEngine.h>
 #include <array>
 
 /// <summary>
 /// デスパーティクル
 /// </summary>
-class DeathParticles {
+class DeathParticles : public BaseEffect {
 public:
 	/// <summary>
 	/// 初期化
@@ -13,20 +14,22 @@ public:
 	/// <param name="model">モデル</param>
 	/// <param name="viewProjection">ビュープロジェクション</param>
 	/// <param name="position">初期座標</param>
-	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* viewProjection, const KamataEngine::Vector3& position);	/// <summary>
+	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* viewProjection, const KamataEngine::Vector3& position);
+
+	/// <summary>
 	/// 更新
 	/// </summary>
-	void Update();
+	void Update() override;
 
 	/// <summary>
 	/// 描画
 	/// </summary>
-	void Draw();
+	void Draw() override;
 
 	/// <summary>
 	/// 終了フラグの取得
 	/// </summary>
-	bool IsFinished() const { return isFinished_; }
+	bool IsFinished() const override { return isFinished_; }
 
 	bool IsInitialized() const { return isInitialized_; }
 
