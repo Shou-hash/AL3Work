@@ -51,13 +51,14 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	fade_->Initialize();
 	fade_->Start(Fade::Status::FadeIn, 1.0f);
 
-	// マップチップフィールドの生成と現在のステージCSV読み込み
 	mapChipField_ = new MapChipField;
 
 	// 現在のステージデータを取得
-	const StageData& stageData = stageManager_->GetCurrentStageData(); // ★ const参照に変更
-	// ステージファイルパスの生成 ("Resources/fields/" + ファイル名 + ".csv")
-	std::string stageFileName = "Resources/fields/" + stageData.name + ".csv";
+	const StageData& stageData = stageManager_->GetCurrentStageData();
+
+	// ★ stageData.stageNo を使って "Resources/fields/stageData1.csv" のようなパスを組み立てる
+	std::string stageFileName = "Resources/stageDatas" + std::to_string(stageData.stageNo) + ".csv";
+
 	// ステージファイルの読み込み
 	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
 
@@ -165,6 +166,19 @@ void GameScene::Update() {
 	if (ImGui::Button("Reload")) {
 		reloadRequested_ = true;
 	}
+
+	if (stageManager_) {
+		int currentIdx = stageManager_->GetCurrentStageIndex();
+		int stageCount = stageManager_->GetStageCount();
+
+		// コンボボックス等でステージ選択（または ImGui::InputInt など）
+		if (ImGui::SliderInt("Stage Index", &currentIdx, 0, stageCount > 0 ? stageCount - 1 : 0)) {
+			// ステージ番号が変更されたら設定して再読み込み要求を出す
+			stageManager_->SetCurrentStageIndex(currentIdx);
+			reloadRequested_ = true;
+		}
+	}
+
 	ImGui::End();
 #endif
 

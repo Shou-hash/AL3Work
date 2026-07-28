@@ -1,9 +1,12 @@
 #include "GameScene.h"
 #include "Kamataengine.h"
-#include "StageManager.h" // ★ GameScene.h より前にインクルード
+#include "StageManager.h"
 #include "TitleScene.h"
 #include <Windows.h>
+#include <fstream>
 #include <imgui.h>
+#include <sstream>
+#include <algorithm>
 
 enum class Scene {
 	kUnknown = 0,
@@ -19,6 +22,33 @@ StageManager* stageManager = nullptr;
 
 // シーン切り替え関数
 void ChangeScene(Scene newScene) { scene = newScene; }
+
+void LoadDebugSettings() {
+	std::ifstream file("DebugSettings.ini");
+	if (!file.is_open()) {
+		return;
+	}
+
+	std::string line;
+	while (std::getline(file, line)) {
+		// 空行やコメント行のスキップ
+		if (line.empty() || line[0] == '#' || line[0] == ';') {
+			continue;
+		}
+
+		// '=' をスペースに置換して stream で読みやすくする
+		std::replace(line.begin(), line.end(), '=', ' ');
+
+		std::stringstream lineStream(line);
+		std::string key, value;
+		if (lineStream >> key >> value) {
+			// ステージ設定
+			if (key == "InitialStage") {
+				stageManager->SetCurrentStageIndexByName(value);
+			}
+		}
+	}
+}
 
 // シーンごとの更新処理と遷移管理を行う関数
 void UpdateScene() {
@@ -90,9 +120,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	titleScene = new TitleScene();
 	titleScene->Initialize();
 
+#ifdef _DEBUG
+	// デバッグ設定ファイル読み込み
+	LoadDebugSettings();
+
+	// ゲームシーンの初期化
+	scene = Scene::kGame;
 	gameScene = new GameScene();
-	// ※タイトルの時点では Initialize を呼ばず、タイトル終了時に呼ぶ形にするか、ここで呼ぶ場合は stageManager を渡す
 	gameScene->Initialize(stageManager);
+#else
+	// リリース時の初期化
+	titleScene = new TitleScene();
+	titleScene->Initialize();
+	gameScene = new GameScene();
+	ChangeScene(Scene::kTitle);
+#endif
 
 	ImGuiManager* imguiManager = ImGuiManager::GetInstance();
 
