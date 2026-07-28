@@ -82,6 +82,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	titleScene = new TitleScene();
 	titleScene->Initialize();
 
+	ImGuiManager* imguiManager = ImGuiManager::GetInstance();
+
 	// 最初のシーンを設定
 	ChangeScene(Scene::kTitle);
 
@@ -92,14 +94,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			break;
 		}
 
+		imguiManager->Begin();
+
 		// シーンの更新・切り替え判定を関数化
 		UpdateScene();
+
+		imguiManager->End();
 
 		// 描画処理
 		dxCommon->PreDraw();
 
-		// 描画処理を関数化
 		DrawScene();
+		imguiManager->Draw();
+
+		// 描画処理を関数化
 
 		dxCommon->PostDraw();
 	}
