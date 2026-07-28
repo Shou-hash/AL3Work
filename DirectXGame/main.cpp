@@ -38,10 +38,15 @@ void UpdateScene() {
 		if (gameScene->isFinished()) {
 			// ゲームシーンが終了（デス演出が完了）したらタイトルシーンへ切り替え
 			ChangeScene(Scene::kTitle);
-			// タイトルシーンを再度遊べるように初期化
 			titleScene->Initialize();
+
+			// ゲームシーンもインスタンスごとリロード（解放して再生成）しておく
+			delete gameScene;
+			gameScene = nullptr;
+			gameScene = new GameScene();
+			// 次回ゲーム開始時（タイトルから遷移時）に Initialize() される
 		}
-		//リロード要求があった場合の処理
+		// リロード要求（ボタン押し）があった場合の処理
 		else if (gameScene->IsReloadRequested()) {
 			// シーンリロード
 			delete gameScene;

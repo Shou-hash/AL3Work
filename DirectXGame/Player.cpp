@@ -28,6 +28,10 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	worldTransform_.Initialize();
 	worldTransform_.translation_ = position;
 	worldTransform_.rotation_.y = std::numbers::pi_v<float> / 2.0f;
+
+	// ★ 追加: リロード時に変形（スケール）が残らないよう明示的に初期化
+	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
+
 	lrDirection_ = LRDirection::kRight;
 	turnTimer_ = kTimeTurn;
 	turnFirstRotationY_ = worldTransform_.rotation_.y;
@@ -35,8 +39,13 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	onGround_ = true;
 	isDead_ = false;
 
+	// 【重要】リロード時に無敵・ノックバック状態が残らないよう完全に初期化する
 	behavior_ = Behavior::kRoot;
 	behaviorRequest_ = std::nullopt;
+	isKnockbackRequested_ = false;
+	knockbackTimer_ = 0.0f;
+	attackPhase_ = AttackPhase::kCharge;
+	attackParameter_ = 0;
 
 	if (modelHitEffect_ == nullptr) {
 		modelHitEffect_ = KamataEngine::Model::CreateFromOBJ("hit_effect", true);
