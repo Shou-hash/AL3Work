@@ -1,7 +1,5 @@
 #pragma once
 #include "BaseEnemy.h"
-#include "KamataEngine.h"
-#include <3d/WorldTransform.h>
 
 class Player;
 
@@ -15,17 +13,15 @@ public:
 		kDead, // 死亡状態
 	};
 
-	// 初期化関数（override を明記）
-	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) override;
+	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
 
-	// BaseEnemyからのオーバーライド関数
+	// オーバーライド
+	void Initialize() override {}
 	void Update() override;
 	void Draw() override;
-	void OnCollision(Player* player) override;
 	void OnDead() override;
-	bool IsDead() const override { return isDead_; }
-	AABB GetAABB() const override;
-	const KamataEngine::WorldTransform& GetWorldTransform() const override { return worldTransform_; }
+	void OnCollision(Player* player) override;
+	AABB GetAABB() const override; // ★追加：GetAABB の宣言
 
 	// 通常状態の更新
 	void BehaviorRootUpdate();
@@ -33,20 +29,20 @@ public:
 	void BehaviorDeadUpdate();
 
 private:
+	// 描画に必要なエンジン系のポインタ
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelEnemy_ = nullptr;
-	KamataEngine::WorldTransform worldTransform_;
 
-	KamataEngine::Vector3 velocity_ = {0, 0, 0};
-	static inline const float kWalkspeed = 0.05f;
+	KamataEngine::Vector3 velocity_ = {0, 0, 0}; // 敵の現在の速度
+
+	static inline const float kWalkspeed = 0.05f; // 敵の移動速度
 	static inline const float kWalkMotionAnglestart = -20.0f;
 	static inline const float kWalkMotionAngleEnd = 30.0f;
 	static inline const float kWalkMotionTime = 1.0f;
-	float walkTimer_ = 0.0f;
 
-	Behavior behavior_ = Behavior::kRoot;
-	bool isDead_ = false;
-	bool isCollisionDisabled_ = false;
-	float deadTimer_ = 0.0f;
-	static inline const float kDeadDuration = 1.0f;
+	float walkTimer_ = 0.0f; // 歩行モーションのタイマー
+
+	Behavior behavior_ = Behavior::kRoot;           // 現在の状態
+	float deadTimer_ = 0.0f;                        // 死亡アニメーション用タイマー
+	static inline const float kDeadDuration = 1.0f; // 死亡演出の長さ（秒）
 };
