@@ -40,6 +40,9 @@ public:
 	// シーンが終了したかを取得
 	bool isFinished() const { return finished_; }
 
+	// リロード要求フラグのgetter
+	bool IsReloadRequested() const { return reloadRequested_; }
+
 	// フェーズ管理用関数
 	void ChangePhase();
 
@@ -101,4 +104,6 @@ private:
 	KamataEngine::Model* modelDeathParticles_ = nullptr;
 	// デスパーティクル（ユニークポインタ）
 	std::unique_ptr<DeathParticles> deathParticles_;
+
+	bool reloadRequested_ = false;
 };

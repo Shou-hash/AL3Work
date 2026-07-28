@@ -40,6 +40,14 @@ void UpdateScene() {
 			// タイトルシーンを再度遊べるように初期化
 			titleScene->Initialize();
 		}
+		//リロード要求があった場合の処理
+		else if (gameScene->IsReloadRequested()) {
+			// シーンリロード
+			delete gameScene;
+			gameScene = nullptr;
+			gameScene = new GameScene();
+			gameScene->Initialize();
+		}
 		break;
 	}
 }
