@@ -2,27 +2,36 @@
 #include "Kamataengine.h"
 #include <map>
 
-enum class MapChipType
-{
+enum class MapChipType {
 	kBlank,
 	kBlock,
 };
 
-struct MapChipData {
-	std::vector<std::vector<MapChipType>> data;
+// 1マス分のデータ
+struct MapChipDataUnit {
+	MapChipType type = MapChipType::kBlank;
+	uint8_t subID = 0;
 };
 
+// ステージ全体のマップチップデータ
+struct MapChipData {
+	std::vector<std::vector<MapChipDataUnit>> data;
+};
 
+// マップチップCSVの文字番号
+enum MapChipCharIndex {
+	kChipType = 0,  // マップチップタイプ
+	kChipSubID = 1, // タイプごとのサブID
+};
 
-class MapChipField 
-{
+class MapChipField {
 public:
-
 	void ResetMapChipData();
 
 	void LoadMapChipDataFromCSV(const std::string& filePath);
 
 	MapChipType GetMapChipTypeByIndex(uint32_t xIndex, uint32_t yIndex);
+	uint8_t GetMapChipSubIDByIndex(uint32_t xIndex, uint32_t yIndex);
 
 	uint32_t GetNumBlockVertical() const { return kNumBlockVertical; }
 	uint32_t GetNumBlockHorizontal() const { return kNumBlockHorizontal; }
@@ -39,7 +48,6 @@ public:
 	MapChipType GetMapChipTypeByPosition(const KamataEngine::Vector3& position);
 
 private:
-
 	static inline const float kBlockWidth = 1.0f;
 	static inline const float kBlockHeight = 1.0f;
 
