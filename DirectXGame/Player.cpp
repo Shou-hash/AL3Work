@@ -5,6 +5,7 @@
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <numbers>
 
