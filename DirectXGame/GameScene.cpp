@@ -1,9 +1,12 @@
 #include "GameScene.h"
 #include "DeathParticles.h"
+#include "Enemy.h"
+#include "GlobalVariables.h"
 #include "HitEffect.h"
 #include "Matrix4x4.h"
 #include "Player.h"
-#include "StageManager.h" // ★ インクルードを追加
+#include "ShieldEnemy.h"
+#include "StageManager.h"
 
 using namespace KamataEngine;
 
@@ -27,13 +30,11 @@ GameScene::~GameScene() {
 	delete modelDeathParticles_;
 	delete modelHitEffect_;
 
-	// 全ての敵を解放
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
 	}
 	enemies_.clear();
 
-	// 全てのエフェクトを解放
 	for (BaseEffect* effect : effects_) {
 		delete effect;
 	}
@@ -41,11 +42,20 @@ GameScene::~GameScene() {
 }
 
 void GameScene::Initialize(StageManager* stageDataManager) {
-	// 引数をメンバ変数に記録する
 	stageManager_ = stageDataManager;
 
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
+
+	// --- 調整項目の登録と適用 ---
+	Player::RegisterGlobalVariables();
+	Enemy::RegisterGlobalVariables();
+	// 他に調整可能なクラスがあればここに登録を追加 (例: ShieldEnemy::RegisterGlobalVariables();)
+
+	// 全ファイルのロード後に登録値を適用
+	GlobalVariables::GetInstance()->LoadFiles();
+	Player::ApplyGlobalVariables();
+	Enemy::ApplyGlobalVariables();
 
 	fade_ = new Fade();
 	fade_->Initialize();
@@ -53,13 +63,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	mapChipField_ = new MapChipField;
 
-	// 現在のステージデータを取得
 	const StageData& stageData = stageManager_->GetCurrentStageData();
-
-	// ★ stageData.stageNo を使って "Resources/fields/stageData1.csv" のようなパスを組み立てる
 	std::string stageFileName = "Resources/stageDatas" + std::to_string(stageData.stageNo) + ".csv";
-
-	// ステージファイルの読み込み
 	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
 
 	model_ = Model::CreateFromOBJ("block", true);
@@ -161,6 +166,11 @@ bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
 }
 
 void GameScene::Update() {
+	// 毎フレーム GlobalVariables の調整値を反映
+	GlobalVariables::GetInstance()->Update();
+	Player::ApplyGlobalVariables();
+	Enemy::ApplyGlobalVariables();
+
 #ifdef _DEBUG
 	ImGui::Begin("Debug");
 	if (ImGui::Button("Reload")) {
@@ -171,9 +181,7 @@ void GameScene::Update() {
 		int currentIdx = stageManager_->GetCurrentStageIndex();
 		int stageCount = stageManager_->GetStageCount();
 
-		// コンボボックス等でステージ選択（または ImGui::InputInt など）
 		if (ImGui::SliderInt("Stage Index", &currentIdx, 0, stageCount > 0 ? stageCount - 1 : 0)) {
-			// ステージ番号が変更されたら設定して再読み込み要求を出す
 			stageManager_->SetCurrentStageIndex(currentIdx);
 			reloadRequested_ = true;
 		}

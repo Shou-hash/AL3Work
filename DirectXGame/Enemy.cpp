@@ -1,9 +1,32 @@
 #include "Enemy.h"
+#include "GlobalVariables.h"
 #include "Matrix4x4.h"
 #define _USE_MATH_DEFINES
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+
+void Enemy::RegisterGlobalVariables() {
+	GlobalVariables* globalVariables = GlobalVariables::GetInstance();
+	const std::string groupName = "Enemy";
+
+	globalVariables->AddItem(groupName, "Walkspeed", kWalkspeed);
+	globalVariables->AddItem(groupName, "WalkMotionAnglestart", kWalkMotionAnglestart);
+	globalVariables->AddItem(groupName, "WalkMotionAngleEnd", kWalkMotionAngleEnd);
+	globalVariables->AddItem(groupName, "WalkMotionTime", kWalkMotionTime);
+	globalVariables->AddItem(groupName, "DeadDuration", kDeadDuration);
+}
+
+void Enemy::ApplyGlobalVariables() {
+	GlobalVariables* globalVariables = GlobalVariables::GetInstance();
+	const std::string groupName = "Enemy";
+
+	kWalkspeed = globalVariables->GetFloatValue(groupName, "Walkspeed");
+	kWalkMotionAnglestart = globalVariables->GetFloatValue(groupName, "WalkMotionAnglestart");
+	kWalkMotionAngleEnd = globalVariables->GetFloatValue(groupName, "WalkMotionAngleEnd");
+	kWalkMotionTime = globalVariables->GetFloatValue(groupName, "WalkMotionTime");
+	kDeadDuration = globalVariables->GetFloatValue(groupName, "DeadDuration");
+}
 
 void Enemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
 	modelEnemy_ = model;
@@ -23,10 +46,7 @@ void Enemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera,
 	deadTimer_ = 0.0f;
 }
 
-void Enemy::OnCollision(Player* player) {
-	(void)player;
-	// 通常敵は攻撃を受けた際に OnDead() が呼ばれる
-}
+void Enemy::OnCollision(Player* player) { (void)player; }
 
 void Enemy::OnDead() {
 	if (behavior_ == Behavior::kDead) {

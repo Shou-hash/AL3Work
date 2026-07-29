@@ -1,7 +1,8 @@
 #define NOMINMAX
 #include "Player.h"
-#include "BaseEnemy.h" // ★ Enemy.h ではなく BaseEnemy.h を使用
+#include "BaseEnemy.h"
 #include "CameraController.h"
+#include "GlobalVariables.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include <algorithm>
@@ -9,9 +10,42 @@
 #include <cmath>
 #include <numbers>
 
+// --- GlobalVariables 調整項目の登録 ---
+void Player::RegisterGlobalVariables() {
+	GlobalVariables* globalVariables = GlobalVariables::GetInstance();
+	const std::string groupName = "Player";
+
+	globalVariables->AddItem(groupName, "Acceleration", kAcceleration);
+	globalVariables->AddItem(groupName, "Attenuation", kAttenuation);
+	globalVariables->AddItem(groupName, "LimitRunSpeed", kLimitRunSpeed);
+	globalVariables->AddItem(groupName, "TimeTurn", kTimeTurn);
+	globalVariables->AddItem(groupName, "GravityAcceleration", kGravityAcceleration);
+	globalVariables->AddItem(groupName, "LimitFallSpeed", kLimitFallSpeed);
+	globalVariables->AddItem(groupName, "JumpAcceleration", kJumpAcceleration);
+	globalVariables->AddItem(groupName, "Width", kWidth);
+	globalVariables->AddItem(groupName, "Height", kHeight);
+	globalVariables->AddItem(groupName, "AttackVelocity", kAttackVelocity);
+}
+
+// --- GlobalVariables 調整項目の反映 ---
+void Player::ApplyGlobalVariables() {
+	GlobalVariables* globalVariables = GlobalVariables::GetInstance();
+	const std::string groupName = "Player";
+
+	kAcceleration = globalVariables->GetFloatValue(groupName, "Acceleration");
+	kAttenuation = globalVariables->GetFloatValue(groupName, "Attenuation");
+	kLimitRunSpeed = globalVariables->GetFloatValue(groupName, "LimitRunSpeed");
+	kTimeTurn = globalVariables->GetFloatValue(groupName, "TimeTurn");
+	kGravityAcceleration = globalVariables->GetFloatValue(groupName, "GravityAcceleration");
+	kLimitFallSpeed = globalVariables->GetFloatValue(groupName, "LimitFallSpeed");
+	kJumpAcceleration = globalVariables->GetFloatValue(groupName, "JumpAcceleration");
+	kWidth = globalVariables->GetFloatValue(groupName, "Width");
+	kHeight = globalVariables->GetFloatValue(groupName, "Height");
+	kAttackVelocity = globalVariables->GetFloatValue(groupName, "AttackVelocity");
+}
+
 Player::Player() {}
 
-// デストラクタでモデルのメモリおよび残ったエフェクトを解放
 Player::~Player() {
 	if (modelHitEffect_) {
 		delete modelHitEffect_;
@@ -29,8 +63,6 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	worldTransform_.Initialize();
 	worldTransform_.translation_ = position;
 	worldTransform_.rotation_.y = std::numbers::pi_v<float> / 2.0f;
-
-	// ★ 追加: リロード時に変形（スケール）が残らないよう明示的に初期化
 	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
 
 	lrDirection_ = LRDirection::kRight;
@@ -40,7 +72,6 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	onGround_ = true;
 	isDead_ = false;
 
-	// 【重要】リロード時に無敵・ノックバック状態が残らないよう完全に初期化する
 	behavior_ = Behavior::kRoot;
 	behaviorRequest_ = std::nullopt;
 	isKnockbackRequested_ = false;
@@ -61,7 +92,6 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 
 void Player::KeysPush() {}
 
-// 衝突時処理
 void Player::OnCollision() {
 	if (IsAttacking()) {
 		return;
@@ -420,7 +450,6 @@ void Player::CheckScreenEdgeCollision() {
 	}
 }
 
-// ★ BaseEnemy* 対応の CheckEnemyCollision（1つだけ保持）
 void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 	if (isDead_) {
 		return;
@@ -435,23 +464,18 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 
 		BaseEnemy::AABB aabbEnemy = enemy->GetAABB();
 
-		// AABB交差判定
 		if (aabbPlayer.min.x < aabbEnemy.max.x && aabbPlayer.max.x > aabbEnemy.min.x && aabbPlayer.min.y < aabbEnemy.max.y && aabbPlayer.max.y > aabbEnemy.min.y &&
 		    aabbPlayer.min.z < aabbEnemy.max.z && aabbPlayer.max.z > aabbEnemy.min.z) {
 
-			// ★ 攻撃中（Dash）の場合
 			if (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) {
 				enemy->OnCollision(this);
 
-				// ★ 盾敵などにガードされてノックバックが要求された場合は即座に状態反映
 				if (isKnockbackRequested_) {
 					behavior_ = Behavior::kKnockback;
 					BehaviorKnockbackInitialize();
 					isKnockbackRequested_ = false;
 				}
-			}
-			// ★ ノックバック中でない通常時のみプレイヤー死亡
-			else if (behavior_ != Behavior::kKnockback) {
+			} else if (behavior_ != Behavior::kKnockback) {
 				OnCollision();
 			}
 			break;

@@ -1,69 +1,46 @@
 #pragma once
 #include <KamataEngine.h>
-#include <cstdint>
 #include <json.hpp>
 #include <map>
 #include <string>
 #include <variant>
 
-/// <summary>
-/// グローバル変数（調整項目マネージャー）
-/// </summary>
 class GlobalVariables {
 public:
-	// nlohmann::json のエイリアス設定
 	using json = nlohmann::json;
 
-	// グローバル変数の保存先ファイルパス
-	const std::string kDirectoryPath = "Resources/GlobalVariables/";
-
-	// 項目構造体 (int32_t, float, Vector3 のいずれかを保持)
+	// 項目構造体
 	struct Item {
 		std::variant<int32_t, float, KamataEngine::Vector3> value;
 	};
 
-	// グループ構造体 (項目名をキーとする)
+	// グループ構造体
 	struct Group {
 		std::map<std::string, Item> items;
 	};
 
-public:
-	/// <summary>
-	/// シングルトンインスタンスの取得
-	/// </summary>
 	static GlobalVariables* GetInstance();
 
-	/// <summary>
-	/// 毎フレーム更新処理 (ImGuiの描画)
-	/// </summary>
-	void Update();
-
-	/// <summary>
-	/// グループの作成
-	/// </summary>
-	/// <param name="groupName">グループ名</param>
 	void CreateGroup(const std::string& groupName);
-
-	/// <summary>
-	/// ファイルに書き出し
-	/// </summary>
-	/// <param name="groupName">グループ名</param>
+	void Update();
+	void LoadFiles();
+	void LoadFile(const std::string& groupName);
 	void SaveFile(const std::string& groupName);
 
-	/// <summary>
-	/// 値のセット (int32_t)
-	/// </summary>
+	// 値のセット (オーバーロード)
 	void SetValue(const std::string& groupName, const std::string& key, int32_t value);
-
-	/// <summary>
-	/// 値のセット (float)
-	/// </summary>
 	void SetValue(const std::string& groupName, const std::string& key, float value);
-
-	/// <summary>
-	/// 値のセット (Vector3)
-	/// </summary>
 	void SetValue(const std::string& groupName, const std::string& key, const KamataEngine::Vector3& value);
+
+	// 項目の追加（未登録なら初期値を SetValue で登録）
+	void AddItem(const std::string& groupName, const std::string& key, int32_t value);
+	void AddItem(const std::string& groupName, const std::string& key, float value);
+	void AddItem(const std::string& groupName, const std::string& key, const KamataEngine::Vector3& value);
+
+	// 値の取得 (getter)
+	int32_t GetIntValue(const std::string& groupName, const std::string& key) const;
+	float GetFloatValue(const std::string& groupName, const std::string& key) const;
+	KamataEngine::Vector3 GetVector3Value(const std::string& groupName, const std::string& key) const;
 
 private:
 	GlobalVariables() = default;
@@ -71,7 +48,6 @@ private:
 	GlobalVariables(const GlobalVariables&) = delete;
 	GlobalVariables& operator=(const GlobalVariables&) = delete;
 
-private:
-	// 全データ (グループ名をキーとするコンテナ)
 	std::map<std::string, Group> datas_;
+	const std::string kDirectoryPath = "Resources/GlobalVariables/";
 };
