@@ -1,6 +1,7 @@
 #pragma once
 #include <KamataEngine.h>
 #include <cstdint>
+#include <json.hpp>
 #include <map>
 #include <string>
 #include <variant>
@@ -10,6 +11,12 @@
 /// </summary>
 class GlobalVariables {
 public:
+	// nlohmann::json のエイリアス設定
+	using json = nlohmann::json;
+
+	// グローバル変数の保存先ファイルパス
+	const std::string kDirectoryPath = "Resources/GlobalVariables/";
+
 	// 項目構造体 (int32_t, float, Vector3 のいずれかを保持)
 	struct Item {
 		std::variant<int32_t, float, KamataEngine::Vector3> value;
@@ -36,6 +43,12 @@ public:
 	/// </summary>
 	/// <param name="groupName">グループ名</param>
 	void CreateGroup(const std::string& groupName);
+
+	/// <summary>
+	/// ファイルに書き出し
+	/// </summary>
+	/// <param name="groupName">グループ名</param>
+	void SaveFile(const std::string& groupName);
 
 	/// <summary>
 	/// 値のセット (int32_t)
