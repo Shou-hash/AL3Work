@@ -4,7 +4,9 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#ifdef _DEBUG
 #include <imgui.h>
+#endif
 #include <iomanip>
 
 GlobalVariables* GlobalVariables::GetInstance() {
@@ -14,13 +16,17 @@ GlobalVariables* GlobalVariables::GetInstance() {
 
 // 毎フレーム更新処理
 void GlobalVariables::Update() {
+
+#ifdef _DEBUG
 	if (!ImGui::Begin("Global Variables", nullptr, ImGuiWindowFlags_MenuBar)) {
 		ImGui::End();
 		return;
 	}
 
-	if (!ImGui::BeginMenuBar())
+	if (!ImGui::BeginMenuBar()) {
 		return;
+	}
+#endif
 
 	// 各グループについて
 	for (std::map<std::string, Group>::iterator itGroup = datas_.begin(); itGroup != datas_.end(); ++itGroup) {
@@ -30,8 +36,11 @@ void GlobalVariables::Update() {
 		// グループの参照を取得
 		Group& group = itGroup->second;
 
-		if (!ImGui::BeginMenu(groupName.c_str()))
+#ifdef _DEBUG
+		if (!ImGui::BeginMenu(groupName.c_str())) {
 			continue;
+		}
+#endif
 
 		// 各項目について
 		for (std::map<std::string, Item>::iterator itItem = group.items.begin(); itItem != group.items.end(); ++itItem) {
@@ -41,6 +50,7 @@ void GlobalVariables::Update() {
 			// 項目の参照を取得
 			Item& item = itItem->second;
 
+#ifdef _DEBUG
 			// int32_t 型の値を保持していれば
 			if (std::holds_alternative<int32_t>(item.value)) {
 				int32_t* ptr = std::get_if<int32_t>(&item.value);
@@ -56,8 +66,10 @@ void GlobalVariables::Update() {
 				KamataEngine::Vector3* ptr = std::get_if<KamataEngine::Vector3>(&item.value);
 				ImGui::SliderFloat3(itemName.c_str(), reinterpret_cast<float*>(ptr), -10.0f, 10.0f);
 			}
+#endif
 		}
 
+#ifdef _DEBUG
 		// 改行
 		ImGui::Text("\n");
 
@@ -69,10 +81,12 @@ void GlobalVariables::Update() {
 		}
 
 		ImGui::EndMenu();
+#endif
 	}
-
+#ifdef _DEBUG
 	ImGui::EndMenuBar();
 	ImGui::End();
+#endif
 }
 
 // 指定名のオブジェクト（グループ）がなければ追加する

@@ -1,12 +1,15 @@
 #include "GameScene.h"
+#include "GlobalVariables.h" // ★ GlobalVariablesのヘッダーを追加
 #include "Kamataengine.h"
 #include "StageManager.h"
 #include "TitleScene.h"
 #include <Windows.h>
-#include <fstream>
-#include <imgui.h>
-#include <sstream>
 #include <algorithm>
+#include <fstream>
+#ifdef _DEBUG
+#include <imgui.h>
+#endif
+#include <sstream>
 
 enum class Scene {
 	kUnknown = 0,
@@ -52,6 +55,10 @@ void LoadDebugSettings() {
 
 // シーンごとの更新処理と遷移管理を行う関数
 void UpdateScene() {
+
+	// ★ グローバル変数の更新（ImGui描画など）の呼び出しを追加
+	GlobalVariables::GetInstance()->Update();
+
 	switch (scene) {
 	case Scene::kTitle:
 		titleScene->Update();
@@ -136,7 +143,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ChangeScene(Scene::kTitle);
 #endif
 
+#ifdef _DEBUG
 	ImGuiManager* imguiManager = ImGuiManager::GetInstance();
+#endif
 
 	// 最初のシーンを設定
 	ChangeScene(Scene::kTitle);
@@ -147,13 +156,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			break;
 		}
 
+#ifdef _DEBUG
 		imguiManager->Begin();
+#endif
 		UpdateScene();
+
+#ifdef _DEBUG
 		imguiManager->End();
+#endif
 
 		dxCommon->PreDraw();
 		DrawScene();
+
+#ifdef _DEBUG
 		imguiManager->Draw();
+#endif
 		dxCommon->PostDraw();
 	}
 
