@@ -1,9 +1,11 @@
 #pragma once
 #include "Kamataengine.h"
+#include "PlayerBullet.h"
+#include "3d/DebugCamera.h"
 
-//<summary>
-// プレイヤークラス
-///</summary>
+/// <summary>
+/// プレイヤークラス
+/// </summary>
 class Player {
 public:
 	// デストラクタ
@@ -19,6 +21,12 @@ public:
 	void Draw(KamataEngine::Camera* camera);
 
 private:
+	/// <summary>
+	/// 攻撃
+	/// </summary>
+	void Attack();
+
+private:
 	KamataEngine::WorldTransform worldTransform_;
 
 	KamataEngine::Model* model_ = nullptr;
@@ -27,4 +35,7 @@ private:
 
 	// キーボード入力
 	KamataEngine::Input* input_ = nullptr;
+
+	// 弾
+	PlayerBullet* bullet_ = nullptr;
 };
