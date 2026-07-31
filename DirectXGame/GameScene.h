@@ -1,5 +1,6 @@
 #pragma once
-#include "Kamataengine.h"
+#include "3d/DebugCamera.h"
+#include "KamataEngine.h"
 #include "Player.h"
 
 class GameScene {
@@ -24,4 +25,13 @@ private:
 
 	uint32_t textureHandle_ = 0;
 	KamataEngine::Model* model_ = nullptr;
+
+	// デバッグカメラ
+	KamataEngine::DebugCamera* debugCamera_ = nullptr;
+
+	// デバッグカメラ有効フラグ
+	bool isDebugCameraActive_ = false;
+
+	// キー入力取得用
+	KamataEngine::Input* input_ = nullptr;
 };

@@ -1,17 +1,29 @@
 #include "GameScene.h"
+#include "3d/AxisIndicator.h" // 軸方向表示ヘッダーのインクルード
 
 using namespace KamataEngine;
 
-GameScene::~GameScene() 
-{
+GameScene::~GameScene() {
 	delete model_;
 	delete player_;
+	delete debugCamera_;
 }
 
-void GameScene::Initialize()
-{
+void GameScene::Initialize() {
+	// Inputの取得
+	input_ = Input::GetInstance();
+
 	// カメラの初期化
 	camera_.Initialize();
+
+	// デバッグカメラの生成 (画面横幅, 画面縦幅)
+	debugCamera_ = new KamataEngine::DebugCamera(WinApp::kWindowWidth, WinApp::kWindowHeight);
+
+	// 軸方向表示の設定
+	// 軸方向表示の表示を有効にする
+	AxisIndicator::GetInstance()->SetVisible(true);
+	// 軸方向表示が参照するビュープロジェクションを指定する (アドレス渡し)
+	AxisIndicator::GetInstance()->SetTargetCamera(&camera_);
 
 	// 背景などの初期化
 	textureHandle_ = TextureManager::Load("uvChecker.png");
@@ -22,15 +34,36 @@ void GameScene::Initialize()
 	player_->Initialize(model_, textureHandle_);
 }
 
-void GameScene::Update()
-{
-	// カメラの行列を更新
-	camera_.UpdateMatrix();
+void GameScene::Update() {
+#ifdef _DEBUG
+	// 切り替えキー (P キー) でデバッグカメラ有効フラグをトグル
+	if (input_->TriggerKey(DIK_P)) {
+		isDebugCameraActive_ = !isDebugCameraActive_;
+	}
+#endif
+
+	// カメラの処理
+	if (isDebugCameraActive_) {
+		// デバッグカメラの更新
+		debugCamera_->Update();
+
+		// DebugCamera からビュー行列とプロジェクション行列を取得してコピー
+		camera_.matView = debugCamera_->GetCamera().matView;
+		camera_.matProjection = debugCamera_->GetCamera().matProjection;
+
+		// ビュープロジェクション行列の転送
+		camera_.TransferMatrix();
+	} else {
+		// ビュープロジェクション行列の更新と転送
+		camera_.UpdateMatrix();
+	}
 
 	player_->Update();
 }
 
 void GameScene::Draw() 
 {
-	player_->Draw(&camera_);
+	player_->Draw(&camera_); 
+
+	AxisIndicator::GetInstance()->Draw();
 }

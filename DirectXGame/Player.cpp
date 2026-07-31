@@ -1,4 +1,5 @@
 #include "Player.h"
+#include <algorithm> // std::clamp を使用するために必要
 #include <cassert>
 
 using namespace KamataEngine;
@@ -44,6 +45,15 @@ void Player::Update() {
 	worldTransform_.translation_.y += move.y;
 	worldTransform_.translation_.z += move.z;
 
+	// --- 移動限界値の設定 (クランプ処理) ---
+	// 移動制限の限界値 (画面端より少し手前に設定)
+	const float kMoveLimitX = 34.0f; // 左右の限界値 (例: -12.0f ～ 12.0f)
+	const float kMoveLimitY = 18.0f;  // 上下の限界値 (例: -6.0f ～ 6.0f)
+
+	// std::clamp(値, 下限値, 上限値) で範囲内に収める
+	worldTransform_.translation_.x = std::clamp(worldTransform_.translation_.x, -kMoveLimitX, kMoveLimitX);
+	worldTransform_.translation_.y = std::clamp(worldTransform_.translation_.y, -kMoveLimitY, kMoveLimitY);
+
 	// アフィン変換行列の作成（拡大・回転・平行移動の合成）
 	worldTransform_.matWorld_ = {
 	    worldTransform_.scale_.x,
@@ -66,9 +76,9 @@ void Player::Update() {
 	// 定数バッファへ転送
 	worldTransform_.TransferMatrix();
 
-	// キャラクターの座標を画面表示する処理 (ImGui)
+	// キャラクターの座標をスライダーで表示・操作する処理 (ImGui)
 	ImGui::Begin("Player");
-	ImGui::Text("Player Position: X:%.2f, Y:%.2f, Z:%.2f", worldTransform_.translation_.x, worldTransform_.translation_.y, worldTransform_.translation_.z);
+	ImGui::SliderFloat3("Position", &worldTransform_.translation_.x, -15.0f, 15.0f);
 	ImGui::End();
 }
 
