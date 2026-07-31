@@ -4,8 +4,7 @@
 //<summary>
 // プレイヤークラス
 ///</summary>
-class Player 
-{
+class Player {
 public:
 	// デストラクタ
 	~Player();
@@ -20,11 +19,12 @@ public:
 	void Draw(KamataEngine::Camera* camera);
 
 private:
-
 	KamataEngine::WorldTransform worldTransform_;
-	
+
 	KamataEngine::Model* model_ = nullptr;
-	
+
 	uint32_t textureHandle_ = 0u;
 
+	// キーボード入力
+	KamataEngine::Input* input_ = nullptr;
 };
