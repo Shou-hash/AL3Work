@@ -7,6 +7,9 @@
 #include "Player.h"
 #include "ShieldEnemy.h"
 #include "StageManager.h"
+#ifdef _DEBUG
+#include <imgui.h>
+#endif
 
 using namespace KamataEngine;
 
@@ -50,7 +53,6 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	// --- 調整項目の登録と適用 ---
 	Player::RegisterGlobalVariables();
 	Enemy::RegisterGlobalVariables();
-	// 他に調整可能なクラスがあればここに登録を追加 (例: ShieldEnemy::RegisterGlobalVariables();)
 
 	// 全ファイルのロード後に登録値を適用
 	GlobalVariables::GetInstance()->LoadFiles();
