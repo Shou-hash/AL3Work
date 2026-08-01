@@ -1,7 +1,8 @@
 #pragma once
+#include "3d/DebugCamera.h"
 #include "Kamataengine.h"
 #include "PlayerBullet.h"
-#include "3d/DebugCamera.h"
+#include <list>
 
 /// <summary>
 /// プレイヤークラス
@@ -28,14 +29,12 @@ private:
 
 private:
 	KamataEngine::WorldTransform worldTransform_;
-
 	KamataEngine::Model* model_ = nullptr;
-
 	uint32_t textureHandle_ = 0u;
 
 	// キーボード入力
 	KamataEngine::Input* input_ = nullptr;
 
-	// 弾
-	PlayerBullet* bullet_ = nullptr;
+	// 弾のリスト（複数管理）
+	std::list<PlayerBullet*> bullets_; // ← PlayerBullet* から変更
 };

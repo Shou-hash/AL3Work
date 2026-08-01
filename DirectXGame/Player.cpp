@@ -5,7 +5,13 @@
 
 using namespace KamataEngine;
 
-Player::~Player() { delete bullet_; }
+// デストラクタ：リスト内のすべての弾を解放する
+Player::~Player() {
+	for (PlayerBullet* bullet : bullets_) {
+		delete bullet;
+	}
+	bullets_.clear();
+}
 
 void Player::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 	assert(model);
@@ -75,12 +81,12 @@ void Player::Update() {
 
 	worldTransform_.TransferMatrix();
 
-	// ★ プレイヤーの移動・行列更新が完全に終わった後に攻撃処理を実行する
+	// 攻撃処理
 	Attack();
 
-	// 弾の更新処理
-	if (bullet_) {
-		bullet_->Update();
+	// 弾更新（すべての弾を更新）
+	for (PlayerBullet* bullet : bullets_) {
+		bullet->Update();
 	}
 
 	// ImGui表示
@@ -89,17 +95,18 @@ void Player::Update() {
 	ImGui::End();
 }
 
+// Player.cpp の Attack() 関数を以下のように修正
 void Player::Attack() {
 	if (input_->TriggerKey(DIK_SPACE)) {
+		// 自キャラの座標をコピー（DirectX::XMFLOAT3 から Vector3 に変更）
+		Vector3 position = worldTransform_.translation_;
+
+		// 弾を生成し、初期化
 		PlayerBullet* newBullet = new PlayerBullet();
-		// 発射した瞬間のプレイヤー位置を弾に一度だけ渡す
-		newBullet->Initialize(model_, worldTransform_.translation_);
+		newBullet->Initialize(model_, position);
 
-		if (bullet_) {
-			delete bullet_;
-		}
-
-		bullet_ = newBullet;
+		// 弾を登録（push_backでリストに追加）
+		bullets_.push_back(newBullet);
 	}
 }
 
@@ -107,9 +114,9 @@ void Player::Draw(KamataEngine::Camera* camera) {
 	Model::PreDraw();
 	model_->Draw(worldTransform_, *camera, textureHandle_);
 
-	// 【重要】Drawの中でUpdateを呼んでいたのを修正し、Drawを呼び出します
-	if (bullet_) {
-		bullet_->Draw(*camera);
+	// 弾描画（すべての弾を描画）
+	for (PlayerBullet* bullet : bullets_) {
+		bullet->Draw(*camera);
 	}
 
 	Model::PostDraw();
