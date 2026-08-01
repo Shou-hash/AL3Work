@@ -36,5 +36,5 @@ private:
 	KamataEngine::Input* input_ = nullptr;
 
 	// 弾のリスト（複数管理）
-	std::list<PlayerBullet*> bullets_; // ← PlayerBullet* から変更
+	std::list<PlayerBullet*> bullets_;
 };

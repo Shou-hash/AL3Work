@@ -5,7 +5,12 @@
 
 using namespace KamataEngine;
 
-// デストラクタ：リスト内のすべての弾を解放する
+// ベクトル変換 (TransformNormal)
+Vector3 TransformNormal(const Vector3& v, const Matrix4x4& m) {
+	Vector3 result{v.x * m.m[0][0] + v.y * m.m[1][0] + v.z * m.m[2][0], v.x * m.m[0][1] + v.y * m.m[1][1] + v.z * m.m[2][1], v.x * m.m[0][2] + v.y * m.m[1][2] + v.z * m.m[2][2]};
+	return result;
+}
+
 Player::~Player() {
 	for (PlayerBullet* bullet : bullets_) {
 		delete bullet;
@@ -23,6 +28,15 @@ void Player::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 }
 
 void Player::Update() {
+	// デスフラグの立った弾を削除
+	bullets_.remove_if([](PlayerBullet* bullet) {
+		if (bullet->IsDead()) {
+			delete bullet;
+			return true;
+		}
+		return false;
+	});
+
 	// --- キャラクター旋回処理 ---
 	const float kRotSpeed = 0.02f;
 	if (input_->PushKey(DIK_A)) {
@@ -95,17 +109,20 @@ void Player::Update() {
 	ImGui::End();
 }
 
-// Player.cpp の Attack() 関数を以下のように修正
 void Player::Attack() {
 	if (input_->TriggerKey(DIK_SPACE)) {
-		// 自キャラの座標をコピー（DirectX::XMFLOAT3 から Vector3 に変更）
-		Vector3 position = worldTransform_.translation_;
+		// 弾の速度
+		const float kBulletSpeed = 1.0f;
+		Vector3 velocity(0.0f, 0.0f, kBulletSpeed);
+
+		// 速度ベクトルを自機の向きに合わせて回転させる
+		velocity = TransformNormal(velocity, worldTransform_.matWorld_);
 
 		// 弾を生成し、初期化
 		PlayerBullet* newBullet = new PlayerBullet();
-		newBullet->Initialize(model_, position);
+		newBullet->Initialize(model_, worldTransform_.translation_, velocity);
 
-		// 弾を登録（push_backでリストに追加）
+		// 弾を登録
 		bullets_.push_back(newBullet);
 	}
 }
@@ -114,7 +131,7 @@ void Player::Draw(KamataEngine::Camera* camera) {
 	Model::PreDraw();
 	model_->Draw(worldTransform_, *camera, textureHandle_);
 
-	// 弾描画（すべての弾を描画）
+	// 弾描画
 	for (PlayerBullet* bullet : bullets_) {
 		bullet->Draw(*camera);
 	}
