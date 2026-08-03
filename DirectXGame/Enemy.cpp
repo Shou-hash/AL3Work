@@ -10,6 +10,12 @@ inline Vector3& operator+=(Vector3& lhs, const Vector3& rhs) {
 	return lhs;
 }
 
+// メンバ関数ポインタテーブルの実体定義
+void (Enemy::* Enemy::staticFunctionTable[])() = {
+    &Enemy::ApproachUpdate, // 接近 (要素番号 0 : Phase::Approach)
+    &Enemy::LeaveUpdate,    // 離脱 (要素番号 1 : Phase::Leave)
+};
+
 void Enemy::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 	// 引数で受け取ったモデルとテクスチャハンドルを保持
 	model_ = model;
@@ -18,7 +24,7 @@ void Enemy::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 	// ワールドトランスフォームの初期化
 	worldTransform_.Initialize();
 
-	// 初期座標の設定 (例: 画面奥の Y=2, Z=40 の位置)
+	// 初期座標の設定
 	worldTransform_.translation_ = {0.0f, 2.0f, 40.0f};
 
 	// 初期フェーズの設定
@@ -26,16 +32,8 @@ void Enemy::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 }
 
 void Enemy::Update() {
-	// フェーズごとの処理
-	switch (phase_) {
-	case Phase::Approach:
-	default:
-		ApproachUpdate();
-		break;
-	case Phase::Leave:
-		LeaveUpdate();
-		break;
-	}
+	// 現在フェーズの関数を実行 (enum classをsize_tにキャストしてテーブルを引く)
+	(this->*staticFunctionTable[static_cast<size_t>(phase_)])();
 
 	// 行列（matWorld_）の再計算
 	worldTransform_.matWorld_ = {

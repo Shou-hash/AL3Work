@@ -52,4 +52,7 @@ private:
 
 	// フェーズ（初期フェーズ：接近）
 	Phase phase_ = Phase::Approach;
+
+	// メンバ関数ポインタテーブルの宣言
+	static void (Enemy::* staticFunctionTable[])();
 };
