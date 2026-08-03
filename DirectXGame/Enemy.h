@@ -1,13 +1,19 @@
 #pragma once
-#include <KamataEngine.h>
-#include "3d/DebugCamera.h"
 #include "3d/AxisIndicator.h"
+#include "3d/DebugCamera.h"
+#include <KamataEngine.h>
 
 /// <summary>
 /// 敵
 /// </summary>
 class Enemy {
 public:
+	// 行動フェーズ
+	enum class Phase {
+		Approach, // 接近する
+		Leave,    // 離脱する
+	};
+
 	/// <summary>
 	/// 初期化
 	/// </summary>
@@ -30,6 +36,11 @@ public:
 	~Enemy();
 
 private:
+	// フェーズ毎の更新処理
+	void ApproachUpdate();
+	void LeaveUpdate();
+
+private:
 	// ワールドトランスフォーム
 	KamataEngine::WorldTransform worldTransform_;
 
@@ -39,6 +50,6 @@ private:
 	// テクスチャハンドル
 	uint32_t textureHandle_ = 0;
 
-	// 移動速度（Z軸方向）
-	float speed_ = -0.5f; // 手前に進める場合はマイナス（奥に行く場合はプラスに変更してください）
+	// フェーズ（初期フェーズ：接近）
+	Phase phase_ = Phase::Approach;
 };
