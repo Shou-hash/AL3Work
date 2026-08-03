@@ -163,7 +163,10 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BaseEnemyState.cpp" />
     <ClCompile Include="Enemy.cpp" />
+    <ClCompile Include="EnemyStateApproach.cpp" />
+    <ClCompile Include="EnemyStateLeave.cpp" />
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Player.cpp" />
@@ -267,7 +270,10 @@
     <None Include="Resources\shaders\Sprite.hlsli" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BaseEnemyState.h" />
     <ClInclude Include="Enemy.h" />
+    <ClInclude Include="EnemyStateApproach.h" />
+    <ClInclude Include="EnemyStateLeave.h" />
     <ClInclude Include="GameScene.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="PlayerBullet.h" />

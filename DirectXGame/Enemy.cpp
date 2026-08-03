@@ -1,41 +1,27 @@
 #include "Enemy.h"
+#include "BaseEnemyState.h"
+#include "EnemyStateApproach.h"
 
 using namespace KamataEngine;
 
-// Vector3 への加算演算子 (+=) のオーバーロード
-inline Vector3& operator+=(Vector3& lhs, const Vector3& rhs) {
-	lhs.x += rhs.x;
-	lhs.y += rhs.y;
-	lhs.z += rhs.z;
-	return lhs;
-}
-
-// メンバ関数ポインタテーブルの実体定義
-void (Enemy::* Enemy::staticFunctionTable[])() = {
-    &Enemy::ApproachUpdate, // 接近 (要素番号 0 : Phase::Approach)
-    &Enemy::LeaveUpdate,    // 離脱 (要素番号 1 : Phase::Leave)
-};
-
 void Enemy::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
-	// 引数で受け取ったモデルとテクスチャハンドルを保持
 	model_ = model;
 	textureHandle_ = textureHandle;
 
-	// ワールドトランスフォームの初期化
 	worldTransform_.Initialize();
-
-	// 初期座標の設定
 	worldTransform_.translation_ = {0.0f, 2.0f, 40.0f};
 
-	// 初期フェーズの設定
-	phase_ = Phase::Approach;
+	// 初期ステート（接近状態）を生成・設定
+	ChangeState(new EnemyStateApproach(this));
 }
 
 void Enemy::Update() {
-	// 現在フェーズの関数を実行 (enum classをsize_tにキャストしてテーブルを引く)
-	(this->*staticFunctionTable[static_cast<size_t>(phase_)])();
+	// 現在のステートの更新を実行
+	if (state_ != nullptr) {
+		state_->Update();
+	}
 
-	// 行列（matWorld_）の再計算
+	// 行列の再計算
 	worldTransform_.matWorld_ = {
 	    worldTransform_.scale_.x,
 	    0.0f,
@@ -58,32 +44,12 @@ void Enemy::Update() {
 	worldTransform_.TransferMatrix();
 }
 
-// 接近フェーズの更新
-void Enemy::ApproachUpdate() {
-	// 接近フェーズの速度（手前に進む）
-	Vector3 approachVelocity = {0.0f, 0.0f, -0.2f};
-
-	// 移動（ベクトルを加算）
-	worldTransform_.translation_ += approachVelocity;
-
-	// 規定の位置に到達したら離脱フェーズへ移行
-	if (worldTransform_.translation_.z < 0.0f) {
-		phase_ = Phase::Leave;
-	}
+void Enemy::ChangeState(BaseEnemyState* newState) {
+	// 古いステートを削除して入れ替える（Engine::changeStateと同じ仕組み）
+	delete state_;
+	state_ = newState;
 }
 
-// 離脱フェーズの更新
-void Enemy::LeaveUpdate() {
-	// 離脱フェーズの速度（斜め上奥に離脱）
-	Vector3 leaveVelocity = {-0.1f, 0.1f, -0.2f};
+void Enemy::Draw(const KamataEngine::Camera& camera) { model_->Draw(worldTransform_, camera, textureHandle_); }
 
-	// 移動（ベクトルを加算）
-	worldTransform_.translation_ += leaveVelocity;
-}
-
-void Enemy::Draw(const KamataEngine::Camera& camera) {
-	// 3Dモデルの描画
-	model_->Draw(worldTransform_, camera, textureHandle_);
-}
-
-Enemy::~Enemy() {}
+Enemy::~Enemy() { delete state_; }
