@@ -128,7 +128,7 @@ void Player::Attack() {
 }
 
 void Player::Draw(KamataEngine::Camera* camera) {
-	Model::PreDraw();
+	
 	model_->Draw(worldTransform_, *camera, textureHandle_);
 
 	// 弾描画
@@ -136,5 +136,4 @@ void Player::Draw(KamataEngine::Camera* camera) {
 		bullet->Draw(*camera);
 	}
 
-	Model::PostDraw();
 }

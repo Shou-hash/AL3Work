@@ -7,6 +7,9 @@ GameScene::~GameScene() {
 	delete model_;
 	delete player_;
 	delete debugCamera_;
+
+	delete enemy_;
+	delete enemyModel_;
 }
 
 void GameScene::Initialize() {
@@ -25,13 +28,22 @@ void GameScene::Initialize() {
 	// 軸方向表示が参照するビュープロジェクションを指定する (アドレス渡し)
 	AxisIndicator::GetInstance()->SetTargetCamera(&camera_);
 
-	// 背景などの初期化
-	textureHandle_ = TextureManager::Load("uvChecker.png");
+	// プレイヤー初期化
+	playerTex_ = TextureManager::Load("uvChecker.png");
 	model_ = Model::Create();
 
-	// プレイヤーの生成と初期化
 	player_ = new Player();
-	player_->Initialize(model_, textureHandle_);
+	player_->Initialize(model_, playerTex_);
+
+	// テクスチャの読み込み
+	enemyTextureHandle_ = TextureManager::Load("cube.jpg");
+
+	// モデルの作成
+	enemyModel_ = Model::Create(); // または Model::CreateFromOBJ("cube") 等
+
+	// Enemy を new して初期化
+	enemy_ = new Enemy();
+	enemy_->Initialize(enemyModel_, enemyTextureHandle_);
 }
 
 void GameScene::Update() {
@@ -59,11 +71,25 @@ void GameScene::Update() {
 	}
 
 	player_->Update();
+
+	// ポインタが null でない場合だけ更新
+	if (enemy_ != nullptr) {
+		enemy_->Update();
+	}
 }
 
 void GameScene::Draw() 
 {
+	Model::PreDraw();
+
 	player_->Draw(&camera_); 
 
+	// ポインタが null でない場合だけ描画
+	if (enemy_ != nullptr) {
+		enemy_->Draw(camera_);
+	}
+
 	AxisIndicator::GetInstance()->Draw();
+
+	Model::PostDraw();
 }

@@ -2,6 +2,7 @@
 #include "3d/DebugCamera.h"
 #include "KamataEngine.h"
 #include "Player.h"
+#include "Enemy.h"
 
 class GameScene {
 public:
@@ -17,13 +18,20 @@ public:
 	void Draw();
 
 private:
+	// 敵クラスのポインタを保持
+	Enemy* enemy_ = nullptr;
+
+	// 敵用モデルとテクスチャ
+	KamataEngine::Model* enemyModel_ = nullptr;
+	uint32_t enemyTextureHandle_ = 0;
+
 	// カメラ
 	KamataEngine::Camera camera_;
 
 	// プレイヤーのインスタンス
 	Player* player_ = nullptr;
 
-	uint32_t textureHandle_ = 0;
+	uint32_t playerTex_ = 0;
 	KamataEngine::Model* model_ = nullptr;
 
 	// デバッグカメラ

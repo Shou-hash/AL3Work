@@ -54,4 +54,7 @@ void PlayerBullet::Update() {
 	worldTransform_.TransferMatrix();
 }
 
-void PlayerBullet::Draw(const Camera& camera) { model_->Draw(worldTransform_, camera, textureHandle_); }
+void PlayerBullet::Draw(const Camera& camera) 
+{ 
+	model_->Draw(worldTransform_, camera, textureHandle_); 
+}
