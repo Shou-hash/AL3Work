@@ -45,7 +45,7 @@ void Player::Update() {
 		worldTransform_.rotation_.y -= kRotSpeed;
 	}
 
-	// --- キャラクター移動処理 ---
+	// キャラクター移動処理
 	Vector3 move = {0, 0, 0};
 	const float kCharacterSpeed = 0.2f;
 

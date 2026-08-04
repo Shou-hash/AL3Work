@@ -1,7 +1,9 @@
 #pragma once
 #include "3d/AxisIndicator.h"
 #include "3d/DebugCamera.h"
+#include "EnemyBullet.h"
 #include <KamataEngine.h>
+#include <list>
 
 // 前方宣言
 class BaseEnemyState;
@@ -11,30 +13,33 @@ class BaseEnemyState;
 /// </summary>
 class Enemy {
 public:
-	/// <summary>
-	/// 初期化
-	/// </summary>
-	void Initialize(KamataEngine::Model* model, uint32_t textureHandle);
-
-	/// <summary>
-	/// 更新処理
-	/// </summary>
-	void Update();
-
-	/// <summary>
-	/// 描画処理
-	/// </summary>
-	void Draw(const KamataEngine::Camera& camera);
-
-	/// <summary>
-	/// ステートの変更
-	/// </summary>
-	void ChangeState(BaseEnemyState* newState);
+	// 発射間隔 (60frame = 1秒ごとに発射)
+	static const int kFireInterval = 60;
 
 	// デストラクタ
 	~Enemy();
 
-	//（Stateクラスから参照・操作用）
+	void Initialize(KamataEngine::Model* model, uint32_t textureHandle);
+	void Update();
+	void Draw(const KamataEngine::Camera& camera);
+	void ChangeState(BaseEnemyState* newState);
+
+	/// <summary>
+	/// 接近フェーズ初期化
+	/// </summary>
+	void ApproachInitialize();
+
+	/// <summary>
+	/// 接近フェーズ更新
+	/// </summary>
+	void ApproachUpdate();
+
+	/// <summary>
+	/// 弾発射
+	/// </summary>
+	void Fire();
+
+	// ゲッター
 	KamataEngine::WorldTransform& GetWorldTransform() { return worldTransform_; }
 
 private:
@@ -49,4 +54,11 @@ private:
 
 	// 現在のステート
 	BaseEnemyState* state_ = nullptr;
+
+	// --- 敵の弾関係 ---
+	// 敵弾のリスト（複数管理）
+	std::list<EnemyBullet*> bullets_;
+
+	// 発射タイマー
+	int32_t fireTimer_ = 0;
 };

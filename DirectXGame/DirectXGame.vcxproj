@@ -165,6 +165,7 @@
   <ItemGroup>
     <ClCompile Include="BaseEnemyState.cpp" />
     <ClCompile Include="Enemy.cpp" />
+    <ClCompile Include="EnemyBullet.cpp" />
     <ClCompile Include="EnemyStateApproach.cpp" />
     <ClCompile Include="EnemyStateLeave.cpp" />
     <ClCompile Include="GameScene.cpp" />
@@ -272,6 +273,7 @@
   <ItemGroup>
     <ClInclude Include="BaseEnemyState.h" />
     <ClInclude Include="Enemy.h" />
+    <ClInclude Include="EnemyBullet.h" />
     <ClInclude Include="EnemyStateApproach.h" />
     <ClInclude Include="EnemyStateLeave.h" />
     <ClInclude Include="GameScene.h" />
