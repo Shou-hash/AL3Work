@@ -2,7 +2,9 @@
 #include "3d/AxisIndicator.h"
 #include "3d/DebugCamera.h"
 #include "EnemyBullet.h"
+#include "TimedCall.h"
 #include <KamataEngine.h>
+#include <functional>
 #include <list>
 
 // 前方宣言
@@ -14,7 +16,7 @@ class BaseEnemyState;
 class Enemy {
 public:
 	// 発射間隔 (60frame = 1秒ごとに発射)
-	static const int kFireInterval = 60;
+	static const uint32_t kFireInterval = 60;
 
 	// デストラクタ
 	~Enemy();
@@ -25,17 +27,22 @@ public:
 	void ChangeState(BaseEnemyState* newState);
 
 	/// <summary>
-	/// 接近フェーズ初期化
+	/// 接近フェーズ初期化処理
 	/// </summary>
-	void ApproachInitialize();
+	void InitializeApproachPhase();
 
 	/// <summary>
-	/// 接近フェーズ更新
+	/// 弾を発射し、次のタイマーをリセット(予約)するコールバック関数
 	/// </summary>
-	void ApproachUpdate();
+	void FireAndReset();
 
 	/// <summary>
-	/// 弾発射
+	/// 登録済みの時限発動イベントをクリアする処理
+	/// </summary>
+	void ClearTimedCalls();
+
+	/// <summary>
+	/// 弾発射の実体関数
 	/// </summary>
 	void Fire();
 
@@ -55,10 +62,9 @@ private:
 	// 現在のステート
 	BaseEnemyState* state_ = nullptr;
 
-	// --- 敵の弾関係 ---
-	// 敵弾のリスト（複数管理）
+	// 敵弾のリスト
 	std::list<EnemyBullet*> bullets_;
 
-	// 発射タイマー
-	int32_t fireTimer_ = 0;
+	// 時限発動イベントのリスト
+	std::list<TimedCall*> timedCalls_;
 };

@@ -2,6 +2,7 @@
 #include "Enemy.h"
 #include "EnemyStateLeave.h"
 
+// コンストラクタではタイマーの登録を行わない
 EnemyStateApproach::EnemyStateApproach(Enemy* enemy) : BaseEnemyState("State Approach", enemy) {}
 
 void EnemyStateApproach::Update() {

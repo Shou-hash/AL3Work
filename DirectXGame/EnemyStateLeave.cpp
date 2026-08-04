@@ -1,7 +1,13 @@
 #include "EnemyStateLeave.h"
 #include "Enemy.h"
 
-EnemyStateLeave::EnemyStateLeave(Enemy* enemy) : BaseEnemyState("State Leave", enemy) {}
+EnemyStateLeave::EnemyStateLeave(Enemy* enemy) : BaseEnemyState("State Leave", enemy) 
+{
+	if (enemy_) {
+		// 離脱フェーズに入ったらタイマー（自動発射）を停止・クリアする！
+		enemy_->ClearTimedCalls();
+	}
+}
 
 void EnemyStateLeave::Update() {
 	DebugLog(); // ログ表示
