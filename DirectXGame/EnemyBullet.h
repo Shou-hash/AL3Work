@@ -3,31 +3,24 @@
 #include "3d/WorldTransform.h"
 #include "KamataEngine.h"
 
+// 前方宣言
+class Player;
+
 /// <summary>
 /// 敵の弾
 /// </summary>
 class EnemyBullet {
 public:
-	// 寿命<frm>
 	static const int32_t kLifeTime = 60 * 5;
 
-	/// <summary>
-	/// 初期化
-	/// </summary>
 	void Initialize(KamataEngine::Model* model, const KamataEngine::Vector3& position, const KamataEngine::Vector3& velocity);
-
-	/// <summary>
-	/// 更新
-	/// </summary>
 	void Update();
-
-	/// <summary>
-	/// 描画
-	/// </summary>
 	void Draw(const KamataEngine::Camera& camera);
 
-	// デスフラグの getter
 	bool IsDead() const { return isDead_; }
+
+	// 自機（Player）のポインタをセットする関数
+	void SetPlayer(Player* player) { player_ = player; }
 
 private:
 	KamataEngine::WorldTransform worldTransform_;
@@ -42,4 +35,7 @@ private:
 
 	// デスフラグ
 	bool isDead_ = false;
+
+	// 自機ポインタ
+	Player* player_ = nullptr;
 };

@@ -1,10 +1,27 @@
 #include "EnemyBullet.h"
+#include "Player.h"  // Playerのクラス定義が必要
+#include <algorithm> // std::clamp 用
 #include <cassert>
-#include <cmath> // std::atan2, std::sqrt 用
+#include <cmath>
 
 using namespace KamataEngine;
 
-// Vector3 への加算演算子 (+=) のオーバーロード
+// 内積の計算
+inline float Dot(const Vector3& v1, const Vector3& v2) { return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z; }
+
+// ベクトルの長さ（ノルム）
+inline float Length(const Vector3& v) { return std::sqrt(Dot(v, v)); }
+
+// ベクトルの正規化
+inline Vector3 Normalize(const Vector3& v) {
+	float len = Length(v);
+	if (len != 0.0f) {
+		return {v.x / len, v.y / len, v.z / len};
+	}
+	return {0.0f, 0.0f, 0.0f};
+}
+
+// Vector3 への加算演算子 (+=)
 inline Vector3& operator+=(Vector3& lhs, const Vector3& rhs) {
 	lhs.x += rhs.x;
 	lhs.y += rhs.y;
@@ -12,44 +29,88 @@ inline Vector3& operator+=(Vector3& lhs, const Vector3& rhs) {
 	return lhs;
 }
 
+// 球面線形補間 (Slerp) 関数の実装（ゼロ除算対策済み）
+Vector3 Slerp(const Vector3& v1, const Vector3& v2, float t) {
+	float dot = Dot(v1, v2);
+
+	// 誤差対策（-1.0f ～ 1.0f の範囲に収める）
+	dot = std::clamp(dot, -1.0f, 1.0f);
+
+	// 2つのベクトルがほぼ同じ向きの場合は、誤差やゼロ除算を避けるために通常のLerp（またはそのまま）を返す
+	if (dot > 0.9995f) {
+		Vector3 result = {v1.x + (v2.x - v1.x) * t, v1.y + (v2.y - v1.y) * t, v1.z + (v2.z - v1.z) * t};
+		return Normalize(result);
+	}
+
+	// なす角 θ（シータ）を求める
+	float theta = std::acos(dot);
+	float sinTheta = std::sin(theta);
+
+	// sin(θ) が 0 に極めて近い場合の安全策
+	if (std::abs(sinTheta) < 0.0001f) {
+		return v1;
+	}
+
+	// Slerp の公式
+	float scale1 = std::sin((1.0f - t) * theta) / sinTheta;
+	float scale2 = std::sin(t * theta) / sinTheta;
+
+	return {scale1 * v1.x + scale2 * v2.x, scale1 * v1.y + scale2 * v2.y, scale1 * v1.z + scale2 * v2.z};
+}
+
 void EnemyBullet::Initialize(Model* model, const Vector3& position, const Vector3& velocity) {
 	assert(model);
 	model_ = model;
 
-	// テクスチャ管理
 	textureHandle_ = TextureManager::Load("white1x1.png");
 
 	worldTransform_.Initialize();
 	worldTransform_.translation_ = position;
-
-	// 引数で受け取った速度を代入
 	velocity_ = velocity;
 
-	// 1. Z方向に長い形状にする (スケール変更)
+	// 見た目を長細く設定
 	worldTransform_.scale_.x = 0.5f;
 	worldTransform_.scale_.y = 0.5f;
 	worldTransform_.scale_.z = 3.0f;
-
-	// 2. Y軸まわりの角度 (θy) の計算
-	worldTransform_.rotation_.y = std::atan2(velocity_.x, velocity_.z);
-
-	// 3. XZ平面上の速度ベクトルの長さ (底辺) を求める
-	float velocityXZ = std::sqrt(velocity_.x * velocity_.x + velocity_.z * velocity_.z);
-
-	// 4. X軸まわりの角度 (θx) の計算
-	worldTransform_.rotation_.x = std::atan2(-velocity_.y, velocityXZ);
 }
 
 void EnemyBullet::Update() {
-	// 時間経過でデス（タイマーカウントダウン）
 	if (--deathTimer_ <= 0) {
 		isDead_ = true;
+	}
+
+	// --- ホーミング処理 ---
+	if (player_ != nullptr) {
+		// 1. 弾からプレイヤーへのベクトルを計算
+		Vector3 playerPos = player_->GetWorldPosition();
+		Vector3 toPlayer = {playerPos.x - worldTransform_.translation_.x, playerPos.y - worldTransform_.translation_.y, playerPos.z - worldTransform_.translation_.z};
+
+		// 2. 現在の速さを記録しておく
+		float bulletSpeed = Length(velocity_);
+
+		if (bulletSpeed > 0.0001f) {
+			// 3. ベクトルの正規化
+			Vector3 dirToPlayer = Normalize(toPlayer);
+			Vector3 currentDir = Normalize(velocity_);
+
+			// 4. Slerp による旋回（t の値で曲がりやすさを調整 0.05f など）
+			const float kHomingRate = 0.05f;
+			Vector3 newDir = Slerp(currentDir, dirToPlayer, kHomingRate);
+
+			// 5. 新しい速度を設定（方向 * 元の速さ）
+			velocity_ = {newDir.x * bulletSpeed, newDir.y * bulletSpeed, newDir.z * bulletSpeed};
+		}
 	}
 
 	// 座標移動
 	worldTransform_.translation_ += velocity_;
 
-	// 5. 回転行列（Rx, Ry）と拡大縮小、平行移動を考慮してワールド行列を計算
+	// --- 進行方向に合わせた見た目の回転制御 ---
+	worldTransform_.rotation_.y = std::atan2(velocity_.x, velocity_.z);
+	float velocityXZ = std::sqrt(velocity_.x * velocity_.x + velocity_.z * velocity_.z);
+	worldTransform_.rotation_.x = std::atan2(-velocity_.y, velocityXZ);
+
+	// ワールド行列の再計算
 	float sx = worldTransform_.scale_.x;
 	float sy = worldTransform_.scale_.y;
 	float sz = worldTransform_.scale_.z;
@@ -62,7 +123,6 @@ void EnemyBullet::Update() {
 	float cy = std::cos(ry);
 	float sy_rad = std::sin(ry);
 
-	// Yaw(Y回転) -> Pitch(X回転) を合成したワールド行列
 	worldTransform_.matWorld_.m[0][0] = sx * cy;
 	worldTransform_.matWorld_.m[0][1] = 0.0f;
 	worldTransform_.matWorld_.m[0][2] = -sx * sy_rad;
