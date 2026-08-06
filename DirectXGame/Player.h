@@ -21,6 +21,8 @@ public:
 	// 描画
 	void Draw(KamataEngine::Camera* camera);
 
+	KamataEngine::Vector3 GetWorldPosition();
+
 private:
 	/// <summary>
 	/// 攻撃

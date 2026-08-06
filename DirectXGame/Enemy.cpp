@@ -1,74 +1,94 @@
 #include "Enemy.h"
 #include "BaseEnemyState.h"
 #include "EnemyStateApproach.h"
+#include "Player.h"
 #include <cassert>
 
 using namespace KamataEngine;
 
-// デストラクタ
+// デストラクタの実装
 Enemy::~Enemy() {
 	delete state_;
-
+	ClearTimedCalls();
 	for (EnemyBullet* bullet : bullets_) {
 		delete bullet;
 	}
 	bullets_.clear();
-
-	for (TimedCall* timedCall : timedCalls_) {
-		delete timedCall;
-	}
-	timedCalls_.clear();
 }
 
-void Enemy::Initialize(Model* model, uint32_t textureHandle) {
+// Initialize 関数の実装（Playerを受け取るように変更）
+void Enemy::Initialize(Model* model, uint32_t textureHandle, Player* player) {
 	assert(model);
-	// 1. 先にモデルとテクスチャを設定する！
+	assert(player);
 	model_ = model;
 	textureHandle_ = textureHandle;
+	player_ = player;
 
 	worldTransform_.Initialize();
-	worldTransform_.translation_ = {0.0f, 2.0f, 40.0f};
 
-	// 2. 初期ステートを設定
-	ChangeState(new EnemyStateApproach(this));
+	// 初期位置を奥（Z = 30.0f）にセット（※アプローチ開始位置）
+	worldTransform_.translation_ = {0.0f, 0.0f, 30.0f};
 
-	// 3. モデル等の準備が終わった後に接近フェーズの弾発射タイマーを1回だけセットする
+	// 接近フェーズの初期化（ステート生成とタイマーセット）
 	InitializeApproachPhase();
 }
 
-// 接近フェーズ初期化処理
+// 接近フェーズの初期化処理
 void Enemy::InitializeApproachPhase() {
-	// 以前のタイマーが残っていたらクリアしておく
-	ClearTimedCalls();
+	// 最初のステート（接近ステート）を設定
+	ChangeState(new EnemyStateApproach(this));
 
-	// 最初の発射イベントを実行＆予約
+	// 発射タイマーのセットアップ
 	FireAndReset();
 }
 
-// 弾を発射し、次の発射を予約する関数
+// 弾を発射してタイマーを再セットする処理
 void Enemy::FireAndReset() {
-	// 1. 弾を発射
-	Fire();
-
-	// 2. 次の発射タイマーをセット
-	std::function<void(void)> callback = std::bind(&Enemy::FireAndReset, this);
-	TimedCall* timedCall = new TimedCall(callback, kFireInterval);
-	timedCalls_.push_back(timedCall);
+	// 定期的に弾を発射するイベントをタイマー登録
+	timedCalls_.push_back(new TimedCall(
+	    [this]() {
+		    Fire();
+		    FireAndReset(); // 次の発射タイマーを再帰登録
+	    },
+	    kFireInterval));
 }
 
-// 弾発射の実体関数
+// Vector3の演算用ヘルパー関数
+inline Vector3 Normalize(const Vector3& v) {
+	float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	if (len != 0.0f) {
+		return {v.x / len, v.y / len, v.z / len};
+	}
+	return {0.0f, 0.0f, 0.0f};
+}
+
+// 敵自身のワールド座標を取得
+Vector3 Enemy::GetWorldPosition() {
+	Vector3 worldPos;
+	worldPos.x = worldTransform_.matWorld_.m[3][0];
+	worldPos.y = worldTransform_.matWorld_.m[3][1];
+	worldPos.z = worldTransform_.matWorld_.m[3][2];
+	return worldPos;
+}
+
+// 自機狙い弾の発射処理
 void Enemy::Fire() {
 	assert(model_);
+	assert(player_);
 
-	// 手前へ飛ぶ速度ベクトル
-	const float kBulletSpeed = -1.0f;
-	Vector3 velocity(0.0f, 0.0f, kBulletSpeed);
+	const float kBulletSpeed = 0.5f;
 
-	// 弾の生成と初期化
+	Vector3 playerPos = player_->GetWorldPosition();
+	Vector3 enemyPos = GetWorldPosition();
+
+	Vector3 diff = {playerPos.x - enemyPos.x, playerPos.y - enemyPos.y, playerPos.z - enemyPos.z};
+	Vector3 dir = Normalize(diff);
+
+	Vector3 velocity = {dir.x * kBulletSpeed, dir.y * kBulletSpeed, dir.z * kBulletSpeed};
+
 	EnemyBullet* newBullet = new EnemyBullet();
-	newBullet->Initialize(model_, worldTransform_.translation_, velocity);
+	newBullet->Initialize(model_, enemyPos, velocity);
 
-	// 弾リストに登録
 	bullets_.push_back(newBullet);
 }
 

@@ -39,11 +39,11 @@ void GameScene::Initialize() {
 	enemyTextureHandle_ = TextureManager::Load("cube.jpg");
 
 	// モデルの作成
-	enemyModel_ = Model::Create(); // または Model::CreateFromOBJ("cube") 等
+	enemyModel_ = Model::Create();
 
-	// Enemy を new して初期化
+	// Enemy を new して初期化（第3引数に player_ を渡す）
 	enemy_ = new Enemy();
-	enemy_->Initialize(enemyModel_, enemyTextureHandle_);
+	enemy_->Initialize(enemyModel_, enemyTextureHandle_, player_);
 }
 
 void GameScene::Update() {

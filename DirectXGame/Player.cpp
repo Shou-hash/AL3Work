@@ -137,3 +137,13 @@ void Player::Draw(KamataEngine::Camera* camera) {
 	}
 
 }
+
+KamataEngine::Vector3 Player::GetWorldPosition() {
+	// ワールド行列から平行移動成分を取り出す
+	KamataEngine::Vector3 worldPos;
+	worldPos.x = worldTransform_.matWorld_.m[3][0];
+	worldPos.y = worldTransform_.matWorld_.m[3][1];
+	worldPos.z = worldTransform_.matWorld_.m[3][2];
+
+	return worldPos;
+}

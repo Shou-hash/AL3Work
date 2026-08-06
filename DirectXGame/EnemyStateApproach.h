@@ -9,4 +9,8 @@ public:
 
 	// 更新処理
 	void Update() override;
+
+private:
+	// 経過フレームカウンター（動きの計算用）
+	uint32_t frameCount_ = 0;
 };
