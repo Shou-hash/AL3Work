@@ -1,5 +1,6 @@
 #include "EnemyBullet.h"
 #include <cassert>
+#include <cmath> // std::atan2, std::sqrt 用
 
 using namespace KamataEngine;
 
@@ -23,6 +24,20 @@ void EnemyBullet::Initialize(Model* model, const Vector3& position, const Vector
 
 	// 引数で受け取った速度を代入
 	velocity_ = velocity;
+
+	// 1. Z方向に長い形状にする (スケール変更)
+	worldTransform_.scale_.x = 0.5f;
+	worldTransform_.scale_.y = 0.5f;
+	worldTransform_.scale_.z = 3.0f;
+
+	// 2. Y軸まわりの角度 (θy) の計算
+	worldTransform_.rotation_.y = std::atan2(velocity_.x, velocity_.z);
+
+	// 3. XZ平面上の速度ベクトルの長さ (底辺) を求める
+	float velocityXZ = std::sqrt(velocity_.x * velocity_.x + velocity_.z * velocity_.z);
+
+	// 4. X軸まわりの角度 (θx) の計算
+	worldTransform_.rotation_.x = std::atan2(-velocity_.y, velocityXZ);
 }
 
 void EnemyBullet::Update() {
@@ -34,29 +49,41 @@ void EnemyBullet::Update() {
 	// 座標移動
 	worldTransform_.translation_ += velocity_;
 
-	// 行列更新
-	worldTransform_.matWorld_ = {
-	    worldTransform_.scale_.x,
-	    0.0f,
-	    0.0f,
-	    0.0f,
-	    0.0f,
-	    worldTransform_.scale_.y,
-	    0.0f,
-	    0.0f,
-	    0.0f,
-	    0.0f,
-	    worldTransform_.scale_.z,
-	    0.0f,
-	    worldTransform_.translation_.x,
-	    worldTransform_.translation_.y,
-	    worldTransform_.translation_.z,
-	    1.0f};
+	// 5. 回転行列（Rx, Ry）と拡大縮小、平行移動を考慮してワールド行列を計算
+	float sx = worldTransform_.scale_.x;
+	float sy = worldTransform_.scale_.y;
+	float sz = worldTransform_.scale_.z;
+
+	float rx = worldTransform_.rotation_.x;
+	float ry = worldTransform_.rotation_.y;
+
+	float cx = std::cos(rx);
+	float sx_rad = std::sin(rx);
+	float cy = std::cos(ry);
+	float sy_rad = std::sin(ry);
+
+	// Yaw(Y回転) -> Pitch(X回転) を合成したワールド行列
+	worldTransform_.matWorld_.m[0][0] = sx * cy;
+	worldTransform_.matWorld_.m[0][1] = 0.0f;
+	worldTransform_.matWorld_.m[0][2] = -sx * sy_rad;
+	worldTransform_.matWorld_.m[0][3] = 0.0f;
+
+	worldTransform_.matWorld_.m[1][0] = sy * (sx_rad * sy_rad);
+	worldTransform_.matWorld_.m[1][1] = sy * cx;
+	worldTransform_.matWorld_.m[1][2] = sy * (sx_rad * cy);
+	worldTransform_.matWorld_.m[1][3] = 0.0f;
+
+	worldTransform_.matWorld_.m[2][0] = sz * (cx * sy_rad);
+	worldTransform_.matWorld_.m[2][1] = sz * (-sx_rad);
+	worldTransform_.matWorld_.m[2][2] = sz * (cx * cy);
+	worldTransform_.matWorld_.m[2][3] = 0.0f;
+
+	worldTransform_.matWorld_.m[3][0] = worldTransform_.translation_.x;
+	worldTransform_.matWorld_.m[3][1] = worldTransform_.translation_.y;
+	worldTransform_.matWorld_.m[3][2] = worldTransform_.translation_.z;
+	worldTransform_.matWorld_.m[3][3] = 1.0f;
 
 	worldTransform_.TransferMatrix();
 }
 
-void EnemyBullet::Draw(const Camera& camera) 
-{
-	model_->Draw(worldTransform_, camera, textureHandle_);
-}
+void EnemyBullet::Draw(const Camera& camera) { model_->Draw(worldTransform_, camera, textureHandle_); }
