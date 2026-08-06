@@ -1,5 +1,6 @@
 #pragma once
 #include "3d/DebugCamera.h"
+#include "Collider.h"
 #include "Enemy.h"
 #include "KamataEngine.h"
 #include "Player.h"
@@ -23,28 +24,24 @@ public:
 	void CheckAllCollisions();
 
 private:
-	// 敵クラスのポインタを保持
-	Enemy* enemy_ = nullptr;
+	/// <summary>
+	/// コライダーペア間の衝突判定と応答
+	/// </summary>
+	void CheckCollisionPair(Collider* colliderA, Collider* colliderB);
 
-	// 敵用モデルとテクスチャ
+private:
+	Enemy* enemy_ = nullptr;
 	KamataEngine::Model* enemyModel_ = nullptr;
 	uint32_t enemyTextureHandle_ = 0;
 
-	// カメラ
 	KamataEngine::Camera camera_;
 
-	// プレイヤーのインスタンス
 	Player* player_ = nullptr;
-
 	uint32_t playerTex_ = 0;
 	KamataEngine::Model* model_ = nullptr;
 
-	// デバッグカメラ
 	KamataEngine::DebugCamera* debugCamera_ = nullptr;
-
-	// デバッグカメラ有効フラグ
 	bool isDebugCameraActive_ = false;
 
-	// キー入力取得用
 	KamataEngine::Input* input_ = nullptr;
 };

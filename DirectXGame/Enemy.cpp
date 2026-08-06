@@ -25,12 +25,21 @@ void Enemy::Initialize(Model* model, uint32_t textureHandle, Player* player) {
 	player_ = player;
 
 	worldTransform_.Initialize();
-
-	// 初期位置を奥（Z = 30.0f）にセット（※アプローチ開始位置）
 	worldTransform_.translation_ = {20.0f, 0.0f, 30.0f};
 
-	// 接近フェーズの初期化（ステート生成とタイマーセット）
+	// ★ 当たり判定の半径を設定
+	SetRadius(1.0f);
+
 	InitializeApproachPhase();
+}
+
+// GetWorldPosition を const 指定に合わせて修正（★これだけを残す）
+Vector3 Enemy::GetWorldPosition() const {
+	Vector3 worldPos;
+	worldPos.x = worldTransform_.matWorld_.m[3][0];
+	worldPos.y = worldTransform_.matWorld_.m[3][1];
+	worldPos.z = worldTransform_.matWorld_.m[3][2];
+	return worldPos;
 }
 
 // 接近フェーズの初期化処理
@@ -62,14 +71,7 @@ inline Vector3 Normalize(const Vector3& v) {
 	return {0.0f, 0.0f, 0.0f};
 }
 
-// 敵自身のワールド座標を取得
-Vector3 Enemy::GetWorldPosition() {
-	Vector3 worldPos;
-	worldPos.x = worldTransform_.matWorld_.m[3][0];
-	worldPos.y = worldTransform_.matWorld_.m[3][1];
-	worldPos.z = worldTransform_.matWorld_.m[3][2];
-	return worldPos;
-}
+// ★ここにあった重複している旧 Vector3 Enemy::GetWorldPosition() は削除しました！
 
 // 自機狙い弾の発射処理
 void Enemy::Fire() {

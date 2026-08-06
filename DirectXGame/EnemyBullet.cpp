@@ -68,10 +68,12 @@ void EnemyBullet::Initialize(Model* model, const Vector3& position, const Vector
 	worldTransform_.translation_ = position;
 	velocity_ = velocity;
 
-	// 見た目を長細く設定
 	worldTransform_.scale_.x = 0.5f;
 	worldTransform_.scale_.y = 0.5f;
 	worldTransform_.scale_.z = 3.0f;
+
+	// ★ 当たり判定の半径を設定
+	SetRadius(0.5f);
 }
 
 void EnemyBullet::Update() {

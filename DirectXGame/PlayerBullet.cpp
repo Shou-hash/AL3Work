@@ -21,6 +21,9 @@ void PlayerBullet::Initialize(Model* model, const Vector3& position, const Vecto
 
 	// 引数で受け取った速度をメンバ変数に代入
 	velocity_ = velocity;
+
+	// ★ 当たり判定の半径を設定
+	SetRadius(0.5f);
 }
 
 void PlayerBullet::Update() {
@@ -60,13 +63,10 @@ void PlayerBullet::OnCollision() {
 }
 
 KamataEngine::Vector3 PlayerBullet::GetWorldPosition() const 
-{ 
+{
 	return {worldTransform_.matWorld_.m[3][0], 
-		worldTransform_.matWorld_.m[3][1], 
+		worldTransform_.matWorld_.m[3][1],
 		worldTransform_.matWorld_.m[3][2]}; 
 }
 
-void PlayerBullet::Draw(const Camera& camera) 
-{ 
-	model_->Draw(worldTransform_, camera, textureHandle_); 
-}
+void PlayerBullet::Draw(const Camera& camera) { model_->Draw(worldTransform_, camera, textureHandle_); }

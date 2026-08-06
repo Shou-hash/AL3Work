@@ -1,15 +1,15 @@
 #pragma once
 #include "3d/Model.h"
 #include "3d/WorldTransform.h"
+#include "Collider.h"
 #include "KamataEngine.h"
 
-// 前方宣言
 class Player;
 
 /// <summary>
-/// 敵の弾
+/// 敵の弾（Colliderを継承）
 /// </summary>
-class EnemyBullet {
+class EnemyBullet : public Collider {
 public:
 	static const int32_t kLifeTime = 60 * 5;
 
@@ -19,29 +19,20 @@ public:
 
 	bool IsDead() const { return isDead_; }
 
-	// 自機（Player）のポインタをセットする関数
 	void SetPlayer(Player* player) { player_ = player; }
 
-	// 衝突時コールバック関数
-	void OnCollision();
-
-	// ワールド座標の取得関数
-	KamataEngine::Vector3 GetWorldPosition() const;
+	// ★ Colliderの関数をオーバーライド
+	void OnCollision() override;
+	KamataEngine::Vector3 GetWorldPosition() const override;
 
 private:
 	KamataEngine::WorldTransform worldTransform_;
 	KamataEngine::Model* model_ = nullptr;
 	uint32_t textureHandle_ = 0u;
 
-	// 速度
 	KamataEngine::Vector3 velocity_;
-
-	// デスタイマー
 	int32_t deathTimer_ = kLifeTime;
-
-	// デスフラグ
 	bool isDead_ = false;
 
-	// 自機ポインタ
 	Player* player_ = nullptr;
 };

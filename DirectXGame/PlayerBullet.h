@@ -1,12 +1,13 @@
 #pragma once
 #include "3d/Model.h"
 #include "3d/WorldTransform.h"
+#include "Collider.h"
 #include "KamataEngine.h"
 
 /// <summary>
-/// 自キャラの弾
+/// 自キャラの弾（Colliderを継承）
 /// </summary>
-class PlayerBullet {
+class PlayerBullet : public Collider {
 public:
 	// 寿命<frm>
 	static const int32_t kLifeTime = 60 * 5;
@@ -29,11 +30,9 @@ public:
 	// デスフラグの getter
 	bool IsDead() const { return isDead_; }
 
-	// 衝突時コールバック関数
-	void OnCollision();
-
-	// ワールド座標の取得関数
-	KamataEngine::Vector3 GetWorldPosition() const;
+	// ★ Colliderの関数をオーバーライド
+	void OnCollision() override;
+	KamataEngine::Vector3 GetWorldPosition() const override;
 
 private:
 	KamataEngine::WorldTransform worldTransform_;

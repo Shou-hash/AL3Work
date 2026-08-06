@@ -1,6 +1,7 @@
 #pragma once
 #include "3d/AxisIndicator.h"
 #include "3d/DebugCamera.h"
+#include "Collider.h"
 #include "EnemyBullet.h"
 #include "TimedCall.h"
 #include <KamataEngine.h>
@@ -11,13 +12,15 @@
 class Player;
 class BaseEnemyState;
 
-class Enemy {
+/// <summary>
+/// 敵クラス（Colliderを継承）
+/// </summary>
+class Enemy : public Collider {
 public:
 	static const uint32_t kFireInterval = 60;
 
 	~Enemy();
 
-	// Initializeで player も受け取れるように変更
 	void Initialize(KamataEngine::Model* model, uint32_t textureHandle, Player* player);
 	void Update();
 	void Draw(const KamataEngine::Camera& camera);
@@ -31,14 +34,12 @@ public:
 	// Player の Setter
 	void SetPlayer(Player* player) { player_ = player; }
 
-	// 衝突時コールバック関数
-	void OnCollision();
+	// ★ Colliderの関数をオーバーライド
+	void OnCollision() override;
+	KamataEngine::Vector3 GetWorldPosition() const override;
 
 	// 敵弾リストを取得する getter（const参照渡し）
 	const std::list<EnemyBullet*>& GetBullets() const { return bullets_; }
-
-	// 敵自身のワールド座標を取得する関数
-	KamataEngine::Vector3 GetWorldPosition();
 
 	KamataEngine::WorldTransform& GetWorldTransform() { return worldTransform_; }
 

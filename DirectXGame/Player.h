@@ -1,13 +1,14 @@
 #pragma once
 #include "3d/DebugCamera.h"
+#include "Collider.h"
 #include "Kamataengine.h"
 #include "PlayerBullet.h"
 #include <list>
 
 /// <summary>
-/// プレイヤークラス
+/// プレイヤークラス（Colliderを継承）
 /// </summary>
-class Player {
+class Player : public Collider {
 public:
 	// デストラクタ
 	~Player();
@@ -21,10 +22,9 @@ public:
 	// 描画
 	void Draw(KamataEngine::Camera* camera);
 
-	KamataEngine::Vector3 GetWorldPosition();
-
-	// 衝突時コールバック関数
-	void OnCollision();
+	// ★ Colliderの純粋仮想関数・仮想関数をオーバーライド
+	KamataEngine::Vector3 GetWorldPosition() const override;
+	void OnCollision() override;
 
 	// 自弾リストを取得する getter（参照渡し）
 	const std::list<PlayerBullet*>& GetBullets() const { return bullets_; }

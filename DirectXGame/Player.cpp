@@ -25,6 +25,9 @@ void Player::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 
 	worldTransform_.Initialize();
 	input_ = Input::GetInstance();
+
+	// ★ 当たり判定の半径を設定
+	SetRadius(1.0f);
 }
 
 void Player::Update() {
@@ -128,21 +131,19 @@ void Player::Attack() {
 }
 
 void Player::OnCollision() {
-	// 当たっても何もしない（資料の仕様通り）
+	// 当たっても何もしない（仕様通り）
 }
 
 void Player::Draw(KamataEngine::Camera* camera) {
-	
 	model_->Draw(worldTransform_, *camera, textureHandle_);
 
 	// 弾描画
 	for (PlayerBullet* bullet : bullets_) {
 		bullet->Draw(*camera);
 	}
-
 }
 
-KamataEngine::Vector3 Player::GetWorldPosition() {
+KamataEngine::Vector3 Player::GetWorldPosition() const {
 	// ワールド行列から平行移動成分を取り出す
 	KamataEngine::Vector3 worldPos;
 	worldPos.x = worldTransform_.matWorld_.m[3][0];
