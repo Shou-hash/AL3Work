@@ -65,8 +65,9 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	mapChipField_ = new MapChipField;
 
-	const StageData& stageData = stageManager_->GetCurrentStageData();
-	std::string stageFileName = "Resources/stageDatas" + std::to_string(stageData.stageNo) + ".csv";
+	// ★ 現在のステージインデックスから CSV ファイルパスを生成 (stageDatas0.csv, stageDatas1.csv, stageDatas2.csv)
+	int currentStageIdx = stageManager_ ? stageManager_->GetCurrentStageIndex() : 0;
+	std::string stageFileName = "Resources/stageDatas" + std::to_string(currentStageIdx) + ".csv";
 	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
 
 	model_ = Model::CreateFromOBJ("block", true);
@@ -168,7 +169,7 @@ bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
 }
 
 void GameScene::Update() {
-	// 毎フレーム GlobalVariables の調整値を反映
+	// ゲームシーンでのみ ImGui (GlobalVariables) を更新・表示する
 	GlobalVariables::GetInstance()->Update();
 	Player::ApplyGlobalVariables();
 	Enemy::ApplyGlobalVariables();
@@ -183,7 +184,8 @@ void GameScene::Update() {
 		int currentIdx = stageManager_->GetCurrentStageIndex();
 		int stageCount = stageManager_->GetStageCount();
 
-		if (ImGui::SliderInt("Stage Index", &currentIdx, 0, stageCount > 0 ? stageCount - 1 : 0)) {
+		// ★ スライダー変更時にインデックスを更新し、リロードフラグを立てる
+		if (ImGui::SliderInt("Stage Index", &currentIdx, 0, stageCount - 1)) {
 			stageManager_->SetCurrentStageIndex(currentIdx);
 			reloadRequested_ = true;
 		}

@@ -1,12 +1,11 @@
 #include "StageManager.h"
-#include <algorithm> // std::remove のため
+#include <algorithm>
 #include <cassert>
 #include <fstream>
-#include <map> // std::map のため
+#include <map>
 #include <sstream>
 
 void StageManager::LoadStageDatas() {
-	// 念のため以前のデータをクリア
 	stageDatas_.clear();
 
 	// 文字列から数値文字列への変換参照表（テーブル）
@@ -17,77 +16,68 @@ void StageManager::LoadStageDatas() {
 	    {"E1", "4"}, // 盾敵 / ステージ4
 	};
 
-	const std::string filePath = "Resources/stageDatas" + std::to_string(currentStageIndex_) + ".csv";
-	std::ifstream file(filePath);
+	// 0, 1, 2 の3つのステージデータを読み込む
+	for (int32_t i = 0; i < kNumStages; ++i) {
+		const std::string filePath = "Resources/stageDatas" + std::to_string(i) + ".csv";
+		std::ifstream file(filePath);
 
-	// ファイルが開けない場合はアサートを出す
-	assert(file.is_open() && "指定の stageData*.csv が見つかりません！ファイルの配置場所を確認してください。");
-
-	std::stringstream lineStream;
-	lineStream << file.rdbuf();
-	file.close();
-
-	std::string line;
-	while (std::getline(lineStream, line)) {
-		line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-
-		if (line.empty()) {
+		if (!file.is_open()) {
+			// ファイルがない場合はデフォルト値を設定
+			StageData defaultData;
+			defaultData.stageNo = i;
+			defaultData.name = "Stage " + std::to_string(i);
+			defaultData.timeLimit = 60;
+			stageDatas_.push_back(defaultData);
 			continue;
 		}
 
-		std::stringstream wordStream(line);
+		std::stringstream lineStream;
+		lineStream << file.rdbuf();
+		file.close();
+
+		std::string line;
 		StageData stageData;
-		std::string word;
+		stageData.stageNo = i;
+		stageData.name = "Stage " + std::to_string(i);
+		stageData.timeLimit = 60;
 
-		// 1列目: ステージ番号（または識別子文字 "B0", "1" など）
-		if (!std::getline(wordStream, word, ',')) {
-			continue;
-		}
+		if (std::getline(lineStream, line)) {
+			line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+			std::stringstream wordStream(line);
+			std::string word;
 
-		// 参照表(list)にキーが存在する場合は番号文字列に置換
-		if (list.find(word) != list.end()) {
-			word = list[word];
-		}
-
-		try {
-			// ステージ番号を整数に変換
-			stageData.stageNo = std::stoi(word);
-		} catch (const std::invalid_argument&) {
-			// ヘッダー行（"stageNo" など）のスキップ
-			continue;
-		}
-
-		//// 2列目: ステージ名
-		if (std::getline(wordStream, word, ',')) {
-			stageData.name = word;
-		}
-
-		// 3列目: 制限時間
-		if (std::getline(wordStream, word, ',')) {
-			try {
-				stageData.timeLimit = std::stoi(word);
-			} catch (const std::invalid_argument&) {
-				stageData.timeLimit = 60; // 変換失敗時のデフォルト値
+			// 1列目: 識別子チェック
+			if (std::getline(wordStream, word, ',')) {
+				if (list.find(word) != list.end()) {
+					word = list[word];
+				}
+				try {
+					stageData.stageNo = std::stoi(word);
+				} catch (const std::invalid_argument&) {
+				}
+			}
+			// 2列目: ステージ名
+			if (std::getline(wordStream, word, ',')) {
+				stageData.name = word;
+			}
+			// 3列目: 制限時間
+			if (std::getline(wordStream, word, ',')) {
+				try {
+					stageData.timeLimit = std::stoi(word);
+				} catch (const std::invalid_argument&) {
+				}
 			}
 		}
-
 		stageDatas_.push_back(stageData);
 	}
-
-	// 1件も読み込めなかった場合もアサートを出す
-	assert(!stageDatas_.empty() && "stageData*.csv の中に有効なデータがありません！");
 }
 
 void StageManager::SetCurrentStageIndexByName(const std::string& name) {
-	// 全ステージデータを検索
 	for (size_t i = 0; i < stageDatas_.size(); ++i) {
-		// ステージ名または識別子("stageDatas0" や "1" など)が一致したら設定
 		if (stageDatas_[i].name == name || std::to_string(stageDatas_[i].stageNo) == name) {
 			currentStageIndex_ = static_cast<int32_t>(i);
 			return;
 		}
 	}
-
-	// 見つからなかった場合は0番目にフォールバック（警告を出すなど）
 	currentStageIndex_ = 0;
 }

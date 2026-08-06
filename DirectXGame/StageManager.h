@@ -4,58 +4,36 @@
 #include <string>
 #include <vector>
 
-/// <summary>
-/// 1ステージ分のデータ構造体
-/// </summary>
 struct StageData {
-	int32_t stageNo = 0;   // ステージ番号
+	int32_t stageNo = 0;   // ステージ番号 (0, 1, 2)
 	std::string name;      // ステージ名
 	int32_t timeLimit = 0; // 制限時間 (秒)
 };
 
-/// <summary>
-/// ステージ管理
-/// </summary>
 class StageManager {
 public:
-	/// <summary>
-	/// ステージデータファイルの読み込み
-	/// </summary>
+	// ★ 宣言のみにする
 	void LoadStageDatas();
-
-	/// <summary>
-	/// ステージ名指定で現在ステージ番号設定（スクショ1の資料より）
-	/// </summary>
-	/// <param name="name">ステージ名</param>
 	void SetCurrentStageIndexByName(const std::string& name);
 
-	/// <summary>
-	/// ステージデータの取得
-	/// </summary>
 	const StageData& GetStageData(int32_t index) const {
 		assert(index >= 0 && index < static_cast<int32_t>(stageDatas_.size()));
 		return stageDatas_[index];
 	}
 
-	/// <summary>
-	/// 現在ステージのステージデータ取得
-	/// </summary>
 	const StageData& GetCurrentStageData() const { return GetStageData(currentStageIndex_); }
 
-	// 現在のステージインデックスのセッター / ゲッター
 	void SetCurrentStageIndex(int32_t index) {
-		assert(index >= 0 && index < static_cast<int32_t>(stageDatas_.size()));
-		currentStageIndex_ = index;
+		if (index >= 0 && index < static_cast<int32_t>(stageDatas_.size())) {
+			currentStageIndex_ = index;
+		}
 	}
 
 	int32_t GetCurrentStageIndex() const { return currentStageIndex_; }
-
 	int32_t GetStageCount() const { return static_cast<int32_t>(stageDatas_.size()); }
 
 private:
-	// 全ステージデータ
+	static inline const int32_t kNumStages = 3; // stageDatas0.csv, stageDatas1.csv, stageDatas2.csv
 	std::vector<StageData> stageDatas_;
-
-	// 現在のステージインデックス
 	int32_t currentStageIndex_ = 0;
 };
