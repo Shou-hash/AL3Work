@@ -31,6 +31,12 @@ public:
 	// Player の Setter
 	void SetPlayer(Player* player) { player_ = player; }
 
+	// 衝突時コールバック関数
+	void OnCollision();
+
+	// 敵弾リストを取得する getter（const参照渡し）
+	const std::list<EnemyBullet*>& GetBullets() const { return bullets_; }
+
 	// 敵自身のワールド座標を取得する関数
 	KamataEngine::Vector3 GetWorldPosition();
 

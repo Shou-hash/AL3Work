@@ -23,6 +23,12 @@ public:
 
 	KamataEngine::Vector3 GetWorldPosition();
 
+	// 衝突時コールバック関数
+	void OnCollision();
+
+	// 自弾リストを取得する getter（参照渡し）
+	const std::list<PlayerBullet*>& GetBullets() const { return bullets_; }
+
 private:
 	/// <summary>
 	/// 攻撃

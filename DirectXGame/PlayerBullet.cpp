@@ -54,6 +54,18 @@ void PlayerBullet::Update() {
 	worldTransform_.TransferMatrix();
 }
 
+void PlayerBullet::OnCollision() {
+	// 当たったら消える（デスフラグを立てる）
+	isDead_ = true;
+}
+
+KamataEngine::Vector3 PlayerBullet::GetWorldPosition() const 
+{ 
+	return {worldTransform_.matWorld_.m[3][0], 
+		worldTransform_.matWorld_.m[3][1], 
+		worldTransform_.matWorld_.m[3][2]}; 
+}
+
 void PlayerBullet::Draw(const Camera& camera) 
 { 
 	model_->Draw(worldTransform_, camera, textureHandle_); 

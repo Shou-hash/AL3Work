@@ -23,9 +23,7 @@ void GameScene::Initialize() {
 	debugCamera_ = new KamataEngine::DebugCamera(WinApp::kWindowWidth, WinApp::kWindowHeight);
 
 	// 軸方向表示の設定
-	// 軸方向表示の表示を有効にする
 	AxisIndicator::GetInstance()->SetVisible(true);
-	// 軸方向表示が参照するビュープロジェクションを指定する (アドレス渡し)
 	AxisIndicator::GetInstance()->SetTargetCamera(&camera_);
 
 	// プレイヤー初期化
@@ -76,10 +74,129 @@ void GameScene::Update() {
 	if (enemy_ != nullptr) {
 		enemy_->Update();
 	}
+
+	// ★ 当たり判定のチェック
+	CheckAllCollisions();
 }
 
-void GameScene::Draw() 
-{
+void GameScene::CheckAllCollisions() {
+	// 判定対象AとBの座標
+	Vector3 posA, posB;
+
+	// 自弾リストの取得
+	const std::list<PlayerBullet*>& playerBullets = player_->GetBullets();
+	// 敵弾リストの取得
+	const std::list<EnemyBullet*>& enemyBullets = enemy_->GetBullets();
+
+#pragma region 自キャラと敵弾の当たり判定
+	{
+		// 自キャラの座標
+		posA = player_->GetWorldPosition();
+
+		// 半径の設定（見た目に応じて適宜変更してください）
+		const float kPlayerRadius = 1.0f;
+		const float kEnemyBulletRadius = 0.5f;
+
+		// 自キャラと敵弾全ての当たり判定
+		for (EnemyBullet* bullet : enemyBullets) {
+			if (bullet->IsDead()) continue;
+
+			// 敵弾の座標
+			posB = bullet->GetWorldPosition();
+
+			// 2点間の距離の2乗を計算
+			float dx = posB.x - posA.x;
+			float dy = posB.y - posA.y;
+			float dz = posB.z - posA.z;
+			float distSquare = dx * dx + dy * dy + dz * dz;
+
+			// 半径の和の2乗
+			float radiusSum = kPlayerRadius + kEnemyBulletRadius;
+			float radiusSumSquare = radiusSum * radiusSum;
+
+			// 球同士の判定 ( (x2-x1)^2 + (y2-y1)^2 + (z2-z1)^2 <= (R1+R2)^2 )
+			if (distSquare <= radiusSumSquare) {
+				// 自キャラの衝突時コールバックを呼び出す
+				player_->OnCollision();
+				// 敵弾の衝突時コールバックを呼び出す
+				bullet->OnCollision();
+			}
+		}
+	}
+#pragma endregion
+
+#pragma region 自弾と敵キャラの当たり判定
+	{
+		// 敵キャラの座標
+		posB = enemy_->GetWorldPosition();
+
+		const float kPlayerBulletRadius = 0.5f;
+		const float kEnemyRadius = 1.0f;
+
+		// 自弾全てと敵キャラの当たり判定
+		for (PlayerBullet* bullet : playerBullets) {
+			if (bullet->IsDead()) continue;
+
+			// 自弾の座標
+			posA = bullet->GetWorldPosition();
+
+			// 2点間の距離の2乗を計算
+			float dx = posB.x - posA.x;
+			float dy = posB.y - posA.y;
+			float dz = posB.z - posA.z;
+			float distSquare = dx * dx + dy * dy + dz * dz;
+
+			float radiusSum = kPlayerBulletRadius + kEnemyRadius;
+			float radiusSumSquare = radiusSum * radiusSum;
+
+			// 球同士の判定
+			if (distSquare <= radiusSumSquare) {
+				// 自弾の衝突時コールバックを呼び出す
+				bullet->OnCollision();
+				// 敵キャラの衝突時コールバックを呼び出す
+				enemy_->OnCollision();
+			}
+		}
+	}
+#pragma endregion
+
+#pragma region 自弾と敵弾の当たり判定
+	{
+		const float kPlayerBulletRadius = 0.5f;
+		const float kEnemyBulletRadius = 0.5f;
+
+		// 総当たり（二重for文）で判定
+		for (PlayerBullet* pBullet : playerBullets) {
+			if (pBullet->IsDead()) continue;
+
+			for (EnemyBullet* eBullet : enemyBullets) {
+				if (eBullet->IsDead()) continue;
+
+				posA = pBullet->GetWorldPosition();
+				posB = eBullet->GetWorldPosition();
+
+				// 2点間の距離の2乗を計算
+				float dx = posB.x - posA.x;
+				float dy = posB.y - posA.y;
+				float dz = posB.z - posA.z;
+				float distSquare = dx * dx + dy * dy + dz * dz;
+
+				float radiusSum = kPlayerBulletRadius + kEnemyBulletRadius;
+				float radiusSumSquare = radiusSum * radiusSum;
+
+				// 球同士の判定
+				if (distSquare <= radiusSumSquare) {
+					// 自弾と敵弾の衝突時コールバックを呼び出す
+					pBullet->OnCollision();
+					eBullet->OnCollision();
+				}
+			}
+		}
+	}
+#pragma endregion
+}
+
+void GameScene::Draw() {
 	Model::PreDraw();
 
 	player_->Draw(&camera_); 

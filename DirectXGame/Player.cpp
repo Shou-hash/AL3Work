@@ -37,7 +37,7 @@ void Player::Update() {
 		return false;
 	});
 
-	// --- キャラクター旋回処理 ---
+	// キャラクター旋回処理
 	const float kRotSpeed = 0.02f;
 	if (input_->PushKey(DIK_A)) {
 		worldTransform_.rotation_.y += kRotSpeed;
@@ -125,6 +125,10 @@ void Player::Attack() {
 		// 弾を登録
 		bullets_.push_back(newBullet);
 	}
+}
+
+void Player::OnCollision() {
+	// 当たっても何もしない（資料の仕様通り）
 }
 
 void Player::Draw(KamataEngine::Camera* camera) {

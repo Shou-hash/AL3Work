@@ -27,7 +27,7 @@ void Enemy::Initialize(Model* model, uint32_t textureHandle, Player* player) {
 	worldTransform_.Initialize();
 
 	// 初期位置を奥（Z = 30.0f）にセット（※アプローチ開始位置）
-	worldTransform_.translation_ = {0.0f, 0.0f, 30.0f};
+	worldTransform_.translation_ = {20.0f, 0.0f, 30.0f};
 
 	// 接近フェーズの初期化（ステート生成とタイマーセット）
 	InitializeApproachPhase();
@@ -156,6 +156,10 @@ void Enemy::Update() {
 	for (EnemyBullet* bullet : bullets_) {
 		bullet->Update();
 	}
+}
+
+void Enemy::OnCollision() {
+	// 当たっても何もしない（資料の仕様通り）
 }
 
 void Enemy::Draw(const Camera& camera) {

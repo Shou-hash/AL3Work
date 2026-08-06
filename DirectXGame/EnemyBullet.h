@@ -22,6 +22,12 @@ public:
 	// 自機（Player）のポインタをセットする関数
 	void SetPlayer(Player* player) { player_ = player; }
 
+	// 衝突時コールバック関数
+	void OnCollision();
+
+	// ワールド座標の取得関数
+	KamataEngine::Vector3 GetWorldPosition() const;
+
 private:
 	KamataEngine::WorldTransform worldTransform_;
 	KamataEngine::Model* model_ = nullptr;

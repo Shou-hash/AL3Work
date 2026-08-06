@@ -1,8 +1,8 @@
 #pragma once
 #include "3d/DebugCamera.h"
+#include "Enemy.h"
 #include "KamataEngine.h"
 #include "Player.h"
-#include "Enemy.h"
 
 class GameScene {
 public:
@@ -16,6 +16,11 @@ public:
 
 	// 描画
 	void Draw();
+
+	/// <summary>
+	/// 衝突判定と応答
+	/// </summary>
+	void CheckAllCollisions();
 
 private:
 	// 敵クラスのポインタを保持

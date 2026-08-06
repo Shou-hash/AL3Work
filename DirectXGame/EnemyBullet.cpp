@@ -79,7 +79,7 @@ void EnemyBullet::Update() {
 		isDead_ = true;
 	}
 
-	// --- ホーミング処理 ---
+	// ホーミング処理
 	if (player_ != nullptr) {
 		// 1. 弾からプレイヤーへのベクトルを計算
 		Vector3 playerPos = player_->GetWorldPosition();
@@ -105,7 +105,7 @@ void EnemyBullet::Update() {
 	// 座標移動
 	worldTransform_.translation_ += velocity_;
 
-	// --- 進行方向に合わせた見た目の回転制御 ---
+	// 進行方向に合わせた見た目の回転制御
 	worldTransform_.rotation_.y = std::atan2(velocity_.x, velocity_.z);
 	float velocityXZ = std::sqrt(velocity_.x * velocity_.x + velocity_.z * velocity_.z);
 	worldTransform_.rotation_.x = std::atan2(-velocity_.y, velocityXZ);
@@ -146,4 +146,19 @@ void EnemyBullet::Update() {
 	worldTransform_.TransferMatrix();
 }
 
-void EnemyBullet::Draw(const Camera& camera) { model_->Draw(worldTransform_, camera, textureHandle_); }
+void EnemyBullet::OnCollision() {
+	// 当たったら消える（デスフラグを立てる）
+	isDead_ = true;
+}
+
+KamataEngine::Vector3 EnemyBullet::GetWorldPosition() const 
+{ 
+	return {worldTransform_.matWorld_.m[3][0], 
+		worldTransform_.matWorld_.m[3][1],
+		worldTransform_.matWorld_.m[3][2]}; 
+}
+
+void EnemyBullet::Draw(const Camera& camera) 
+{
+	model_->Draw(worldTransform_, camera, textureHandle_); 
+}

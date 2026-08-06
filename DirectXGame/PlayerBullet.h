@@ -29,6 +29,12 @@ public:
 	// デスフラグの getter
 	bool IsDead() const { return isDead_; }
 
+	// 衝突時コールバック関数
+	void OnCollision();
+
+	// ワールド座標の取得関数
+	KamataEngine::Vector3 GetWorldPosition() const;
+
 private:
 	KamataEngine::WorldTransform worldTransform_;
 	KamataEngine::Model* model_ = nullptr;
