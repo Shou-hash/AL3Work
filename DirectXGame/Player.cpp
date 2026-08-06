@@ -22,8 +22,13 @@ void Player::RegisterGlobalVariables() {
 	globalVariables->AddItem(groupName, "GravityAcceleration", kGravityAcceleration);
 	globalVariables->AddItem(groupName, "LimitFallSpeed", kLimitFallSpeed);
 	globalVariables->AddItem(groupName, "JumpAcceleration", kJumpAcceleration);
-	globalVariables->AddItem(groupName, "Width", kWidth);
-	globalVariables->AddItem(groupName, "Height", kHeight);
+
+	// ★ 上下左右を個別に登録に変更
+	globalVariables->AddItem(groupName, "PaddingTop", kPaddingTop);
+	globalVariables->AddItem(groupName, "PaddingBottom", kPaddingBottom);
+	globalVariables->AddItem(groupName, "PaddingLeft", kPaddingLeft);
+	globalVariables->AddItem(groupName, "PaddingRight", kPaddingRight);
+
 	globalVariables->AddItem(groupName, "AttackVelocity", kAttackVelocity);
 }
 
@@ -39,8 +44,13 @@ void Player::ApplyGlobalVariables() {
 	kGravityAcceleration = globalVariables->GetFloatValue(groupName, "GravityAcceleration");
 	kLimitFallSpeed = globalVariables->GetFloatValue(groupName, "LimitFallSpeed");
 	kJumpAcceleration = globalVariables->GetFloatValue(groupName, "JumpAcceleration");
-	kWidth = globalVariables->GetFloatValue(groupName, "Width");
-	kHeight = globalVariables->GetFloatValue(groupName, "Height");
+
+	// ★ 上下左右を個別に反映に変更
+	kPaddingTop = globalVariables->GetFloatValue(groupName, "PaddingTop");
+	kPaddingBottom = globalVariables->GetFloatValue(groupName, "PaddingBottom");
+	kPaddingLeft = globalVariables->GetFloatValue(groupName, "PaddingLeft");
+	kPaddingRight = globalVariables->GetFloatValue(groupName, "PaddingRight");
+
 	kAttackVelocity = globalVariables->GetFloatValue(groupName, "AttackVelocity");
 }
 
@@ -143,7 +153,11 @@ void Player::Move() {
 	}
 }
 
-void Player::BehaviorRootInit() {}
+void Player::BehaviorRootInit() {
+	// 通常状態に戻る際、スケールとZ軸回転(傾斜)をリセット
+	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
+	worldTransform_.rotation_.z = 0.0f;
+}
 
 void Player::BehaviorRootUpdate() {
 	Move();
@@ -177,13 +191,30 @@ void Player::BehaviorRootUpdate() {
 			turnTimer_ = kTimeTurn;
 		}
 	}
-	float destinationRotationYTable[] = {
-	    std::numbers::pi_v<float> * 3.0f / 2.0f,
-	    std::numbers::pi_v<float> / 2.0f,
-	};
-	float destinationRotationY = destinationRotationYTable[static_cast<uint32_t>(lrDirection_)];
+
+	const float pi = std::numbers::pi_v<float>;
+
+	// 目標角度の設定
+	// 右向き (kRight) : +PI / 2  (+90度)
+	// 左向き (kLeft)  : -PI / 2  (-90度)
+	float targetRotationY = (lrDirection_ == LRDirection::kRight) ? (pi / 2.0f) : (-pi / 2.0f);
+
+	// 開始角度から目標角度への最短の差分(diff)を求める
+	float diff = targetRotationY - turnFirstRotationY_;
+
+	// 差分を -PI ~ +PI の範囲に正規化する (常に180度以内の最短角度で回す)
+	while (diff > pi) {
+		diff -= 2.0f * pi;
+	}
+	while (diff < -pi) {
+		diff += 2.0f * pi;
+	}
+
+	// イージング(EaseOut)を適用して回転
 	float ratio = turnTimer_ / kTimeTurn;
-	worldTransform_.rotation_.y = turnFirstRotationY_ + (destinationRotationY - turnFirstRotationY_) * ratio;
+	float easeRatio = EaseOut(0.0f, 1.0f, ratio);
+
+	worldTransform_.rotation_.y = turnFirstRotationY_ + diff * easeRatio;
 
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
@@ -198,14 +229,25 @@ void Player::BehaviorAttackUpdate() {
 	attackParameter_++;
 	KamataEngine::Vector3 velocity = {};
 
+	// 傾き角度の設定
+	const float kMaxTiltAngle = 0.4f; // 前傾の最大角度（ラジアン）
+
+	// 【修正】符号を反転
+	// 右向き：プラス回転(Z軸)で前傾、左向き：マイナス回転(Z軸)で前傾
+	float tiltSign = (lrDirection_ == LRDirection::kRight) ? 1.0f : -1.0f;
+	float targetTilt = kMaxTiltAngle * tiltSign;
+
+	// スケールは固定
+	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
+
 	switch (attackPhase_) {
 	case AttackPhase::kCharge:
 	default: {
 		float t = static_cast<float>(attackParameter_) / static_cast<float>(kChargeDuration);
 		t = std::min(t, 1.0f);
 
-		worldTransform_.scale_.z = EaseOut(1.0f, 0.3f, t);
-		worldTransform_.scale_.y = EaseOut(1.0f, 1.6f, t);
+		// 0から前傾角度まで滑らかに傾斜
+		worldTransform_.rotation_.z = EaseOut(0.0f, targetTilt, t);
 
 		if (attackParameter_ >= kChargeDuration) {
 			attackPhase_ = AttackPhase::kDash;
@@ -217,11 +259,8 @@ void Player::BehaviorAttackUpdate() {
 	}
 
 	case AttackPhase::kDash: {
-		float t = static_cast<float>(attackParameter_) / static_cast<float>(kDashDuration);
-		t = std::min(t, 1.0f);
-
-		worldTransform_.scale_.z = EaseOut(0.3f, 1.3f, t);
-		worldTransform_.scale_.y = EaseIn(1.6f, 0.7f, t);
+		// 突進中は傾きを保持
+		worldTransform_.rotation_.z = targetTilt;
 
 		if (lrDirection_ == LRDirection::kRight) {
 			velocity.x = +kAttackVelocity;
@@ -240,10 +279,11 @@ void Player::BehaviorAttackUpdate() {
 		float t = static_cast<float>(attackParameter_) / static_cast<float>(kRecoilDuration);
 		t = std::min(t, 1.0f);
 
-		worldTransform_.scale_.z = EaseOut(1.3f, 1.0f, t);
-		worldTransform_.scale_.y = EaseOut(0.7f, 1.0f, t);
+		// 前傾姿勢から元の直立(0)へ滑らかに戻る
+		worldTransform_.rotation_.z = EaseOut(targetTilt, 0.0f, t);
 
 		if (attackParameter_ >= kRecoilDuration) {
+			worldTransform_.rotation_.z = 0.0f;
 			behaviorRequest_ = Behavior::kRoot;
 		}
 		break;
@@ -301,8 +341,9 @@ std::optional<Player::AABB> Player::GetAttackAABB() const {
 	AABB aabb;
 	const auto& pos = worldTransform_.translation_;
 
-	aabb.min = {pos.x - kWidth / 2.0f, pos.y - kHeight / 2.0f, pos.z - 0.5f};
-	aabb.max = {pos.x + kWidth / 2.0f, pos.y + kHeight / 2.0f, pos.z + 0.5f};
+	// ★ kWidth, kHeight の代わりに個別の Padding パラメータを適用
+	aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
+	aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 0.5f};
 
 	return aabb;
 }
@@ -434,10 +475,10 @@ void Player::CheckScreenEdgeCollision() {
 	}
 
 	float cameraLeftX = cameraController_->GetCameraLeftX();
-	float playerLeftX = worldTransform_.translation_.x - (kWidth / 2.0f);
+	float playerLeftX = worldTransform_.translation_.x - kPaddingLeft; // ★変更
 
 	if (playerLeftX < cameraLeftX) {
-		worldTransform_.translation_.x = cameraLeftX + (kWidth / 2.0f);
+		worldTransform_.translation_.x = cameraLeftX + kPaddingLeft;
 		KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
 		KamataEngine::Vector3 rightTopPos = CornerPosition(currentCenter, kRightTop);
 		KamataEngine::Vector3 rightBottomPos = CornerPosition(currentCenter, kRightBottom);
@@ -484,14 +525,18 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 }
 
 KamataEngine::Vector3 Player::CornerPosition(const KamataEngine::Vector3& center, Corner corner) {
-	const float insetX = kWidth / 2.0f - 0.01f;
-	const float insetY = kHeight / 2.0f - 0.01f;
+	// ★ 左右・上下のそれぞれの値を適用（0.01fのインセット処理は残しています）
+	const float insetLeft = kPaddingLeft - 0.01f;
+	const float insetRight = kPaddingRight - 0.01f;
+	const float insetBottom = kPaddingBottom - 0.01f;
+	const float insetTop = kPaddingTop - 0.01f;
+
 	const KamataEngine::Vector3 offsetTable[kNumCorner] = {
-	    {+insetX, -insetY, 0.0f},
-        {-insetX, -insetY, 0.0f},
-        {+insetX, +insetY, 0.0f},
-        {-insetX, +insetY, 0.0f}
-    };
+	    {+insetRight, -insetBottom, 0.0f}, // kRightBottom
+	    {-insetLeft,  -insetBottom, 0.0f}, // kLeftBottom
+	    {+insetRight, +insetTop,    0.0f}, // kRightTop
+	    {-insetLeft,  +insetTop,    0.0f}  // kLeftTop
+	};
 	KamataEngine::Vector3 result;
 	result.x = center.x + offsetTable[static_cast<uint32_t>(corner)].x;
 	result.y = center.y + offsetTable[static_cast<uint32_t>(corner)].y;
@@ -530,7 +575,7 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockBottomY = blockPos.y - 0.5f;
-		float previousTopY = worldTransform_.translation_.y + kHeight / 2.0f;
+		float previousTopY = worldTransform_.translation_.y + kPaddingTop;
 
 		if (previousTopY <= blockBottomY + 0.05f) {
 			info.ceilingCollision = true;
@@ -561,8 +606,8 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockTopY = blockPos.y + 0.5f;
-		float previousBottomY = worldTransform_.translation_.y - kHeight / 2.0f;
-		float nextBottomY = nextCenter.y - kHeight / 2.0f;
+		float previousBottomY = worldTransform_.translation_.y - kPaddingBottom;
+		float nextBottomY = nextCenter.y - kPaddingBottom;
 
 		if (previousBottomY >= blockTopY - 0.2f && nextBottomY <= blockTopY) {
 			info.onGround = true;
@@ -600,7 +645,7 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockLeftX = blockPos.x - 0.5f;
-		info.moveAmount.x = blockLeftX - (worldTransform_.translation_.x + kWidth / 2.0f) - 0.005f;
+		info.moveAmount.x = blockLeftX - (worldTransform_.translation_.x + kPaddingRight) - 0.005f;
 	}
 }
 
@@ -625,7 +670,7 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockRightX = blockPos.x + 0.5f;
-		info.moveAmount.x = blockRightX - (worldTransform_.translation_.x - kWidth / 2.0f) + 0.005f;
+		info.moveAmount.x = blockRightX - (worldTransform_.translation_.x - kPaddingLeft) + 0.005f;
 	}
 }
 
@@ -649,16 +694,15 @@ Player::AABB Player::GetAABB() const {
 	AABB aabb;
 	KamataEngine::Vector3 center = worldTransform_.translation_;
 
-	float halfWidth = kWidth / 2.0f;
-	float halfHeight = kHeight / 2.0f;
-	float halfDepth = kWidth / 2.0f;
+	// Z軸（奥行き）はとりあえず左右の平均値等で代用、または固定値にします
+	float halfDepth = (kPaddingLeft + kPaddingRight) / 2.0f;
 
-	aabb.min.x = center.x - halfWidth;
-	aabb.min.y = center.y - halfHeight;
+	aabb.min.x = center.x - kPaddingLeft;   // ★変更
+	aabb.min.y = center.y - kPaddingBottom; // ★変更
 	aabb.min.z = center.z - halfDepth;
 
-	aabb.max.x = center.x + halfWidth;
-	aabb.max.y = center.y + halfHeight;
+	aabb.max.x = center.x + kPaddingRight; // ★変更
+	aabb.max.y = center.y + kPaddingTop;   // ★変更（元の +1.5f 固定処理を外す場合はこのまま）
 	aabb.max.z = center.z + halfDepth;
 
 	return aabb;

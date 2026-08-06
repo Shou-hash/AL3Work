@@ -126,8 +126,10 @@ private:
 
 	MapChipField* mapChipField_ = nullptr;
 	CameraController* cameraController_ = nullptr;
-	static inline float kWidth = 0.8f;
-	static inline float kHeight = 0.8f;
+	static inline float kPaddingTop = 1.2f;
+	static inline float kPaddingBottom = 0.4f;
+	static inline float kPaddingLeft = 0.4f;
+	static inline float kPaddingRight = 0.4f;
 	KamataEngine::Vector3 velocity_ = {};
 	bool onGround_ = true;
 	bool isDead_ = false;
