@@ -29,6 +29,8 @@ enum class AttackPhase {
 
 class Player {
 public:
+	friend class GameScene;
+
 	enum Corner { kRightBottom, kLeftBottom, kRightTop, kLeftTop, kNumCorner };
 
 	struct CollisionMapInfo {
@@ -70,6 +72,12 @@ public:
 
 	// 各メッシュの調整用WorldTransformを取得する関数
 	std::vector<KamataEngine::WorldTransform>& GetMeshWorldTransforms() { return meshWorldTransforms_; }
+
+	// ★ 各部位の個別WorldTransformを取得する関数を追加
+	KamataEngine::WorldTransform& GetWorldTransformHead() { return worldTransformHead_; }
+	KamataEngine::WorldTransform& GetWorldTransformBody() { return worldTransformBody_; }
+	KamataEngine::WorldTransform& GetWorldTransformLeft() { return worldTransformLeft_; }
+	KamataEngine::WorldTransform& GetWorldTransformRight() { return worldTransformRight_; }
 
 	bool IsDead() const { return isDead_; }
 	bool IsAttacking() const { return behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash; }

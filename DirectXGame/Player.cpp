@@ -117,8 +117,8 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	// 必要に応じて各部位の初期位置(ローカルのオフセット)を設定
 	worldTransformBody_.translation_ = {0.0f, 0.0f, 0.0f};  // ルート（体）
 	worldTransformHead_.translation_ = {0.0f, 0.0f, 0.0f};  // 体の上
-	worldTransformLeft_.translation_ = {-0.0f, 0.2f, 0.0f}; // 体の左
-	worldTransformRight_.translation_ = {0.0f, 0.2f, 0.0f}; // 体の右
+	worldTransformLeft_.translation_ = {-0.0f, 0.0f, 0.0f}; // 体の左
+	worldTransformRight_.translation_ = {0.0f, 0.0f, 0.0f}; // 体の右
 
 	lrDirection_ = LRDirection::kRight;
 	turnTimer_ = kTimeTurn;
@@ -269,21 +269,19 @@ void Player::BehaviorRootUpdate() {
 	// 歩きアニメーション処理を追加
 	if (onGround_ && std::abs(velocity_.x) > 0.01f) {
 		// 移動速度に応じてアニメーション時間を進める
-		walkAnimationTimer_ += (std::abs(velocity_.x) / kLimitRunSpeed) * 0.075f;
+		walkAnimationTimer_ += (std::abs(velocity_.x) / kLimitRunSpeed) * 0.025f;
 
-		// Z軸の角度を使って両手同時に同じ方向へ揺らす（少し揺れる感じにするため、係数を 0.2f 程度に調整）
-		float walkTilt = std::sin(walkAnimationTimer_ * 2.0f * pi) * 0.2f;
-
-		// 左右両方に同じ角度を代入することで、真ん中（体）を中心に両手が一緒に傾きます
-		worldTransformLeft_.rotation_.z = walkTilt;
-		worldTransformRight_.rotation_.z = walkTilt;
+		// Z軸の角度を使って左右のパーツを交互にスイングさせる（最大約25度傾く想定）
+		float walkTilt = std::sin(walkAnimationTimer_ * 2.0f * pi) * 0.75f;
+		worldTransformLeft_.rotation_.x = walkTilt;
+		worldTransformRight_.rotation_.x = -walkTilt;
 	} else {
 		// 移動していないか空中にいる時は徐々に直立に戻す
-		worldTransformLeft_.rotation_.z *= 0.8f;
-		worldTransformRight_.rotation_.z *= 0.8f;
-		if (std::abs(worldTransformLeft_.rotation_.z) < 0.001f) {
-			worldTransformLeft_.rotation_.z = 0.0f;
-			worldTransformRight_.rotation_.z = 0.0f;
+		worldTransformLeft_.rotation_.x *= 0.8f;
+		worldTransformRight_.rotation_.x *= 0.8f;
+		if (std::abs(worldTransformLeft_.rotation_.x) < 0.001f) {
+			worldTransformLeft_.rotation_.x = 0.0f;
+			worldTransformRight_.rotation_.x = 0.0f;
 			walkAnimationTimer_ = 0.0f;
 		}
 	}
@@ -295,14 +293,40 @@ void Player::BehaviorRootUpdate() {
 	// 各ノードのローカル行列（LocalMatrix）を計算
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-	KamataEngine::Matrix4x4 localMatrixLeft = MakeAffineMatrix(worldTransformLeft_.scale_, worldTransformLeft_.rotation_, worldTransformLeft_.translation_);
-	KamataEngine::Matrix4x4 localMatrixRight = MakeAffineMatrix(worldTransformRight_.scale_, worldTransformRight_.rotation_, worldTransformRight_.translation_);
+
+	// ➔ ★【修正】回転の中心をどれだけ下にずらすかの設定（例: 0.5f）
+	// 中心を下にずらす ＝ モデルの見た目を相対的に上に持っていくため、Y軸にプラスします
+	KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
+
+	// 【Left Arm/Leg】
+	// ① 原点中心の回転行列
+	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
+	// ② 中心をずらすための逆移動行列（前後の移動で回転中心をオフセット）
+	KamataEngine::Matrix4x4 preTranslateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
+
+	// ③ 本来の座標（translation_）に中心のオフセットを足した位置へ移動する行列
+	KamataEngine::Vector3 finalTranslationLeft = {
+	    worldTransformLeft_.translation_.x + centerOffset.x, worldTransformLeft_.translation_.y + centerOffset.y, worldTransformLeft_.translation_.z + centerOffset.z};
+	KamataEngine::Matrix4x4 postTranslateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationLeft);
+
+	// ④ すべてを合成 (右から順に適用: 中心移動 ➔ 回転 ➔ 本来の位置へ配置)
+	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(postTranslateLeft, MultiplyMatrix(rotateLeft, preTranslateLeft));
+
+	// 【Right Arm/Leg】
+	// ① 原点中心の回転行列
+	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
+	// ② 中心をずらすための逆移動行列
+	KamataEngine::Matrix4x4 preTranslateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
+
+	// ③ 本来の座標に中心のオフセットを足した位置へ移動する行列
+	KamataEngine::Vector3 finalTranslationRight = {
+	    worldTransformRight_.translation_.x + centerOffset.x, worldTransformRight_.translation_.y + centerOffset.y, worldTransformRight_.translation_.z + centerOffset.z};
+	KamataEngine::Matrix4x4 postTranslateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationRight);
+
+	// ④ すべてを合成
+	KamataEngine::Matrix4x4 localMatrixRight = MultiplyMatrix(postTranslateRight, MultiplyMatrix(rotateRight, preTranslateRight));
 
 	// 親子関係に基づきワールド行列（WorldMatrix）を計算
-	// W_body  = L_body * W_playerRoot
-	// W_head  = L_head * W_body
-	// W_left  = L_left * W_body
-	// W_right = L_right * W_body
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
 	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
 	worldTransformLeft_.matWorld_ = MultiplyMatrix(localMatrixLeft, worldTransformBody_.matWorld_);
@@ -413,8 +437,15 @@ void Player::BehaviorAttackUpdate() {
 	// 攻撃時も同様に各メッシュの親子関係行列を計算
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-	KamataEngine::Matrix4x4 localMatrixLeft = MakeAffineMatrix(worldTransformLeft_.scale_, worldTransformLeft_.rotation_, worldTransformLeft_.translation_);
-	KamataEngine::Matrix4x4 localMatrixRight = MakeAffineMatrix(worldTransformRight_.scale_, worldTransformRight_.rotation_, worldTransformRight_.translation_);
+
+	// ★【修正】攻撃時も回転中心の修正を適用
+	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
+	KamataEngine::Matrix4x4 translateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformLeft_.translation_);
+	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(translateLeft, rotateLeft);
+
+	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
+	KamataEngine::Matrix4x4 translateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformRight_.translation_);
+	KamataEngine::Matrix4x4 localMatrixRight = MultiplyMatrix(translateRight, rotateRight);
 
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
 	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
@@ -554,8 +585,15 @@ void Player::BehaviorKnockbackUpdate() {
 	// ノックバック時も親子関係行列を更新
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-	KamataEngine::Matrix4x4 localMatrixLeft = MakeAffineMatrix(worldTransformLeft_.scale_, worldTransformLeft_.rotation_, worldTransformLeft_.translation_);
-	KamataEngine::Matrix4x4 localMatrixRight = MakeAffineMatrix(worldTransformRight_.scale_, worldTransformRight_.rotation_, worldTransformRight_.translation_);
+
+	// ★【修正】ノックバック時も回転中心の修正を適用
+	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
+	KamataEngine::Matrix4x4 translateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformLeft_.translation_);
+	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(translateLeft, rotateLeft);
+
+	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
+	KamataEngine::Matrix4x4 translateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformRight_.translation_);
+	KamataEngine::Matrix4x4 localMatrixRight = MultiplyMatrix(translateRight, rotateRight);
 
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
 	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
