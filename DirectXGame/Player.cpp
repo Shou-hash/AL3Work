@@ -145,6 +145,11 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 		delete effect;
 	}
 	hitEffects_.clear();
+
+	// ハンマーのトランスフォーム初期化
+	worldTransformHammer_.Initialize();
+	hammerSkillTimer_ = 0.0f;
+	isHammerVisible_ = false;
 }
 
 void Player::KeysPush() {}
@@ -207,6 +212,8 @@ void Player::BehaviorRootInit() {
 	worldTransformLeft_.rotation_.z = 0.0f;
 	worldTransformRight_.rotation_.z = 0.0f;
 	walkAnimationTimer_ = 0.0f;
+
+	isHammerVisible_ = false;
 }
 
 void Player::BehaviorRootUpdate() {
@@ -479,18 +486,19 @@ void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 }
 
 std::optional<Player::AABB> Player::GetAttackAABB() const {
-	if (behavior_ != Behavior::kAttack || attackPhase_ != AttackPhase::kDash) {
-		return std::nullopt;
+	// 通常攻撃のダッシュ中、またはハンマースキルの振り下ろしフェーズ（進捗40%以降）の時に攻撃判定を返す
+	if ((behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill && (hammerSkillTimer_ / kHammerSkillDuration) >= 0.4f)) {
+		AABB aabb;
+		const auto& pos = worldTransform_.translation_;
+
+		// ★ kWidth, kHeight の代わりに個別の Padding パラメータを適用
+		aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
+		aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 0.5f};
+
+		return aabb;
 	}
 
-	AABB aabb;
-	const auto& pos = worldTransform_.translation_;
-
-	// ★ kWidth, kHeight の代わりに個別の Padding パラメータを適用
-	aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
-	aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 0.5f};
-
-	return aabb;
+	return std::nullopt;
 }
 
 void Player::Update() {
@@ -507,6 +515,11 @@ void Player::Update() {
 		isKnockbackRequested_ = false;
 	}
 
+	// 通常時、Eキーでハンマースキルが発動
+	if (behavior_ == Behavior::kRoot && KamataEngine::Input::GetInstance()->TriggerKey(DIK_E)) {
+		behaviorRequest_ = Behavior::kHammerSkill;
+	}
+
 	if (behaviorRequest_) {
 		behavior_ = behaviorRequest_.value();
 
@@ -519,6 +532,9 @@ void Player::Update() {
 			break;
 		case Behavior::kKnockback:
 			BehaviorKnockbackInitialize();
+			break;
+		case Behavior::kHammerSkill:
+			BehaviorHammerSkillInit();
 			break;
 		}
 
@@ -534,6 +550,9 @@ void Player::Update() {
 		break;
 	case Behavior::kKnockback:
 		BehaviorKnockbackUpdate();
+		break;
+	case Behavior::kHammerSkill:
+		BehaviorHammerSkillUpdate();
 		break;
 	}
 
@@ -607,6 +626,93 @@ void Player::BehaviorKnockbackUpdate() {
 
 	if (knockbackTimer_ >= kKnockbackTotalDuration) {
 		behaviorRequest_ = Behavior::kRoot;
+	}
+}
+
+void Player::BehaviorHammerSkillInit() {
+	hammerSkillTimer_ = 0.0f;
+	isHammerVisible_ = false;
+	velocity_ = {0.0f, 0.0f, 0.0f}; // スキル発動中は移動を停止
+}
+
+void Player::BehaviorHammerSkillUpdate() {
+	hammerSkillTimer_ += 1.0f / 60.0f;
+	float progress = hammerSkillTimer_ / kHammerSkillDuration;
+	if (progress > 1.0f) {
+		progress = 1.0f;
+	}
+
+	float armRotationX = 0.0f;
+
+	// アニメーションの前半（手を上げる）と後半（振り下ろす）
+	if (progress < 0.4f) {
+		// 0.0 ~ 0.4 の間で両手を上に上げる（前に突き出すようにX軸負方向、または上に上げるよう回転）
+		// ここではバンザイするように-120度（-2.09ラジアン）まで回転させます
+		float t = progress / 0.4f;
+		armRotationX = EaseOut(0.0f, -4.0f, t);
+		isHammerVisible_ = true; // 手を上げ始めると同時にハンマーを表示
+	} else {
+		// 0.4 ~ 1.0 の間で一気に振り下ろす（-120度から前方に叩きつけるように+60度まで）
+		float t = (progress - 0.4f) / 0.6f;
+		armRotationX = EaseOut(-4.0f, -1.5f, t);
+	}
+
+	// 両手に同じ回転を適用（左右対称に上げる）
+	worldTransformLeft_.rotation_.x = armRotationX;
+	worldTransformRight_.rotation_.x = armRotationX;
+
+	// プレイヤー本体のベース行列の計算
+	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
+	worldTransform_.TransferMatrix();
+
+	// 各部位のローカル・ワールド行列計算（既存の親子関係と同様）
+	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
+	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
+	worldTransformBody_.TransferMatrix();
+
+	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
+	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
+	worldTransformHead_.TransferMatrix();
+
+	// 回転の中心オフセットを考慮した腕の行列計算
+	KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
+
+	// 左手
+	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
+	KamataEngine::Matrix4x4 preTranslateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
+	KamataEngine::Vector3 finalTranslationLeft = {
+	    worldTransformLeft_.translation_.x + centerOffset.x, worldTransformLeft_.translation_.y + centerOffset.y, worldTransformLeft_.translation_.z + centerOffset.z};
+	KamataEngine::Matrix4x4 postTranslateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationLeft);
+	worldTransformLeft_.matWorld_ = MultiplyMatrix(postTranslateLeft, MultiplyMatrix(rotateLeft, preTranslateLeft));
+	worldTransformLeft_.matWorld_ = MultiplyMatrix(worldTransformLeft_.matWorld_, worldTransformBody_.matWorld_);
+	worldTransformLeft_.TransferMatrix();
+
+	// 右手
+	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
+	KamataEngine::Matrix4x4 preTranslateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
+	KamataEngine::Vector3 finalTranslationRight = {
+	    worldTransformRight_.translation_.x + centerOffset.x, worldTransformRight_.translation_.y + centerOffset.y, worldTransformRight_.translation_.z + centerOffset.z};
+	KamataEngine::Matrix4x4 postTranslateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationRight);
+	worldTransformRight_.matWorld_ = MultiplyMatrix(postTranslateRight, MultiplyMatrix(rotateRight, preTranslateRight));
+	worldTransformRight_.matWorld_ = MultiplyMatrix(worldTransformRight_.matWorld_, worldTransformBody_.matWorld_);
+	worldTransformRight_.TransferMatrix();
+
+	// ★ ハンマーを右手に追従させる制御
+	if (isHammerVisible_) {
+		// 右手の位置から少し前方にずらすなど、武器の持ち手位置に合わせてローカルオフセットを調整します
+		KamataEngine::Vector3 hammerLocalPos = {0.0f, 0.5f, 0.2f};
+		KamataEngine::Vector3 hammerLocalRot = {-3.0f, 0.0f, 0.0f}; // 必要に応じてモデルの向きを回転
+
+		KamataEngine::Matrix4x4 localMatrixHammer = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, hammerLocalRot, hammerLocalPos);
+		// 右手のワールド行列に対して乗算することで、手と一緒に動くようになります
+		worldTransformHammer_.matWorld_ = MultiplyMatrix(localMatrixHammer, worldTransformRight_.matWorld_);
+		worldTransformHammer_.TransferMatrix();
+	}
+
+	// アニメーション終了判定
+	if (hammerSkillTimer_ >= kHammerSkillDuration) {
+		behaviorRequest_ = Behavior::kRoot;
+		isHammerVisible_ = false;
 	}
 }
 
@@ -859,8 +965,12 @@ void Player::Draw() {
 			modelPlayerHead_->Draw(worldTransformHead_, *camera_);
 			modelPlayerLeft_->Draw(worldTransformLeft_, *camera_);
 			modelPlayerRight_->Draw(worldTransformRight_, *camera_);
+
+			// ★ スキル発動中かつハンマー表示フラグが有効なら描画
+			if (isHammerVisible_ && modelHammer_) {
+				modelHammer_->Draw(worldTransformHammer_, *camera_);
+			}
 		} else if (modelPlayer_) {
-			// フォールバック処理
 			modelPlayer_->Draw(worldTransform_, *camera_);
 		}
 	}

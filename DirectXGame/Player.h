@@ -16,9 +16,10 @@ enum class LRDirection {
 };
 
 enum class Behavior {
-	kRoot,     // 通常行動
-	kAttack,   // 攻撃行動
-	kKnockback // ノックバック状態
+	kRoot,       // 通常行動
+	kAttack,     // 攻撃行動
+	kKnockback,  // ノックバック状態
+	kHammerSkill // ★ハンマースキルを追加
 };
 
 enum class AttackPhase {
@@ -107,6 +108,13 @@ public:
 	void BehaviorKnockbackInitialize();
 	void BehaviorKnockbackUpdate();
 
+	// Playerクラスのpublicメンバに追加
+	void SetModelHammer(KamataEngine::Model* model) { modelHammer_ = model; }
+
+	// スキル用初期化 & 更新関数の宣言
+	void BehaviorHammerSkillInit();
+	void BehaviorHammerSkillUpdate();
+
 	// 調整項目の登録・反映用の static 関数
 	static void RegisterGlobalVariables();
 	static void ApplyGlobalVariables();
@@ -187,4 +195,13 @@ private:
 
 	// 歩きアニメーション用のタイマー変数
 	float walkAnimationTimer_ = 0.0f;
+
+	// Playerクラスのprivateメンバに追加
+	KamataEngine::Model* modelHammer_ = nullptr;
+	KamataEngine::WorldTransform worldTransformHammer_;
+
+	// アニメーション制御用タイマーとフラグ
+	float hammerSkillTimer_ = 0.0f;
+	bool isHammerVisible_ = false;
+	static inline float kHammerSkillDuration = 0.6f; // スキル全体の時間（秒）
 };

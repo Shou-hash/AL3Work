@@ -39,6 +39,8 @@ GameScene::~GameScene() {
 	delete modelDeathParticles_;
 	delete modelHitEffect_;
 
+	delete modelHammer_;
+
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
 	}
@@ -89,6 +91,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelPlayerLeft_ = Model::CreateFromOBJ("player_left", true);
 	modelPlayerRight_ = Model::CreateFromOBJ("player_right", true);
 
+	modelHammer_ = Model::CreateFromOBJ("hummer", true);
+
 	modelEnemy_ = Model::CreateFromOBJ("enemy", true);
 	modelShieldEnemy_ = Model::CreateFromOBJ("shieldEnemy", true);
 	modelDeathParticles_ = Model::CreateFromOBJ("particle", true);
@@ -108,6 +112,10 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	if (player_) {
 		cameraController_->SetTarget(player_.get());
 		player_->SetCameraController(cameraController_.get());
+	}
+
+	if (player_) {
+		player_->SetModelHammer(modelHammer_);
 	}
 
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
@@ -145,6 +153,9 @@ void GameScene::GenerateFieldObjects() {
 				// Player::Initialize内で独自に読み込みを行っているため、ここでは元のシグネチャのままmodelPlayerBody_などを渡すか、ダミーでnullptrを渡しても動作します。
 				player_->Initialize(modelPlayerBody_, &camera_, playerPosition);
 				player_->SetMapChipField(mapChipField_);
+
+				player_->SetModelHammer(modelHammer_);
+
 				break;
 			}
 			case MapChipType::kEnemy: {

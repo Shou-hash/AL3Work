@@ -72,6 +72,7 @@ private:
 
 	KamataEngine::Model* modelDeathParticles_ = nullptr;
 	KamataEngine::Model* modelHitEffect_ = nullptr;
+	KamataEngine::Model* modelHammer_ = nullptr;
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 	std::unique_ptr<Player> player_ = nullptr;
@@ -85,4 +86,5 @@ private:
 
 	// ★ ステージマネージャ参照用のポインタ
 	StageManager* stageManager_ = nullptr;
+
 };
