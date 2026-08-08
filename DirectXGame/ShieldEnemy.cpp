@@ -91,9 +91,14 @@ void ShieldEnemy::OnCollision(Player* player) {
 
 void ShieldEnemy::CreateGuardEffect() {
 	GuardEffect* newEffect = new GuardEffect();
-	newEffect->worldTransform.Initialize();
 
-	newEffect->worldTransform.translation_ = worldTransform_.translation_;
+	// ★修正ポイント: 定数バッファの生成を追加
+	newEffect->worldTransform.Initialize();
+	newEffect->worldTransform.CreateConstBuffer(); // GPU用のバッファを作成
+
+	// 敵の目の前に少しオフセットしてエフェクトを配置
+	float offset = (lrDirection_ == ShieldEnemyLRDirection::kLeft) ? -0.5f : 0.5f;
+	newEffect->worldTransform.translation_ = {worldTransform_.translation_.x + offset, worldTransform_.translation_.y, worldTransform_.translation_.z};
 	newEffect->worldTransform.rotation_ = worldTransform_.rotation_;
 	newEffect->worldTransform.scale_ = {1.0f, 1.0f, 1.0f};
 
@@ -101,6 +106,7 @@ void ShieldEnemy::CreateGuardEffect() {
 	newEffect->duration = 15;
 	newEffect->isDead = false;
 
+	// 行列を計算して転送
 	newEffect->worldTransform.matWorld_ = MakeAffineMatrix(newEffect->worldTransform.scale_, newEffect->worldTransform.rotation_, newEffect->worldTransform.translation_);
 	newEffect->worldTransform.TransferMatrix();
 
@@ -138,9 +144,10 @@ void ShieldEnemy::BehaviorGuardUpdate() {
 	guardTimer_ += 1.0f / 60.0f;
 	float t = std::clamp(guardTimer_ / kGuardDuration, 0.0f, 1.0f);
 
-	// sin波を用いて「前傾→のけぞり→元の姿勢」へ回転
-	// -15度（前傾）から +45度（のけぞり）へ大きく揺れて戻るイージング
-	float leanAngle = std::sin(t * std::numbers::pi_v<float>) * -45.0f * (std::numbers::pi_v<float> / 180.0f);
+	// サイン関数を使い、やや下向き（前傾）から天井向き（のけぞり）に移動して元に戻る回転を作る
+	// 周期の調整に 1.5 * PI を用いて、前半で沈み込み、中盤でのけぞり、後半で元に戻る挙動をシミュレート
+	float angleParam = std::sin(t * std::numbers::pi_v<float> * 1.5f);
+	float leanAngle = angleParam * 35.0f * (std::numbers::pi_v<float> / 180.0f);
 	worldTransform_.rotation_.x = leanAngle;
 
 	// アニメーション終了後に通常歩行へ戻る
@@ -183,13 +190,15 @@ void ShieldEnemy::Update() {
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// ガードエフェクトの更新
+	// ガードエフェクトの更新（徐々にスケールアップしながらフェードアウトさせる演出を追加可能）
 	for (auto* effect : guardEffects_) {
 		effect->timer++;
 		if (effect->timer >= effect->duration) {
 			effect->isDead = true;
 		} else {
-			effect->worldTransform.translation_ = worldTransform_.translation_;
+			// エフェクトを少しずつ外側に広げる演出
+			float scaleProgress = 1.0f + (static_cast<float>(effect->timer) / effect->duration) * 1.5f;
+			effect->worldTransform.scale_ = {scaleProgress, scaleProgress, scaleProgress};
 			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);
 			effect->worldTransform.TransferMatrix();
 		}

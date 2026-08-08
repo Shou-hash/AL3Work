@@ -486,18 +486,23 @@ void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 }
 
 std::optional<Player::AABB> Player::GetAttackAABB() const {
-	// 通常攻撃のダッシュ中、またはハンマースキルの振り下ろしフェーズ（進捗40%以降）の時に攻撃判定を返す
 	if ((behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill && (hammerSkillTimer_ / kHammerSkillDuration) >= 0.4f)) {
+
 		AABB aabb;
 		const auto& pos = worldTransform_.translation_;
 
-		// ★ kWidth, kHeight の代わりに個別の Padding パラメータを適用
-		aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
-		aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 0.5f};
+		if (behavior_ == Behavior::kHammerSkill) {
+			// ハンマースキル専用の広い範囲を設定
+			aabb.min = {pos.x - 2.0f, pos.y - 0.5f, pos.z - 0.5f};
+			aabb.max = {pos.x + 2.0f, pos.y + 5.0f, pos.z + 0.5f};
+		} else {
+			// 通常のダッシュ攻撃は既存のパディングを適用
+			aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
+			aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 0.5f};
+		}
 
 		return aabb;
 	}
-
 	return std::nullopt;
 }
 
