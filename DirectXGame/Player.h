@@ -5,6 +5,7 @@
 #include <array>
 #include <list>
 #include <optional>
+#include <vector>
 
 class MapChipField;
 class CameraController;
@@ -66,6 +67,9 @@ public:
 
 	const KamataEngine::Vector3& GetVelocity() const { return velocity_; }
 	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
+
+	// 各メッシュの調整用WorldTransformを取得する関数
+	std::vector<KamataEngine::WorldTransform>& GetMeshWorldTransforms() { return meshWorldTransforms_; }
 
 	bool IsDead() const { return isDead_; }
 	bool IsAttacking() const { return behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash; }
@@ -140,6 +144,22 @@ private:
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelPlayer_ = nullptr;
 	KamataEngine::WorldTransform worldTransform_;
+
+	// 各Meshを単独で調整するためのWorldTransform配列
+	std::vector<KamataEngine::WorldTransform> meshWorldTransforms_;
+
+	// 各部位の個別モデルポインタ
+	KamataEngine::Model* modelPlayerHead_ = nullptr;
+	KamataEngine::Model* modelPlayerBody_ = nullptr;
+	KamataEngine::Model* modelPlayerLeft_ = nullptr;
+	KamataEngine::Model* modelPlayerRight_ = nullptr;
+
+	// 各部位の個別WorldTransform (0: Head, 1: Body, 2: Left, 3: Right)
+	KamataEngine::WorldTransform worldTransformHead_;
+	KamataEngine::WorldTransform worldTransformBody_;
+	KamataEngine::WorldTransform worldTransformLeft_;
+	KamataEngine::WorldTransform worldTransformRight_;
+
 	LRDirection lrDirection_ = LRDirection::kRight;
 
 	AttackPhase attackPhase_ = AttackPhase::kCharge;
@@ -156,4 +176,7 @@ private:
 	float knockbackTimer_ = 0.0f;
 	static inline float kKnockbackSpeedDuration = 0.2f;
 	static inline float kKnockbackTotalDuration = 0.5f;
+
+	// 歩きアニメーション用のタイマー変数
+	float walkAnimationTimer_ = 0.0f;
 };

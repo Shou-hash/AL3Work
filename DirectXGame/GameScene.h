@@ -63,7 +63,13 @@ private:
 	KamataEngine::Model* modelEnemy_ = nullptr;
 	KamataEngine::Model* modelShieldEnemy_ = nullptr;
 	KamataEngine::Model* modelSkydome_ = nullptr;
-	KamataEngine::Model* modelPlayer_ = nullptr;
+
+	// 4つの各部位のOBJファイル用モデルポインタに変更
+	KamataEngine::Model* modelPlayerHead_ = nullptr;
+	KamataEngine::Model* modelPlayerBody_ = nullptr;
+	KamataEngine::Model* modelPlayerLeft_ = nullptr;
+	KamataEngine::Model* modelPlayerRight_ = nullptr;
+
 	KamataEngine::Model* modelDeathParticles_ = nullptr;
 	KamataEngine::Model* modelHitEffect_ = nullptr;
 

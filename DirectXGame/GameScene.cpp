@@ -29,7 +29,13 @@ GameScene::~GameScene() {
 	delete mapChipField_;
 	delete modelEnemy_;
 	delete modelShieldEnemy_;
-	delete modelPlayer_;
+
+	// 4つの各部位のモデルを解放
+	delete modelPlayerHead_;
+	delete modelPlayerBody_;
+	delete modelPlayerLeft_;
+	delete modelPlayerRight_;
+
 	delete modelDeathParticles_;
 	delete modelHitEffect_;
 
@@ -76,7 +82,13 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	camera_.Initialize();
 	debugCamera_ = new DebugCamera(1280, 720);
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
-	modelPlayer_ = Model::CreateFromOBJ("player", true);
+
+	// 4つの各部位のOBJファイルを読み込み
+	modelPlayerHead_ = Model::CreateFromOBJ("player_head", true);
+	modelPlayerBody_ = Model::CreateFromOBJ("player_body", true);
+	modelPlayerLeft_ = Model::CreateFromOBJ("player_left", true);
+	modelPlayerRight_ = Model::CreateFromOBJ("player_right", true);
+
 	modelEnemy_ = Model::CreateFromOBJ("enemy", true);
 	modelShieldEnemy_ = Model::CreateFromOBJ("shieldEnemy", true);
 	modelDeathParticles_ = Model::CreateFromOBJ("particle", true);
@@ -127,7 +139,11 @@ void GameScene::GenerateFieldObjects() {
 				}
 				Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(j, i);
 				player_ = std::make_unique<Player>();
-				player_->Initialize(modelPlayer_, &camera_, playerPosition);
+
+				// 4つの部位モデルを渡せるようにPlayer内部で再読込またはGameScene側からパーツを割り当てる設計にするため、
+				// ここでは元と同じシグネチャ（ダミーでbody等を割り当てるか、Player内部のInitialize内で完結させる）に対応させます。
+				// Player::Initialize内で独自に読み込みを行っているため、ここでは元のシグネチャのままmodelPlayerBody_などを渡すか、ダミーでnullptrを渡しても動作します。
+				player_->Initialize(modelPlayerBody_, &camera_, playerPosition);
 				player_->SetMapChipField(mapChipField_);
 				break;
 			}
