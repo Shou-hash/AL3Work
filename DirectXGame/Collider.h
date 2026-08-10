@@ -1,31 +1,38 @@
 #pragma once
-#include <KamataEngine.h>
+#include "KamataEngine.h"
 
 /// <summary>
-/// 衝突判定オブジェクト基底クラス
+/// 衝突判定の基底クラス
 /// </summary>
 class Collider {
 public:
-	// 仮想デストラクタ
 	virtual ~Collider() = default;
 
-	/// <summary>
-	/// ワールド座標を取得（純粋仮想関数）
-	/// </summary>
+	// ワールド座標を取得するための純粋仮想関数
 	virtual KamataEngine::Vector3 GetWorldPosition() const = 0;
 
-	/// <summary>
-	/// 衝突時に呼ばれる関数（仮想関数）
-	/// </summary>
-	virtual void OnCollision() {}
+	// 衝突時に呼び出される純粋仮想関数
+	virtual void OnCollision() = 0;
 
-	// 半径を取得
+	// 半径のゲッター・セッター
 	float GetRadius() const { return radius_; }
-
-	// 半径を設定
 	void SetRadius(float radius) { radius_ = radius; }
 
+	// 衝突属性（フィルタリング用）のゲッター・セッター
+	uint32_t GetCollisionAttribute() const { return collisionAttribute_; }
+	void SetCollisionAttribute(uint32_t attribute) { collisionAttribute_ = attribute; }
+
+	// 衝突マスク（フィルタリング用）のゲッター・セッター
+	uint32_t GetCollisionMask() const { return collisionMask_; }
+	void SetCollisionMask(uint32_t mask) { collisionMask_ = mask; }
+
 private:
-	// 衝突半径
-	float radius_ = 1.0f;
+	// 当たり判定の半径
+	float radius_ = 0.0f;
+
+	// 自分の衝突属性
+	uint32_t collisionAttribute_ = 0xffffffff;
+
+	// 衝突を受け入れる相手のマスク
+	uint32_t collisionMask_ = 0xffffffff;
 };

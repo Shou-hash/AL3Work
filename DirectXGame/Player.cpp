@@ -1,4 +1,5 @@
 #include "Player.h"
+#include "CollisionConfig.h" // ★ 衝突設定のインクルードを追加
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -28,6 +29,10 @@ void Player::Initialize(KamataEngine::Model* model, uint32_t textureHandle) {
 
 	// ★ 当たり判定の半径を設定
 	SetRadius(1.0f);
+
+	// ★ 衝突属性とマスクを設定（自分はプレイヤー、相手は自分以外）
+	SetCollisionAttribute(kCollisionAttributePlayer);
+	SetCollisionMask(~kCollisionAttributePlayer);
 }
 
 void Player::Update() {
@@ -124,6 +129,10 @@ void Player::Attack() {
 		// 弾を生成し、初期化
 		PlayerBullet* newBullet = new PlayerBullet();
 		newBullet->Initialize(model_, worldTransform_.translation_, velocity);
+
+		// ★ プレイヤーの弾にも衝突属性とマスクを設定（プレイヤー陣営として扱う）
+		newBullet->SetCollisionAttribute(kCollisionAttributePlayer);
+		newBullet->SetCollisionMask(~kCollisionAttributePlayer);
 
 		// 弾を登録
 		bullets_.push_back(newBullet);

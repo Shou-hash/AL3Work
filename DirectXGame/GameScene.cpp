@@ -98,6 +98,12 @@ void GameScene::Draw() {
 /// 2つのコライダー間の距離判定とコールバック呼び出し
 /// </summary>
 void GameScene::CheckCollisionPair(Collider* colliderA, Collider* colliderB) {
+	// 衝突フィルタリング
+	// 「属性」と「相手のマスク」のビットANDが0の場合、そのペアは当たり判定をスキップする
+	if ((colliderA->GetCollisionAttribute() & colliderB->GetCollisionMask()) == 0 || (colliderB->GetCollisionAttribute() & colliderA->GetCollisionMask()) == 0) {
+		return;
+	}
+
 	// コライダーA, Bのワールド座標を取得
 	Vector3 posA = colliderA->GetWorldPosition();
 	Vector3 posB = colliderB->GetWorldPosition();

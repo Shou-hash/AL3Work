@@ -1,5 +1,6 @@
 #include "Enemy.h"
 #include "BaseEnemyState.h"
+#include "CollisionConfig.h" // ★ 衝突設定のインクルードを追加
 #include "EnemyStateApproach.h"
 #include "Player.h"
 #include <cassert>
@@ -30,10 +31,14 @@ void Enemy::Initialize(Model* model, uint32_t textureHandle, Player* player) {
 	// ★ 当たり判定の半径を設定
 	SetRadius(1.0f);
 
+	// ★ 衝突属性とマスクを設定（自分は敵、相手は自分以外）
+	SetCollisionAttribute(kCollisionAttributeEnemy);
+	SetCollisionMask(~kCollisionAttributeEnemy);
+
 	InitializeApproachPhase();
 }
 
-// GetWorldPosition を const 指定に合わせて修正（★これだけを残す）
+// GetWorldPosition を const 指定に合わせて修正
 Vector3 Enemy::GetWorldPosition() const {
 	Vector3 worldPos;
 	worldPos.x = worldTransform_.matWorld_.m[3][0];
@@ -71,8 +76,6 @@ inline Vector3 Normalize(const Vector3& v) {
 	return {0.0f, 0.0f, 0.0f};
 }
 
-// ★ここにあった重複している旧 Vector3 Enemy::GetWorldPosition() は削除しました！
-
 // 自機狙い弾の発射処理
 void Enemy::Fire() {
 	assert(model_);
@@ -93,6 +96,10 @@ void Enemy::Fire() {
 
 	// ★ ここで弾に Player を渡す
 	newBullet->SetPlayer(player_);
+
+	// ★ 敵の弾にも衝突属性とマスクを設定（敵陣営として扱う）
+	newBullet->SetCollisionAttribute(kCollisionAttributeEnemy);
+	newBullet->SetCollisionMask(~kCollisionAttributeEnemy);
 
 	bullets_.push_back(newBullet);
 }
