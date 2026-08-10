@@ -81,7 +81,10 @@ public:
 	KamataEngine::WorldTransform& GetWorldTransformRight() { return worldTransformRight_; }
 
 	bool IsDead() const { return isDead_; }
-	bool IsAttacking() const { return behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash; }
+	// ★ハンマースキルの振り下ろしタイミング（進捗0.4以上）も攻撃中として判定するよう修正
+	bool IsAttacking() const {
+		return (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill && (hammerSkillTimer_ / kHammerSkillDuration) >= 0.4f);
+	}
 	LRDirection GetLRDirection() const { return lrDirection_; }
 
 	void OnCollision();

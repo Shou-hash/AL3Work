@@ -301,7 +301,6 @@ void Player::BehaviorRootUpdate() {
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
 
-	// ➔ ★【修正】回転の中心をどれだけ下にずらすかの設定（例: 0.5f）
 	// 中心を下にずらす ＝ モデルの見た目を相対的に上に持っていくため、Y軸にプラスします
 	KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
 
@@ -494,7 +493,7 @@ std::optional<Player::AABB> Player::GetAttackAABB() const {
 		if (behavior_ == Behavior::kHammerSkill) {
 			// ハンマースキル専用の広い範囲を設定
 			aabb.min = {pos.x - 2.0f, pos.y - 0.5f, pos.z - 0.5f};
-			aabb.max = {pos.x + 2.0f, pos.y + 5.0f, pos.z + 0.5f};
+			aabb.max = {pos.x + 2.0f, pos.y + 3.0f, pos.z + 0.5f};
 		} else {
 			// 通常のダッシュ攻撃は既存のパディングを適用
 			aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
@@ -594,15 +593,41 @@ void Player::BehaviorKnockbackInitialize() {
 void Player::BehaviorKnockbackUpdate() {
 	knockbackTimer_ += 1.0f / 60.0f;
 
+	// ノックバックによる移動量を格納する変数
+	KamataEngine::Vector3 knockbackMove = {0.0f, 0.0f, 0.0f};
+
 	if (knockbackTimer_ < kKnockbackSpeedDuration) {
 		float knockbackSpeed = 0.15f;
 		if (lrDirection_ == LRDirection::kRight) {
-			worldTransform_.translation_.x -= knockbackSpeed;
+			knockbackMove.x = -knockbackSpeed;
 		} else {
-			worldTransform_.translation_.x += knockbackSpeed;
+			knockbackMove.x = knockbackSpeed;
 		}
 	}
 
+	// ★ マップ衝突判定を追加して、壁がある場合は移動量を補正する
+	CollisionMapInfo collisionMapInfo;
+	collisionMapInfo.moveAmount = knockbackMove;
+	collisionMapInfo.onGround = onGround_;
+	MapCollision(collisionMapInfo);
+
+	// 補正された移動量を座標に適用
+	worldTransform_.translation_.x += collisionMapInfo.moveAmount.x;
+	worldTransform_.translation_.y += collisionMapInfo.moveAmount.y;
+	worldTransform_.translation_.z += collisionMapInfo.moveAmount.z;
+
+	// 接地状態や画面端の衝突も更新
+	ApplyGroundingStatus(collisionMapInfo);
+	if (collisionMapInfo.ceilingCollision) {
+		velocity_.y = 0.0f;
+	}
+	if (collisionMapInfo.wallCollision) {
+		velocity_.x = 0.0f;
+	}
+
+	CheckScreenEdgeCollision();
+
+	// 以下、既存の行列計算と転送処理
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
@@ -610,7 +635,7 @@ void Player::BehaviorKnockbackUpdate() {
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
 
-	// ★【修正】ノックバック時も回転中心の修正を適用
+	// ★ノックバック時も回転中心の修正を適用
 	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
 	KamataEngine::Matrix4x4 translateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformLeft_.translation_);
 	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(translateLeft, rotateLeft);
@@ -780,7 +805,8 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 		return;
 	}
 
-	AABB aabbPlayer = GetAABB();
+	// ★ダッシュ攻撃またはハンマースキル中なら、広範囲の攻撃用AABBを取得する
+	std::optional<AABB> attackAABB = GetAttackAABB();
 
 	for (BaseEnemy* enemy : enemies) {
 		if (!enemy || enemy->IsDead()) {
@@ -789,10 +815,13 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 
 		BaseEnemy::AABB aabbEnemy = enemy->GetAABB();
 
-		if (aabbPlayer.min.x < aabbEnemy.max.x && aabbPlayer.max.x > aabbEnemy.min.x && aabbPlayer.min.y < aabbEnemy.max.y && aabbPlayer.max.y > aabbEnemy.min.y &&
-		    aabbPlayer.min.z < aabbEnemy.max.z && aabbPlayer.max.z > aabbEnemy.min.z) {
+		// ★攻撃中であれば攻撃用AABBで判定し、それ以外ならプレイヤー本体のAABBで判定する
+		AABB aabbToCheck = attackAABB.has_value() ? attackAABB.value() : GetAABB();
 
-			if (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) {
+		if (aabbToCheck.min.x < aabbEnemy.max.x && aabbToCheck.max.x > aabbEnemy.min.x && aabbToCheck.min.y < aabbEnemy.max.y && aabbToCheck.max.y > aabbEnemy.min.y &&
+		    aabbToCheck.min.z < aabbEnemy.max.z && aabbToCheck.max.z > aabbEnemy.min.z) {
+
+			if (IsAttacking()) {
 				enemy->OnCollision(this);
 
 				if (isKnockbackRequested_) {
