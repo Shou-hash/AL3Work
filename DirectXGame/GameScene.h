@@ -4,6 +4,7 @@
 #include "Enemy.h"
 #include "KamataEngine.h"
 #include "Player.h"
+#include "CollisionManager.h"
 
 class GameScene {
 public:
@@ -44,4 +45,7 @@ private:
 	bool isDebugCameraActive_ = false;
 
 	KamataEngine::Input* input_ = nullptr;
+
+	// 衝突マネージャ
+	CollisionManager* collisionManager_ = nullptr;
 };

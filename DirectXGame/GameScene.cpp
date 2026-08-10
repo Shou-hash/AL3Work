@@ -1,5 +1,5 @@
 #include "GameScene.h"
-#include "3d/AxisIndicator.h" // 軸方向表示ヘッダーのインクルード
+#include "3d/AxisIndicator.h"
 
 using namespace KamataEngine;
 
@@ -10,73 +10,93 @@ GameScene::~GameScene() {
 
 	delete enemy_;
 	delete enemyModel_;
+
+	// ★ 衝突マネージャの解放を忘れずに実行
+	delete collisionManager_;
 }
 
 void GameScene::Initialize() {
-	// Inputの取得
 	input_ = Input::GetInstance();
-
-	// カメラの初期化
 	camera_.Initialize();
 
-	// デバッグカメラの生成 (画面横幅, 画面縦幅)
 	debugCamera_ = new KamataEngine::DebugCamera(WinApp::kWindowWidth, WinApp::kWindowHeight);
 
-	// 軸方向表示の設定
 	AxisIndicator::GetInstance()->SetVisible(true);
 	AxisIndicator::GetInstance()->SetTargetCamera(&camera_);
 
-	// プレイヤー初期化
 	playerTex_ = TextureManager::Load("uvChecker.png");
 	model_ = Model::Create();
 
 	player_ = new Player();
 	player_->Initialize(model_, playerTex_);
 
-	// テクスチャの読み込み
 	enemyTextureHandle_ = TextureManager::Load("cube.jpg");
-
-	// モデルの作成
 	enemyModel_ = Model::Create();
 
-	// Enemy を new して初期化（第3引数に player_ を渡す）
 	enemy_ = new Enemy();
 	enemy_->Initialize(enemyModel_, enemyTextureHandle_, player_);
+
+	// ★ 衝突マネージャの生成
+	collisionManager_ = new CollisionManager();
 }
 
 void GameScene::Update() {
 #ifdef _DEBUG
-	// 切り替えキー (P キー) でデバッグカメラ有効フラグをトグル
 	if (input_->TriggerKey(DIK_P)) {
 		isDebugCameraActive_ = !isDebugCameraActive_;
 	}
 #endif
 
-	// カメラの処理
 	if (isDebugCameraActive_) {
-		// デバッグカメラの更新
 		debugCamera_->Update();
-
-		// DebugCamera からビュー行列とプロジェクション行列を取得してコピー
 		camera_.matView = debugCamera_->GetCamera().matView;
 		camera_.matProjection = debugCamera_->GetCamera().matProjection;
-
-		// ビュープロジェクション行列の転送
 		camera_.TransferMatrix();
 	} else {
-		// ビュープロジェクション行列の更新と転送
 		camera_.UpdateMatrix();
 	}
 
 	player_->Update();
 
-	// ポインタが null でない場合だけ更新
 	if (enemy_ != nullptr) {
 		enemy_->Update();
 	}
 
-	// ★ 当たり判定のチェック
-	CheckAllCollisions();
+	// ----------------------------------------------------
+	// ★ 衝突判定マネージョへの委託処理 (毎フレーム実行)
+	// ----------------------------------------------------
+
+	// 1. 前フレームの情報を一度クリアする
+	collisionManager_->ClearColliders();
+
+	// 2. 自キャラの登録
+	collisionManager_->AddCollider(player_);
+
+	// 3. 自弾リストの登録
+	const std::list<PlayerBullet*>& playerBullets = player_->GetBullets();
+	for (PlayerBullet* bullet : playerBullets) {
+		if (!bullet->IsDead()) {
+			collisionManager_->AddCollider(bullet);
+		}
+	}
+
+	// 4. 敵キャラの登録 (ポインタが存在する場合)
+	if (enemy_ != nullptr) {
+		collisionManager_->AddCollider(enemy_);
+
+		// 5. 敵弾リストの登録
+		const std::list<EnemyBullet*>& enemyBullets = enemy_->GetBullets();
+		for (EnemyBullet* bullet : enemyBullets) {
+			if (!bullet->IsDead()) {
+				collisionManager_->AddCollider(bullet);
+			}
+		}
+	}
+
+	// 6. マネージャに集約したコライダー全体の当たり判定を一括実行
+	collisionManager_->CheckAllCollisions();
+
+	// ----------------------------------------------------
 }
 
 void GameScene::Draw() {
@@ -84,7 +104,6 @@ void GameScene::Draw() {
 
 	player_->Draw(&camera_);
 
-	// ポインタが null でない場合だけ描画
 	if (enemy_ != nullptr) {
 		enemy_->Draw(camera_);
 	}
@@ -92,78 +111,4 @@ void GameScene::Draw() {
 	AxisIndicator::GetInstance()->Draw();
 
 	Model::PostDraw();
-}
-
-/// <summary>
-/// 2つのコライダー間の距離判定とコールバック呼び出し
-/// </summary>
-void GameScene::CheckCollisionPair(Collider* colliderA, Collider* colliderB) {
-	// 衝突フィルタリング
-	// 「属性」と「相手のマスク」のビットANDが0の場合、そのペアは当たり判定をスキップする
-	if ((colliderA->GetCollisionAttribute() & colliderB->GetCollisionMask()) == 0 || (colliderB->GetCollisionAttribute() & colliderA->GetCollisionMask()) == 0) {
-		return;
-	}
-
-	// コライダーA, Bのワールド座標を取得
-	Vector3 posA = colliderA->GetWorldPosition();
-	Vector3 posB = colliderB->GetWorldPosition();
-
-	// 2点間の距離の2乗を計算
-	float dx = posB.x - posA.x;
-	float dy = posB.y - posA.y;
-	float dz = posB.z - posA.z;
-	float distSquare = dx * dx + dy * dy + dz * dz;
-
-	// 半径の和の2乗
-	float radiusSum = colliderA->GetRadius() + colliderB->GetRadius();
-	float radiusSumSquare = radiusSum * radiusSum;
-
-	// 球同士の判定 ( (x2-x1)^2 + (y2-y1)^2 + (z2-z1)^2 <= (R1+R2)^2 )
-	if (distSquare <= radiusSumSquare) {
-		// それぞれの OnCollision コールバックを呼び出す
-		colliderA->OnCollision();
-		colliderB->OnCollision();
-	}
-}
-
-/// <summary>
-/// 全ての当たり判定
-/// </summary>
-void GameScene::CheckAllCollisions() {
-	// 自弾リストの取得
-	const std::list<PlayerBullet*>& playerBullets = player_->GetBullets();
-	// 敵弾リストの取得
-	const std::list<EnemyBullet*>& enemyBullets = enemy_->GetBullets();
-
-#pragma region 自キャラと敵弾の当たり判定
-	for (EnemyBullet* bullet : enemyBullets) {
-		if (bullet->IsDead())
-			continue;
-
-		CheckCollisionPair(player_, bullet);
-	}
-#pragma endregion
-
-#pragma region 自弾と敵キャラの当たり判定
-	for (PlayerBullet* bullet : playerBullets) {
-		if (bullet->IsDead())
-			continue;
-
-		CheckCollisionPair(bullet, enemy_);
-	}
-#pragma endregion
-
-#pragma region 自弾と敵弾の当たり判定
-	for (PlayerBullet* pBullet : playerBullets) {
-		if (pBullet->IsDead())
-			continue;
-
-		for (EnemyBullet* eBullet : enemyBullets) {
-			if (eBullet->IsDead())
-				continue;
-
-			CheckCollisionPair(pBullet, eBullet);
-		}
-	}
-#pragma endregion
 }
