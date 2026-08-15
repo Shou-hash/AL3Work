@@ -13,6 +13,9 @@ GameScene::~GameScene() {
 
 	// ★ 衝突マネージャの解放を忘れずに実行
 	delete collisionManager_;
+
+	delete skydome_;
+	delete modelSkydome_;
 }
 
 void GameScene::Initialize() {
@@ -38,6 +41,13 @@ void GameScene::Initialize() {
 
 	// ★ 衝突マネージャの生成
 	collisionManager_ = new CollisionManager();
+
+	// 3Dモデルの生成
+	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
+
+	// 天球の生成と初期化
+	skydome_ = new Skydome();
+	skydome_->Initialize(modelSkydome_, &camera_);
 }
 
 void GameScene::Update() {
@@ -55,6 +65,9 @@ void GameScene::Update() {
 	} else {
 		camera_.UpdateMatrix();
 	}
+
+	// 天球の更新
+	skydome_->Update();
 
 	player_->Update();
 
@@ -101,6 +114,9 @@ void GameScene::Update() {
 
 void GameScene::Draw() {
 	Model::PreDraw();
+
+	// 天球の描画
+	skydome_->Draw();
 
 	player_->Draw(&camera_);
 

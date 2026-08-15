@@ -1,10 +1,11 @@
 #pragma once
 #include "3d/DebugCamera.h"
 #include "Collider.h"
+#include "CollisionManager.h"
 #include "Enemy.h"
 #include "KamataEngine.h"
 #include "Player.h"
-#include "CollisionManager.h"
+#include "Skydome.h"
 
 class GameScene {
 public:
@@ -48,4 +49,9 @@ private:
 
 	// 衝突マネージャ
 	CollisionManager* collisionManager_ = nullptr;
+
+	// 天球
+	Skydome* skydome_ = nullptr;
+	// 3Dモデル
+	KamataEngine::Model* modelSkydome_ = nullptr;
 };
