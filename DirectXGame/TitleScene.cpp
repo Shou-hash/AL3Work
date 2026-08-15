@@ -20,6 +20,9 @@ TitleScene::~TitleScene() {
 		}
 	}
 	worldTransformBlocks_.clear();
+
+	// ★ スカイドームの解放
+	delete modelSkydome_;
 }
 
 void TitleScene::Initialize() {
@@ -64,10 +67,18 @@ void TitleScene::Initialize() {
 
 	// ★ Playerにタイトルシーンのマップチップフィールドを登録
 	player_->SetMapChipField(mapChipField_);
+
+	// ★ スカイドームの初期化
+	modelSkydome_ = KamataEngine::Model::CreateFromOBJ("skydome", true);
+	skydome = std::make_unique<Skydome>();
+	skydome->Initialize(modelSkydome_, &camera_);
 }
 
 void TitleScene::Update() {
 	fade_->Update();
+
+	// ★ スカイドームの更新
+	skydome->Update();
 
 	if (player_) {
 		// const_castによる参照取得
@@ -257,6 +268,9 @@ void TitleScene::Draw() {
 			KamataEngine::Model::PostDraw();
 		}
 	}
+
+	// ★ スカイドームの描画
+	skydome->Draw();
 
 	if (player_) {
 		KamataEngine::Model::PreDraw();

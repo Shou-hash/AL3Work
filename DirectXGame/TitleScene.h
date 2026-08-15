@@ -3,6 +3,8 @@
 #include "Kamataengine.h"
 #include "MapChipField.h" // ★ 追加
 #include "Player.h"
+#include "Skydome.h"
+#include <memory>
 #include <vector> // ★ 追加
 
 class TitleScene {
@@ -42,4 +44,8 @@ private:
 	KamataEngine::Model* modelPlayerBody_ = nullptr;
 	KamataEngine::Model* modelPlayerLeft_ = nullptr;
 	KamataEngine::Model* modelPlayerRight_ = nullptr;
+
+	// ★ スカイドーム用変数を追加
+	KamataEngine::Model* modelSkydome_ = nullptr;
+	std::unique_ptr<Skydome> skydome = nullptr;
 };

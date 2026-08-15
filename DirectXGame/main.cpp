@@ -1,6 +1,7 @@
 #include "GameScene.h"
 #include "GlobalVariables.h" // ★ GlobalVariablesのヘッダーを追加
 #include "Kamataengine.h"
+#include "SelectScene.h" // ★ SelectSceneのヘッダーを追加
 #include "StageManager.h"
 #include "TitleScene.h"
 #include <Windows.h>
@@ -14,12 +15,14 @@
 enum class Scene {
 	kUnknown = 0,
 	kTitle,
+	kSelect, // ★ セレクトシーンを追加
 	kGame,
 };
 
 // グローバル変数（または静的変数）の管理
 Scene scene = Scene::kUnknown;
 TitleScene* titleScene = nullptr;
+SelectScene* selectScene = nullptr; // ★ セレクトシーンの追加
 GameScene* gameScene = nullptr;
 StageManager* stageManager = nullptr;
 
@@ -64,7 +67,17 @@ void UpdateScene() {
 		titleScene->Update();
 
 		if (titleScene->IsFinished()) {
-			// タイトルシーンが終了したらゲームシーンへ切り替え
+			// タイトルシーンが終了したらセレクトシーンへ切り替え
+			ChangeScene(Scene::kSelect);
+			selectScene->Initialize(stageManager); // ★ 初期化
+		}
+		break;
+
+	case Scene::kSelect: // ★ セレクトシーンの更新と遷移
+		selectScene->Update();
+
+		if (selectScene->IsFinished()) {
+			// セレクトシーンが終了したらゲームシーンへ切り替え
 			ChangeScene(Scene::kGame);
 			// ゲームシーンを最初から遊べるように初期化
 			gameScene->Initialize(stageManager); // ★ 引数を追加
@@ -104,6 +117,10 @@ void DrawScene() {
 		titleScene->Draw();
 		break;
 
+	case Scene::kSelect: // ★ セレクトシーンの描画を追加
+		selectScene->Draw();
+		break;
+
 	case Scene::kGame:
 		gameScene->Draw();
 		break;
@@ -123,9 +140,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	stageManager = new StageManager();
 	stageManager->LoadStageDatas();
 
-	// ★2. シーンのインスタンス生成（この時点では Initialize は Title だけでもOKですが、生成はここで行う）
+	// ★2. シーンのインスタンス生成
 	titleScene = new TitleScene();
 	titleScene->Initialize();
+
+	selectScene = new SelectScene(); // ★ セレクトシーンの生成
 
 #ifdef _DEBUG
 	// デバッグ設定ファイル読み込み
@@ -180,6 +199,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 解放処理
 	delete titleScene;
 	titleScene = nullptr;
+	delete selectScene; // ★ セレクトシーンの解放
+	selectScene = nullptr;
 	delete gameScene;
 	gameScene = nullptr;
 	delete stageManager;
