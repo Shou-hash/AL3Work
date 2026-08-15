@@ -8,7 +8,7 @@ using namespace KamataEngine;
 
 // クランプ関数の定義（スクショ資料内の指定範囲にクランプ用）
 namespace {
-float 指定範囲にクランプ(float value, float min, float max) { return (std::max)(min, (std::min)(value, max)); }
+float Clamp(float value, float min, float max) { return (std::max)(min, (std::min)(value, max)); }
 } // namespace
 
 void RailCameraController::Initialize(const Vector3& position, const Vector3& rotation) {
@@ -259,7 +259,7 @@ Vector3 RailCameraController::CatmullRomPosition(const std::vector<Vector3>& poi
 	// 区間内の始点を0.0f、終点を1.0fとしたときの現在位置
 	float t_2 = std::fmod(t, areaWidth) * division;
 	// 下限(0.0f)上限(1.0f)の範囲に収める
-	t_2 = 指定範囲にクランプ(t_2, 0.0f, 1.0f);
+	t_2 = Clamp(t_2, 0.0f, 1.0f);
 
 	// 区間番号
 	size_t index = static_cast<size_t>(t / areaWidth);
