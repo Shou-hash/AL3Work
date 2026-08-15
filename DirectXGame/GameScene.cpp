@@ -14,6 +14,7 @@ GameScene::~GameScene() {
 	// ★ 衝突マネージャの解放を忘れずに実行
 	delete collisionManager_;
 
+	// 天球の解放
 	delete skydome_;
 	delete modelSkydome_;
 }
@@ -44,7 +45,6 @@ void GameScene::Initialize() {
 
 	// 3Dモデルの生成
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
-
 	// 天球の生成と初期化
 	skydome_ = new Skydome();
 	skydome_->Initialize(modelSkydome_, &camera_);
