@@ -284,6 +284,7 @@
     <ClInclude Include="EnemyStateApproach.h" />
     <ClInclude Include="EnemyStateLeave.h" />
     <ClInclude Include="GameScene.h" />
+    <ClInclude Include="Matrix4x4.h" />
     <ClInclude Include="MyMath.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="PlayerBullet.h" />
