@@ -17,6 +17,9 @@ GameScene::~GameScene() {
 	// 天球の解放
 	delete skydome_;
 	delete modelSkydome_;
+
+	// レールカメラの解放
+	delete railCamera_;
 }
 
 void GameScene::Initialize() {
@@ -53,6 +56,10 @@ void GameScene::Initialize() {
 	// 天球の生成と初期化
 	skydome_ = new Skydome();
 	skydome_->Initialize(modelSkydome_, &camera_);
+
+	// レールカメラの生成と初期化
+	railCamera_ = new RailCameraController();
+	railCamera_->Initialize({0.0f, 50.0f, -10.0f}, {1.57079f, 0.0f, 0.0f});
 }
 
 void GameScene::Update() {
@@ -61,6 +68,9 @@ void GameScene::Update() {
 		isDebugCameraActive_ = !isDebugCameraActive_;
 	}
 #endif
+
+	// レールカメラの更新
+	railCamera_->Update();
 
 	// マウスホイールによる遠近変更処理（ホイールの回転量を反映）
 	int32_t wheel = input_->GetWheel();
@@ -96,7 +106,10 @@ void GameScene::Update() {
 			camera_.TransferMatrix();
 		}
 	} else {
-		camera_.UpdateMatrix();
+		// レールカメラで計算したビュー行列とプロジェクション行列をコピーする
+		camera_.matView = railCamera_->GetCamera().matView;
+		camera_.matProjection = railCamera_->GetCamera().matProjection;
+		camera_.TransferMatrix();
 	}
 
 	// 天球の更新

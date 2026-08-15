@@ -5,6 +5,7 @@
 #include "Enemy.h"
 #include "KamataEngine.h"
 #include "Player.h"
+#include "RailCameraController.h"
 #include "Skydome.h"
 
 class GameScene {
@@ -54,4 +55,7 @@ private:
 	Skydome* skydome_ = nullptr;
 	// 3Dモデル
 	KamataEngine::Model* modelSkydome_ = nullptr;
+
+	// レールカメラ
+	RailCameraController* railCamera_ = nullptr;
 };
