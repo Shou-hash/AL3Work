@@ -86,5 +86,4 @@ private:
 
 	// ★ ステージマネージャ参照用のポインタ
 	StageManager* stageManager_ = nullptr;
-
 };

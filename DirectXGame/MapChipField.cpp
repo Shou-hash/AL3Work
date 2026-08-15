@@ -35,7 +35,9 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 
 	for (uint32_t i = 0; i < kNumBlockVertical; ++i) {
 		std::string line;
-		getline(mapChipCsv, line);
+		if (!getline(mapChipCsv, line)) {
+			break;
+		}
 
 		std::istringstream lineStream(line);
 
