@@ -172,11 +172,13 @@ void Enemy::OnCollision() {
 }
 
 void Enemy::Draw(const Camera& camera) {
+	Model::PreDraw();
 	model_->Draw(worldTransform_, camera, textureHandle_);
 
 	for (EnemyBullet* bullet : bullets_) {
 		bullet->Draw(camera);
 	}
+	Model::PostDraw();
 }
 
 void Enemy::ChangeState(BaseEnemyState* newState) {

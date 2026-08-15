@@ -144,12 +144,14 @@ void Player::OnCollision() {
 }
 
 void Player::Draw(KamataEngine::Camera* camera) {
+	Model::PreDraw();
 	model_->Draw(worldTransform_, *camera, textureHandle_);
 
 	// 弾描画
 	for (PlayerBullet* bullet : bullets_) {
 		bullet->Draw(*camera);
 	}
+	Model::PostDraw();
 }
 
 KamataEngine::Vector3 Player::GetWorldPosition() const {
