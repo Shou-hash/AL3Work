@@ -9,6 +9,7 @@
 
 class MapChipField;
 class CameraController;
+class PlayerHp; // ★ 追加
 
 enum class LRDirection {
 	kLeft,
@@ -67,6 +68,7 @@ public:
 
 	void SetMapChipField(MapChipField* mapChipField) { mapChipField_ = mapChipField; }
 	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; }
+	void SetPlayerHp(PlayerHp* playerHp) { playerHp_ = playerHp; } // ★ 追加
 
 	const KamataEngine::Vector3& GetVelocity() const { return velocity_; }
 	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
@@ -149,6 +151,7 @@ private:
 
 	MapChipField* mapChipField_ = nullptr;
 	CameraController* cameraController_ = nullptr;
+	PlayerHp* playerHp_ = nullptr; // ★ 追加
 	static inline float kPaddingTop = 1.2f;
 	static inline float kPaddingBottom = 0.4f;
 	static inline float kPaddingLeft = 0.4f;

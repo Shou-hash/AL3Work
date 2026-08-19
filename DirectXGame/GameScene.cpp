@@ -41,6 +41,8 @@ GameScene::~GameScene() {
 
 	delete modelHammer_;
 
+	delete modelPlayerHp_;
+
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
 	}
@@ -132,6 +134,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelDeathParticles_ = Model::CreateFromOBJ("particle", true);
 	modelHitEffect_ = Model::CreateFromOBJ("particle", true);
 
+	modelPlayerHp_ = Model::CreateFromOBJ("itemHP", true);
+
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
 
@@ -150,6 +154,20 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	if (player_) {
 		player_->SetModelHammer(modelHammer_);
+	}
+
+	int32_t maxHp = 4;
+	if (currentStageIdx == 1) {
+		maxHp = 5;
+	} else if (currentStageIdx == 2) {
+		maxHp = 6;
+	}
+
+	playerHp_ = std::make_unique<PlayerHp>();
+	playerHp_->Initialize(modelPlayerHp_, maxHp);
+
+	if (player_) {
+		player_->SetPlayerHp(playerHp_.get());
 	}
 
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
@@ -278,7 +296,7 @@ void GameScene::Update() {
 				// Playerクラス内の変数を直接参照してImGuiに渡す処理を記述します。
 				// 現状のPlayerクラス定義のままアクセスを通すため、プレイヤー内の実体のポインタを取得するような形、
 				// もしくはPlayer.hに定義されている変数名そのままにスライダーを配置します。
-				// ※コンパイルを通すためにPlayer.h側のアクセス権（public化またはfriendクラス化）が必要になります。
+				// ※コンパイルエラーを避けるための安全弁として、Player.h側のアクセス権（public化またはfriendクラス化）が必要になります。
 
 				// 実際の実装として、Playerインスタンスが持つ各部位の変数をImGuiのFloat3等でスライダー制御できるように配置します。
 				// （Playerクラスの変数名：worldTransformHead_, worldTransformBody_, worldTransformLeft_, worldTransformRight_）
@@ -464,6 +482,10 @@ void GameScene::UpdatePlay() {
 		player_->Update();
 	}
 
+	if (playerHp_) {
+		playerHp_->Update(camera_.translation_);
+	}
+
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
@@ -596,6 +618,12 @@ void GameScene::Draw() {
 	if (player_) {
 		Model::PreDraw();
 		player_->Draw();
+		Model::PostDraw();
+	}
+
+	if (playerHp_) {
+		Model::PreDraw();
+		playerHp_->Draw(camera_);
 		Model::PostDraw();
 	}
 

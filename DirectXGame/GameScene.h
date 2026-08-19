@@ -8,6 +8,7 @@
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "Player.h"
+#include "PlayerHp.h"
 #include "ShieldEnemy.h"
 #include "Skydome.h"
 #include <list>
@@ -74,9 +75,12 @@ private:
 	KamataEngine::Model* modelHitEffect_ = nullptr;
 	KamataEngine::Model* modelHammer_ = nullptr;
 
+	KamataEngine::Model* modelPlayerHp_ = nullptr;
+
 	std::unique_ptr<Skydome> skydome = nullptr;
 	std::unique_ptr<Player> player_ = nullptr;
 	std::unique_ptr<CameraController> cameraController_ = nullptr;
+	std::unique_ptr<PlayerHp> playerHp_ = nullptr;
 	MapChipField* mapChipField_ = nullptr;
 
 	std::list<BaseEnemy*> enemies_;

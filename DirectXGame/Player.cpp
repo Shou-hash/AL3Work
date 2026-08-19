@@ -5,6 +5,7 @@
 #include "GlobalVariables.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
+#include "PlayerHp.h" // ★追加：PlayerHpの関数を使用するため
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -158,7 +159,23 @@ void Player::OnCollision() {
 	if (IsAttacking()) {
 		return;
 	}
-	isDead_ = true;
+
+	// ★変更：すでにノックバック状態（クールタイム中）なら何もしない
+	if (behavior_ == Behavior::kKnockback) {
+		return;
+	}
+
+	// ★変更：HPを一個減らし、ノックバック状態へ移行させることで連続減少を防ぐ
+	if (playerHp_) {
+		playerHp_->DecreaseHp();
+		if (playerHp_->IsDead()) {
+			isDead_ = true;
+		} else {
+			behaviorRequest_ = Behavior::kKnockback;
+		}
+	} else {
+		isDead_ = true;
+	}
 }
 
 void Player::Move() {
@@ -695,7 +712,7 @@ void Player::BehaviorHammerSkillUpdate() {
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// 各部位のローカル・ワールド行列計算（既存の親子関係と同様）
+	// 各部位のローカル・ワールド行列計算（既存 of 親子関係と同様）
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
 	worldTransformBody_.TransferMatrix();
@@ -829,8 +846,18 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 					BehaviorKnockbackInitialize();
 					isKnockbackRequested_ = false;
 				}
-			} else if (behavior_ != Behavior::kKnockback) {
-				OnCollision();
+			} else if (behavior_ != Behavior::kKnockback) { // ★変更：ノックバック中（クールタイム中）でなければ処理
+				// ★変更：HPを一個減らし、ノックバック状態へ移行させることで連続ダメージを防ぐ
+				if (playerHp_) {
+					playerHp_->DecreaseHp();
+					if (playerHp_->IsDead()) {
+						isDead_ = true;
+					} else {
+						behaviorRequest_ = Behavior::kKnockback;
+					}
+				} else {
+					isDead_ = true;
+				}
 			}
 			break;
 		}
