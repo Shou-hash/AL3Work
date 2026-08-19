@@ -139,7 +139,7 @@ private:
 	// 調整項目（GlobalVariables によって外部から変動可能）
 	static inline float kAcceleration = 0.03f;
 	static inline float kAttenuation = 0.5f;
-	static inline float kLimitRunSpeed = 2.0f;
+	static inline float kLimitRunSpeed = 0.5f;
 	static inline float kTimeTurn = 0.8f;
 	static inline float kGravityAcceleration = 0.08f;
 	static inline float kLimitFallSpeed = 1.0f;

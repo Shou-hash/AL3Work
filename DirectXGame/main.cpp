@@ -1,7 +1,8 @@
+#include "EndScene.h" // ★ EndSceneのヘッダーを追加
 #include "GameScene.h"
 #include "GlobalVariables.h" // ★ GlobalVariablesのヘッダーを追加
 #include "Kamataengine.h"
-#include "SelectScene.h" // ★ SelectSceneのヘッダーを追加
+#include "SelectScene.h"
 #include "StageManager.h"
 #include "TitleScene.h"
 #include <Windows.h>
@@ -15,16 +16,19 @@
 enum class Scene {
 	kUnknown = 0,
 	kTitle,
-	kSelect, // ★ セレクトシーンを追加
+	kSelect,
+	kEnd, // ★ エンドシーンを追加
 	kGame,
 };
 
 // グローバル変数（または静的変数）の管理
 Scene scene = Scene::kUnknown;
 TitleScene* titleScene = nullptr;
-SelectScene* selectScene = nullptr; // ★ セレクトシーンの追加
+SelectScene* selectScene = nullptr;
+EndScene* endScene = nullptr; // ★ エンドシーンの追加
 GameScene* gameScene = nullptr;
 StageManager* stageManager = nullptr;
+bool isExitRequested = false; // ★ アプリ終了フラグ
 
 // シーン切り替え関数
 void ChangeScene(Scene newScene) { scene = newScene; }
@@ -69,18 +73,17 @@ void UpdateScene() {
 		if (titleScene->IsFinished()) {
 			// タイトルシーンが終了したらセレクトシーンへ切り替え
 			ChangeScene(Scene::kSelect);
-			selectScene->Initialize(stageManager); // ★ 初期化
+			selectScene->Initialize(stageManager);
 		}
 		break;
 
-	case Scene::kSelect: // ★ セレクトシーンの更新と遷移
+	case Scene::kSelect:
 		selectScene->Update();
 
 		if (selectScene->IsFinished()) {
 			// セレクトシーンが終了したらゲームシーンへ切り替え
 			ChangeScene(Scene::kGame);
-			// ゲームシーンを最初から遊べるように初期化
-			gameScene->Initialize(stageManager); // ★ 引数を追加
+			gameScene->Initialize(stageManager);
 		}
 		break;
 
@@ -88,15 +91,9 @@ void UpdateScene() {
 		gameScene->Update();
 
 		if (gameScene->isFinished()) {
-			// ゲームシーンが終了（デス演出が完了）したらタイトルシーンへ切り替え
-			ChangeScene(Scene::kTitle);
-			titleScene->Initialize();
-
-			// ゲームシーンもインスタンスごとリロード（解放して再生成）しておく
-			delete gameScene;
-			gameScene = nullptr;
-			gameScene = new GameScene();
-			// 次回ゲーム開始時（タイトルから遷移時）に Initialize() される
+			// ★ ゲーム終了時に直接タイトルではなく、選択を挟むためにエンドシーンへ切り替え
+			ChangeScene(Scene::kEnd);
+			endScene->Initialize(stageManager);
 		}
 		// リロード要求（ボタン押し）があった場合の処理
 		else if (gameScene->IsReloadRequested()) {
@@ -104,7 +101,38 @@ void UpdateScene() {
 			delete gameScene;
 			gameScene = nullptr;
 			gameScene = new GameScene();
-			gameScene->Initialize(stageManager); // ★ 引数を追加
+			gameScene->Initialize(stageManager);
+		}
+		break;
+
+	case Scene::kEnd: // ★ エンドシーンの更新と遷移分岐
+		endScene->Update();
+
+		if (endScene->IsFinished()) {
+			EndScene::MenuType selected = endScene->GetSelectedMenu();
+			if (selected == EndScene::MenuType::Return) {
+				// ゲームに戻る (GameSceneの状態を引き継いでそのまま再開、必要に応じて内部フェーズをkPlayに戻す等の処理)
+				ChangeScene(Scene::kGame);
+				// 本来はGameScene側のInitializeを呼ばずフェードイン等のみ更新する設計に合わせます
+			} else if (selected == EndScene::MenuType::Retry) {
+				// リトライ (現在のステージインデックスを維持したままGameを再生成して初期化)
+				delete gameScene;
+				gameScene = nullptr;
+				gameScene = new GameScene();
+				gameScene->Initialize(stageManager);
+				ChangeScene(Scene::kGame);
+			} else if (selected == EndScene::MenuType::Title) {
+				// タイトルに戻る
+				ChangeScene(Scene::kTitle);
+				titleScene->Initialize();
+
+				delete gameScene;
+				gameScene = nullptr;
+				gameScene = new GameScene();
+			} else if (selected == EndScene::MenuType::Exit) {
+				// アプリケーションの終了要求
+				isExitRequested = true;
+			}
 		}
 		break;
 	}
@@ -117,12 +145,16 @@ void DrawScene() {
 		titleScene->Draw();
 		break;
 
-	case Scene::kSelect: // ★ セレクトシーンの描画を追加
+	case Scene::kSelect:
 		selectScene->Draw();
 		break;
 
 	case Scene::kGame:
 		gameScene->Draw();
+		break;
+
+	case Scene::kEnd: // ★ エンドシーンの描画を追加
+		endScene->Draw();
 		break;
 	}
 }
@@ -144,7 +176,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	titleScene = new TitleScene();
 	titleScene->Initialize();
 
-	selectScene = new SelectScene(); // ★ セレクトシーンの生成
+	selectScene = new SelectScene();
+	endScene = new EndScene(); // ★ エンドシーンの生成
 
 #ifdef _DEBUG
 	// デバッグ設定ファイル読み込み
@@ -171,7 +204,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// メインループ
 	while (true) {
-		if (KamataEngine::Update()) {
+		if (KamataEngine::Update() || isExitRequested) { // ★ 終了フラグの検知を追加
 			break;
 		}
 
@@ -199,8 +232,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 解放処理
 	delete titleScene;
 	titleScene = nullptr;
-	delete selectScene; // ★ セレクトシーンの解放
+	delete selectScene;
 	selectScene = nullptr;
+	delete endScene; // ★ エンドシーンの解放
+	endScene = nullptr;
 	delete gameScene;
 	gameScene = nullptr;
 	delete stageManager;

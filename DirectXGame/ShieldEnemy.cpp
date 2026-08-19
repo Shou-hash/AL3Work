@@ -1,5 +1,6 @@
 #define _USE_MATH_DEFINES
 #include "ShieldEnemy.h"
+#include "MapChipField.h" // ★追加：インクルード
 #include "Matrix4x4.h"
 #include "Player.h"
 #include <algorithm>
@@ -23,9 +24,11 @@ void ShieldEnemy::StaticFinalize() {
 	}
 }
 
-void ShieldEnemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
+// ★変更：引数に mapChipField を追加
+void ShieldEnemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position, MapChipField* mapChipField) {
 	modelShieldEnemy_ = model;
 	camera_ = camera;
+	mapChipField_ = mapChipField; // ★追加
 
 	worldTransform_.Initialize();
 	worldTransform_.translation_ = position;
@@ -92,7 +95,6 @@ void ShieldEnemy::OnCollision(Player* player) {
 void ShieldEnemy::CreateGuardEffect() {
 	GuardEffect* newEffect = new GuardEffect();
 
-	// ★修正ポイント: 定数バッファの生成を追加
 	newEffect->worldTransform.Initialize();
 	newEffect->worldTransform.CreateConstBuffer(); // GPU用のバッファを作成
 
@@ -125,6 +127,31 @@ void ShieldEnemy::OnDead() {
 }
 
 void ShieldEnemy::BehaviorRootUpdate() {
+	// ★追加：ステージ端側（足元にブロックがない、または前方に壁がある）での反転判定
+	if (mapChipField_) {
+		float checkOffsetX = (lrDirection_ == ShieldEnemyLRDirection::kLeft) ? -0.6f : 0.6f;
+
+		KamataEngine::Vector3 frontPos = worldTransform_.translation_;
+		frontPos.x += checkOffsetX;
+
+		KamataEngine::Vector3 frontDownPos = frontPos;
+		frontDownPos.y -= 1.0f; // 足元の座標
+
+		MapChipType frontType = mapChipField_->GetMapChipTypeByPosition(frontPos);
+		MapChipType frontDownType = mapChipField_->GetMapChipTypeByPosition(frontDownPos);
+
+		if (frontType == MapChipType::kBlock || frontDownType == MapChipType::kBlank) {
+			// 反転処理
+			if (lrDirection_ == ShieldEnemyLRDirection::kLeft) {
+				lrDirection_ = ShieldEnemyLRDirection::kRight;
+				velocity_.x = kWalkspeed;
+			} else {
+				lrDirection_ = ShieldEnemyLRDirection::kLeft;
+				velocity_.x = -kWalkspeed;
+			}
+		}
+	}
+
 	worldTransform_.translation_.x += velocity_.x;
 	worldTransform_.translation_.y += velocity_.y;
 	worldTransform_.translation_.z += velocity_.z;
@@ -135,7 +162,9 @@ void ShieldEnemy::BehaviorRootUpdate() {
 	float degree = kWalkMotionAnglestart + (kWalkMotionAngleEnd - kWalkMotionAnglestart) * (param + 1.0f) / 2.0f;
 
 	worldTransform_.rotation_.x = 0.0f;
-	worldTransform_.rotation_.y = -90.0f + (degree * (std::numbers::pi_v<float> / 270.0f));
+	// 左右の向き(lrDirection_)に基づいた基準の角度に対して歩行アニメーションのブレを追加
+	float baseAngleY = (lrDirection_ == ShieldEnemyLRDirection::kLeft) ? -90.0f : 90.0f;
+	worldTransform_.rotation_.y = (baseAngleY + degree) * (std::numbers::pi_v<float> / 180.0f);
 	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
 }
 
@@ -144,8 +173,6 @@ void ShieldEnemy::BehaviorGuardUpdate() {
 	guardTimer_ += 1.0f / 60.0f;
 	float t = std::clamp(guardTimer_ / kGuardDuration, 0.0f, 1.0f);
 
-	// サイン関数を使い、やや下向き（前傾）から天井向き（のけぞり）に移動して元に戻る回転を作る
-	// 周期の調整に 1.5 * PI を用いて、前半で沈み込み、中盤でのけぞり、後半で元に戻る挙動をシミュレート
 	float angleParam = std::sin(t * std::numbers::pi_v<float> * 1.5f);
 	float leanAngle = angleParam * 35.0f * (std::numbers::pi_v<float> / 180.0f);
 	worldTransform_.rotation_.x = leanAngle;
@@ -190,13 +217,12 @@ void ShieldEnemy::Update() {
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// ガードエフェクトの更新（徐々にスケールアップしながらフェードアウトさせる演出を追加可能）
+	// ガードエフェクトの更新
 	for (auto* effect : guardEffects_) {
 		effect->timer++;
 		if (effect->timer >= effect->duration) {
 			effect->isDead = true;
 		} else {
-			// エフェクトを少しずつ外側に広げる演出
 			float scaleProgress = 1.0f + (static_cast<float>(effect->timer) / effect->duration) * 1.5f;
 			effect->worldTransform.scale_ = {scaleProgress, scaleProgress, scaleProgress};
 			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);

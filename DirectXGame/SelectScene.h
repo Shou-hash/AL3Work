@@ -3,6 +3,7 @@
 #include "Kamataengine.h"
 #include "Skydome.h"
 #include <memory>
+#include <vector>
 
 class StageManager;
 
@@ -40,4 +41,12 @@ private:
 
 	// 選択中のステージインデックス
 	int32_t currentSelectIndex_ = 0;
+
+	// ★ ステージ選択画像用（white1x1.png）のスプライトポインタ配列
+	static inline const int32_t kNumStages = 3;
+	KamataEngine::Sprite* stageSprites_[kNumStages] = {nullptr};
+
+	// ★ 演出用変数
+	float animationTimers_[kNumStages] = {0.0f}; // 各ステージのスケール補間用タイマー
+	float flashTimer_ = 0.0f;                    // 選択中ステージの明滅用タイマー
 };

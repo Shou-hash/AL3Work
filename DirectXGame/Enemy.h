@@ -2,6 +2,7 @@
 #include "BaseEnemy.h"
 
 class Player;
+class MapChipField; // ★追加：MapChipFieldの不完全宣言
 
 class Enemy final : public BaseEnemy {
 public:
@@ -10,7 +11,8 @@ public:
 		kDead,
 	};
 
-	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
+	// ★変更：MapChipFieldのポインタを追加
+	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position, MapChipField* mapChipField);
 
 	void Initialize() override {}
 	void Update() override;
@@ -29,6 +31,7 @@ public:
 private:
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelEnemy_ = nullptr;
+	MapChipField* mapChipField_ = nullptr; // ★追加：メンバー変数の保持
 
 	KamataEngine::Vector3 velocity_ = {0, 0, 0};
 

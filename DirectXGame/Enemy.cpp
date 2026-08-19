@@ -1,5 +1,6 @@
 #include "Enemy.h"
 #include "GlobalVariables.h"
+#include "MapChipField.h" // ★追加：インクルード
 #include "Matrix4x4.h"
 #define _USE_MATH_DEFINES
 #include <algorithm>
@@ -28,9 +29,11 @@ void Enemy::ApplyGlobalVariables() {
 	kDeadDuration = globalVariables->GetFloatValue(groupName, "DeadDuration");
 }
 
-void Enemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
+// ★変更：引数に mapChipField を追加
+void Enemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position, MapChipField* mapChipField) {
 	modelEnemy_ = model;
 	camera_ = camera;
+	mapChipField_ = mapChipField; // ★追加
 
 	worldTransform_.Initialize();
 	worldTransform_.translation_ = position;
@@ -60,6 +63,33 @@ void Enemy::OnDead() {
 }
 
 void Enemy::BehaviorRootUpdate() {
+	// ★追加：ステージ端側（足元にブロックがない、または前方に壁がある）での反転判定
+	if (mapChipField_) {
+		// 進行方向の少し先をチェックするためのオフセット（敵の移動方向に応じて調整）
+		float checkOffsetX = (velocity_.x > 0.0f) ? 0.6f : -0.6f;
+
+		KamataEngine::Vector3 frontPos = worldTransform_.translation_;
+		frontPos.x += checkOffsetX;
+
+		KamataEngine::Vector3 frontDownPos = frontPos;
+		frontDownPos.y -= 1.0f; // 足元の座標
+
+		// 前方に壁がある、または進行方向の足元が空白（床がない）なら反転
+		MapChipType frontType = mapChipField_->GetMapChipTypeByPosition(frontPos);
+		MapChipType frontDownType = mapChipField_->GetMapChipTypeByPosition(frontDownPos);
+
+		if (frontType == MapChipType::kBlock || frontDownType == MapChipType::kBlank) {
+			velocity_.x *= -1.0f; // 移動方向を逆にする
+
+			// 進行方向に応じてモデルの向き（Y軸回転）を反転させる
+			if (velocity_.x > 0.0f) {
+				worldTransform_.rotation_.y = 90.0f * (std::numbers::pi_v<float> / 180.0f);
+			} else {
+				worldTransform_.rotation_.y = -90.0f * (std::numbers::pi_v<float> / 180.0f);
+			}
+		}
+	}
+
 	worldTransform_.translation_.x += velocity_.x;
 	worldTransform_.translation_.y += velocity_.y;
 	worldTransform_.translation_.z += velocity_.z;

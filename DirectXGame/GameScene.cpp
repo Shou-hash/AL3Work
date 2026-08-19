@@ -58,6 +58,39 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 
+	// =================================================================
+	// ★ 追加：ステージ切り替え時に前回のデータを完全にクリアする
+	// =================================================================
+	// 1. プレイヤーのスマートポインタを解放
+	player_.reset();
+
+	// 2. 敵キャラクターリストの解放とクリア
+	for (BaseEnemy* enemy : enemies_) {
+		delete enemy;
+	}
+	enemies_.clear();
+
+	// 3. エフェクトリストの解放とクリア
+	for (BaseEffect* effect : effects_) {
+		delete effect;
+	}
+	effects_.clear();
+
+	// 4. マップチップ（ブロック）のWorldTransform配列の解放とクリア
+	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
+		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
+			delete worldTransformBlock;
+		}
+	}
+	worldTransformBlocks_.clear();
+
+	// 5. 既存のマップチップフィールドのインスタンスがあれば破棄
+	if (mapChipField_) {
+		delete mapChipField_;
+		mapChipField_ = nullptr;
+	}
+	// =================================================================
+
 	// --- 調整項目の登録と適用 ---
 	Player::RegisterGlobalVariables();
 	Enemy::RegisterGlobalVariables();
@@ -71,6 +104,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	fade_->Initialize();
 	fade_->Start(Fade::Status::FadeIn, 1.0f);
 
+	// ※ここで新しくクリアな状態のインスタンスが作られます
 	mapChipField_ = new MapChipField;
 
 	// ★ 現在のステージインデックスから CSV ファイルパスを生成 (stageDatas0.csv, stageDatas1.csv, stageDatas2.csv)
@@ -176,13 +210,15 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 	switch (subID) {
 	case 0: {
 		Enemy* enemy = new Enemy();
-		enemy->Initialize(modelEnemy_, &camera_, enemyPosition);
+		// ★第4引数に mapChipField_ を追加して初期化
+		enemy->Initialize(modelEnemy_, &camera_, enemyPosition, mapChipField_);
 		enemies_.push_back(enemy);
 		break;
 	}
 	case 1: {
 		ShieldEnemy* enemy = new ShieldEnemy();
-		enemy->Initialize(modelShieldEnemy_, &camera_, enemyPosition);
+		// ★第4引数に mapChipField_ を追加して初期化
+		enemy->Initialize(modelShieldEnemy_, &camera_, enemyPosition, mapChipField_);
 		enemies_.push_back(enemy);
 		break;
 	}

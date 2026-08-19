@@ -3,6 +3,7 @@
 #include <list>
 
 class Player;
+class MapChipField; // ★追加：MapChipFieldの不完全宣言
 
 enum class ShieldEnemyLRDirection {
 	kLeft,
@@ -30,13 +31,13 @@ public:
 		bool isDead = false;
 	};
 
-	// 初期化・更新・描画
-	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
+	// ★変更：引数に MapChipField のポインタを追加
+	void Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position, MapChipField* mapChipField);
 	void Update() override;
 	void Draw() override;
 	void OnDead() override;
 	void OnCollision(Player* player) override;
-	AABB GetAABB() const override; // ★追加：GetAABB の宣言
+	AABB GetAABB() const override;
 
 	// 各状態の更新
 	void BehaviorRootUpdate();
@@ -54,6 +55,7 @@ public:
 private:
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelShieldEnemy_ = nullptr;
+	MapChipField* mapChipField_ = nullptr; // ★追加：メンバー変数の保持
 
 	// ガードモデル用
 	static KamataEngine::Model* modelGuardEffect_;
