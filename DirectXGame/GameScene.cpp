@@ -3,6 +3,7 @@
 #include "Enemy.h"
 #include "GlobalVariables.h"
 #include "HitEffect.h"
+#include "Item.h" // ★追加
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "ShieldEnemy.h"
@@ -36,12 +37,18 @@ GameScene::~GameScene() {
 	delete modelPlayerLeft_;
 	delete modelPlayerRight_;
 
+	delete modelBossHead_;
+	delete modelBossBody_;
+	delete modelBossLeft_;
+	delete modelBossRight_;
+
 	delete modelDeathParticles_;
 	delete modelHitEffect_;
 
 	delete modelHammer_;
 
 	delete modelPlayerHp_;
+	delete modelItemHp_; // ★追加
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -52,6 +59,12 @@ GameScene::~GameScene() {
 		delete effect;
 	}
 	effects_.clear();
+
+	// ★追加：アイテムリストの解放
+	for (Item* item : items_) {
+		delete item;
+	}
+	items_.clear();
 }
 
 void GameScene::Initialize(StageManager* stageDataManager) {
@@ -59,10 +72,9 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
+	isBossSpawned_ = false;
 
-	// =================================================================
-	// ★ 追加：ステージ切り替え時に前回のデータを完全にクリアする
-	// =================================================================
+	// ステージ切り替え時に前回のデータを完全にクリアする
 	// 1. プレイヤーのスマートポインタを解放
 	player_.reset();
 
@@ -78,7 +90,13 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	}
 	effects_.clear();
 
-	// 4. マップチップ（ブロック）のWorldTransform配列の解放とクリア
+	// 4. ドロップアイテムリストの解放とクリア（★追加）
+	for (Item* item : items_) {
+		delete item;
+	}
+	items_.clear();
+
+	// 5. マップチップ（ブロック）のWorldTransform配列の解放とクリア
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
 			delete worldTransformBlock;
@@ -86,14 +104,13 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	}
 	worldTransformBlocks_.clear();
 
-	// 5. 既存のマップチップフィールドのインスタンスがあれば破棄
+	// 6. 既存のマップチップフィールドのインスタンスがあれば破棄
 	if (mapChipField_) {
 		delete mapChipField_;
 		mapChipField_ = nullptr;
 	}
-	// =================================================================
 
-	// --- 調整項目の登録と適用 ---
+	// 調整項目の登録と適用
 	Player::RegisterGlobalVariables();
 	Enemy::RegisterGlobalVariables();
 
@@ -127,6 +144,11 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelPlayerLeft_ = Model::CreateFromOBJ("player_left", true);
 	modelPlayerRight_ = Model::CreateFromOBJ("player_right", true);
 
+	modelBossBody_ = Model::CreateFromOBJ("bossEnemy_body", true);
+	modelBossHead_ = Model::CreateFromOBJ("bossEnemy_head", true);
+	modelBossLeft_ = Model::CreateFromOBJ("bossEnemy_left", true);
+	modelBossRight_ = Model::CreateFromOBJ("bossEnemy_right", true);
+
 	modelHammer_ = Model::CreateFromOBJ("hummer", true);
 
 	modelEnemy_ = Model::CreateFromOBJ("enemy", true);
@@ -135,6 +157,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelHitEffect_ = Model::CreateFromOBJ("particle", true);
 
 	modelPlayerHp_ = Model::CreateFromOBJ("itemHP", true);
+	modelItemHp_ = Model::CreateFromOBJ("itemHP", true); // ★追加：アイテムモデル読み込み
 
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
@@ -200,9 +223,6 @@ void GameScene::GenerateFieldObjects() {
 				Vector3 playerPosition = mapChipField_->GetMapChipPositionByIndex(j, i);
 				player_ = std::make_unique<Player>();
 
-				// 4つの部位モデルを渡せるようにPlayer内部で再読込またはGameScene側からパーツを割り当てる設計にするため、
-				// ここでは元と同じシグネチャ（ダミーでbody等を割り当てるか、Player内部のInitialize内で完結させる）に対応させます。
-				// Player::Initialize内で独自に読み込みを行っているため、ここでは元のシグネチャのままmodelPlayerBody_などを渡すか、ダミーでnullptrを渡しても動作します。
 				player_->Initialize(modelPlayerBody_, &camera_, playerPosition);
 				player_->SetMapChipField(mapChipField_);
 
@@ -240,6 +260,13 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 		enemies_.push_back(enemy);
 		break;
 	}
+	case 2: { // ★追加：E2判定時
+		BossEnemy* enemy = new BossEnemy();
+		enemy->Initialize(modelBossBody_, modelBossHead_, modelBossLeft_, modelBossRight_, &camera_, enemyPosition, mapChipField_);
+		enemies_.push_back(enemy);
+		isBossSpawned_ = true;
+		break;
+	}
 	default:
 		break;
 	}
@@ -275,64 +302,8 @@ void GameScene::Update() {
 	// プレイヤーの各部位の調整用ImGuiを追加
 	if (player_) {
 		if (ImGui::TreeNode("Player Part Transforms")) {
-			// 各部位の個別WorldTransformへの参照を取得する手段がないため、Playerクラスの非公開メンバにGameSceneからアクセスできるよう、
-			// Player.h で定義されている各部位の変数名を元に、直接もしくはPlayerオブジェクトを経由して調整できるようにします。
-			// ただしこれらのメンバはPlayerクラスのprivateスコープにあるため、本来はPlayer側にImGuiを書くかアクセサが必要ですが、
-			// 今回はGameScene完結でアクセスするための暫定措置として、元コードに定義されたメンバをフレンドクラス定義等なしで操作できるよう、
-			// もしPlayerの該当メンバがprivateなままであればアクセスエラーになるため、一般的な構成（Playerクラスの公開メソッドから各変数のポインタ等を取得して弄る、
-			// またはPlayerクラス側にImGuiウィンドウを実装する等）が好ましいですが、GameScene.cpp内に記載するためにはPlayer内部の各WorldTransform変数を書き換えます。
-			// ここではPlayerクラスに元々定義されている各部位のWorldTransform（worldTransformHead_等）への直接アクセス、またはゲッターを想定した記載を行います。
-			// （※Playerのメンバがprivateの場合に備え、本来はPlayer::Update側等に書くのが安全ですが、GameScene側で制御したいという要求に沿ってここに追記します）
-
-			// 注意: Playerクラスのメンバ変数 `worldTransformHead_` 等がprivateである場合、GameSceneから直接アクセスするには
-			// Playerクラス側で `friend class GameScene;` を設定するか、パブリックなゲッターが必要です。
-			// ここでは変数名が変わらないよう、Playerオブジェクト内の各部位のトランスフォームをImGuiでスライダー調整できるようにします。
-
-			// ※現在Playerの該当メンバはprivateですが、変数名を維持したままGameSceneからアクセス可能であると仮定（あるいは今後friend設定等をされる前提）し、
-			// 要求通りGameSceneのDebugウィンドウ内にプレイヤーの各部位の調整スライダーを丸ごと埋め込みます。
-
-			// Head の調整
+			// 各部位の調整項目を展開
 			if (ImGui::TreeNode("Head")) {
-				// Playerクラス内の変数を直接参照してImGuiに渡す処理を記述します。
-				// 現状のPlayerクラス定義のままアクセスを通すため、プレイヤー内の実体のポインタを取得するような形、
-				// もしくはPlayer.hに定義されている変数名そのままにスライダーを配置します。
-				// ※コンパイルエラーを避けるための安全弁として、Player.h側のアクセス権（public化またはfriendクラス化）が必要になります。
-
-				// 実際の実装として、Playerインスタンスが持つ各部位の変数をImGuiのFloat3等でスライダー制御できるように配置します。
-				// （Playerクラスの変数名：worldTransformHead_, worldTransformBody_, worldTransformLeft_, worldTransformRight_）
-
-				// 本来はPlayerのUpdate内にImGuiを書くか、GameSceneからアクセスできるようにアクセサを用意する必要がありますが、
-				// コードを丸ごと変更せずに対応するため、Player構造体の該当変数名に対するImGuiUIを配置します。
-
-				// ※以下はPlayerメンバへのアクセスが許可されている前提での直接的なImGui実装コードです。
-				// 変数名: worldTransformHead_, worldTransformBody_, worldTransformLeft_, worldTransformRight_
-
-				// 一時的にアクセス可能とするため、またはPlayer内部で定義された変数名と同一のものを操作するUIをここに丸ごと展開します。
-				// (実際のプロジェクト構成に合わせてPlayerクラス側に `friend class GameScene;` を一行追加することをお勧めします)
-
-				// 今回はGameScene.cppへの完全なコード埋め込みとして記述します。
-				// (コンパイルエラーを避けるための安全弁として、Playerクラス側に変更を入れない場合でも変数名が変わらない形でUIを構築します)
-
-				// ※もしアクセス制限で弾かれる場合は、Playerクラス側にこのImGui処理を移管するかアクセサを用意してください。
-				// ここではGameSceneのImGui内でプレイヤーの各部位のトランスフォーム（translation, rotation, scale）を調整するコードを丸ごと記述します。
-
-				// 本来のオブジェクト指向的な制約をクリアしている前提のコード例：
-				// ImGui::DragFloat3("Position", &player_->worldTransformHead_.translation_.x, 0.05f);
-				// ImGui::DragFloat3("Rotation", &player_->worldTransformHead_.rotation_.x, 0.05f);
-				// ImGui::DragFloat3("Scale", &player_->worldTransformHead_.scale_.x, 0.05f);
-
-				// ただし、現在Playerクラスのメンバはprivateであるため、リフレクションやハックを行わない限り直接は触れません。
-				// そこで、変数名やコメント形式を変えないという制約の中で最も安全にGameScene.cppへ丸ごと組み込むため、
-				// Player.h側でmeshWorldTransforms_というパブリックな調整用ベクトル（ソース3で定義済み）が用意されている点に着目します。
-				// ソース3には `std::vector<KamataEngine::WorldTransform> meshWorldTransforms_;` と、そのゲッター `GetMeshWorldTransforms()` が定義されています。
-				// 各部位の個別WorldTransform（worldTransformHead_等）とは別にこれが定義されているため、これら各部位が4つ（Head, Body, Left, Right）連動している、
-				// または個別のWorldTransform変数がパブリックであるとみなして、それぞれの部位名に対応した調整UIを配置します。
-
-				// ここでは、ソース3のPlayerクラスにある個別部位の変数名 `worldTransformHead_` 等にGameSceneからアクセスして調整を行うコードを追加します。
-				// （※もしprivateエラーが出る場合はPlayer.h側に `friend class GameScene;` を追記してください）
-
-				// 各部位の調整項目を展開
-				// --- Head ---
 				float* headPos = &(player_->GetWorldTransformHead().translation_.x);
 				float* headRot = &(player_->GetWorldTransformHead().rotation_.x);
 				float* headScale = &(player_->GetWorldTransformHead().scale_.x);
@@ -444,6 +415,21 @@ void GameScene::ChangePhase() {
 			KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
 			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
 			effects_.push_back(deathParticles);
+		} else if (isBossSpawned_) {
+			// ボスが撃破されたか判定
+			bool bossAlive = false;
+			for (BaseEnemy* enemy : enemies_) {
+				if (dynamic_cast<BossEnemy*>(enemy) && !enemy->IsDead()) {
+					bossAlive = true;
+					break;
+				}
+			}
+			if (!bossAlive) {
+				phase_ = Phase::kFadeOut;
+				if (fade_) {
+					fade_->Start(Fade::Status::FadeOut, 1.0f);
+				}
+			}
 		}
 		break;
 
@@ -489,6 +475,55 @@ void GameScene::UpdatePlay() {
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
 			enemy->Update();
+
+			// ★追加：敵死亡時にドロップアイテム（itemHp.obj）を生成する処理
+			if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
+				if (normalEnemy->IsItemSpawnRequested()) {
+					Item* newItem = new Item();
+					newItem->Initialize(modelItemHp_, &camera_, enemy->GetWorldTransform().translation_, mapChipField_);
+					items_.push_back(newItem);
+					normalEnemy->ResetItemSpawnRequest();
+				}
+			} else if (ShieldEnemy* shieldEnemy = dynamic_cast<ShieldEnemy*>(enemy)) {
+				if (shieldEnemy->IsItemSpawnRequested()) {
+					Item* newItem = new Item();
+					newItem->Initialize(modelItemHp_, &camera_, enemy->GetWorldTransform().translation_, mapChipField_);
+					items_.push_back(newItem);
+					shieldEnemy->ResetItemSpawnRequest();
+				}
+			}
+		}
+	}
+
+	// ★追加：ドロップアイテムの更新およびプレイヤーによる自動拾い・HP回復判定
+	for (auto it = items_.begin(); it != items_.end();) {
+		Item* item = *it;
+		if (item) {
+			item->Update();
+
+			// プレイヤーがアイテムに近づいたら自動で拾ってHPを回復
+			if (player_ && !item->IsDead()) {
+				Player::AABB playerAABB = player_->GetAABB();
+				Item::AABB itemAABB = item->GetAABB();
+
+				if (playerAABB.min.x < itemAABB.max.x && playerAABB.max.x > itemAABB.min.x && playerAABB.min.y < itemAABB.max.y && playerAABB.max.y > itemAABB.min.y &&
+				    playerAABB.min.z < itemAABB.max.z && playerAABB.max.z > itemAABB.min.z) {
+
+					if (playerHp_) {
+						playerHp_->IncreaseHp(); // ★HP回復
+					}
+					item->OnCollision(player_.get());
+				}
+			}
+
+			if (item->IsDead()) {
+				delete item;
+				it = items_.erase(it);
+			} else {
+				++it;
+			}
+		} else {
+			it = items_.erase(it);
 		}
 	}
 
@@ -504,6 +539,10 @@ void GameScene::UpdatePlay() {
 						newEffect->Initialize(enemy->GetWorldTransform().translation_);
 						effects_.push_back(newEffect);
 						enemy->OnDead();
+					} else if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
+						HitEffect* newEffect = new HitEffect();
+						newEffect->Initialize(enemy->GetWorldTransform().translation_);
+						effects_.push_back(newEffect);
 					}
 				}
 			}
@@ -611,6 +650,15 @@ void GameScene::Draw() {
 		if (effect) {
 			Model::PreDraw();
 			effect->Draw();
+			Model::PostDraw();
+		}
+	}
+
+	// ★追加：ドロップアイテムの描画
+	for (Item* item : items_) {
+		if (item) {
+			Model::PreDraw();
+			item->Draw();
 			Model::PostDraw();
 		}
 	}

@@ -52,6 +52,13 @@ public:
 	// ゲッター
 	ShieldEnemyLRDirection GetLRDirection() const { return lrDirection_; }
 
+	// ★追加：アイテムドロップ状態（死亡演出中）かどうかの判定
+	bool IsItemState() const { return behavior_ == Behavior::kDead; }
+
+	// ★追加：アイテム生成要求のチェックとリセット
+	bool IsItemSpawnRequested() const { return isItemSpawnRequested_; }
+	void ResetItemSpawnRequest() { isItemSpawnRequested_ = false; }
+
 private:
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelShieldEnemy_ = nullptr;
@@ -81,4 +88,6 @@ private:
 	float guardTimer_ = 0.0f;
 	static inline const float kGuardDuration = 0.3f; // ガードアニメーションの時間（秒）
 	float baseRotationX_ = 0.0f;                     // 元のX軸回転量（基本は0）
+
+	bool isItemSpawnRequested_ = false; // ★追加：アイテムドロップ要求フラグ
 };

@@ -165,6 +165,7 @@
   <ItemGroup>
     <ClCompile Include="BaseEffect.cpp" />
     <ClCompile Include="BaseEnemy.cpp" />
+    <ClCompile Include="BossEnemy.cpp" />
     <ClCompile Include="CameraController.cpp" />
     <ClCompile Include="DeathParticles.cpp" />
     <ClCompile Include="EndScene.cpp" />
@@ -173,6 +174,7 @@
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="GlobalVariables.cpp" />
     <ClCompile Include="HitEffect.cpp" />
+    <ClCompile Include="Item.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapChipField.cpp" />
     <ClCompile Include="Matrix4x4.cpp" />
@@ -284,6 +286,7 @@
   <ItemGroup>
     <ClInclude Include="BaseEffect.h" />
     <ClInclude Include="BaseEnemy.h" />
+    <ClInclude Include="BossEnemy.h" />
     <ClInclude Include="CameraController.h" />
     <ClInclude Include="DeathParticles.h" />
     <ClInclude Include="EndScene.h" />
@@ -292,6 +295,7 @@
     <ClInclude Include="GameScene.h" />
     <ClInclude Include="GlobalVariables.h" />
     <ClInclude Include="HitEffect.h" />
+    <ClInclude Include="Item.h" />
     <ClInclude Include="MapChipField.h" />
     <ClInclude Include="Matrix4x4.h" />
     <ClInclude Include="Player.h" />

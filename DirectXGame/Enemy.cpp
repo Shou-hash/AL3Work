@@ -47,6 +47,7 @@ void Enemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera,
 	isDead_ = false;
 	isCollisionDisabled_ = false;
 	deadTimer_ = 0.0f;
+	isItemSpawnRequested_ = false; // ★追加
 }
 
 void Enemy::OnCollision(Player* player) { (void)player; }
@@ -59,7 +60,15 @@ void Enemy::OnDead() {
 	behavior_ = Behavior::kDead;
 	isCollisionDisabled_ = true;
 	deadTimer_ = 0.0f;
-	velocity_ = {0.0f, 0.0f, 0.0f};
+	isItemSpawnRequested_ = true; // ★追加：アイテム生成を要求
+
+	// 放物線上に打ち上げる初期速度を設定（X軸は現在の向きを維持、Y軸に上方向の力を加える）
+	float jumpPowerY = 0.25f;
+	float speedX = (velocity_.x > 0.0f) ? 0.03f : -0.03f;
+	if (velocity_.x == 0.0f) {
+		speedX = -0.03f;
+	}
+	velocity_ = {speedX, jumpPowerY, 0.0f};
 }
 
 void Enemy::BehaviorRootUpdate() {
@@ -107,7 +116,16 @@ void Enemy::BehaviorDeadUpdate() {
 	deadTimer_ += 1.0f / 60.0f;
 	float t = std::clamp(deadTimer_ / kDeadDuration, 0.0f, 1.0f);
 
-	worldTransform_.translation_.y += 0.05f;
+	// 重力を適用して放物線運動（落下）させる
+	float gravity = 0.012f;
+	velocity_.y -= gravity;
+
+	// 座標更新
+	worldTransform_.translation_.x += velocity_.x;
+	worldTransform_.translation_.y += velocity_.y;
+	worldTransform_.translation_.z += velocity_.z;
+
+	// 回転演出は維持
 	worldTransform_.rotation_.y += 0.1f;
 
 	float scale = 1.0f - t;
@@ -143,6 +161,7 @@ void Enemy::Draw() {
 }
 
 Enemy::AABB Enemy::GetAABB() const {
+	// ★変更：判定無効化時または死亡演出中の場合は判定を無効化
 	if (isCollisionDisabled_) {
 		return AABB{
 		    {0.0f, 0.0f, 0.0f},

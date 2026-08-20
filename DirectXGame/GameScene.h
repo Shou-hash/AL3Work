@@ -1,9 +1,11 @@
 #pragma once
 #include "BaseEffect.h"
 #include "BaseEnemy.h"
+#include "BossEnemy.h"
 #include "CameraController.h"
 #include "Enemy.h"
 #include "Fade.h"
+#include "Item.h" // ★追加：Itemクラスのインクルード
 #include "Kamataengine.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
@@ -71,11 +73,18 @@ private:
 	KamataEngine::Model* modelPlayerLeft_ = nullptr;
 	KamataEngine::Model* modelPlayerRight_ = nullptr;
 
+	// ★追加：ボス用モデルポインタ
+	KamataEngine::Model* modelBossHead_ = nullptr;
+	KamataEngine::Model* modelBossBody_ = nullptr;
+	KamataEngine::Model* modelBossLeft_ = nullptr;
+	KamataEngine::Model* modelBossRight_ = nullptr;
+
 	KamataEngine::Model* modelDeathParticles_ = nullptr;
 	KamataEngine::Model* modelHitEffect_ = nullptr;
 	KamataEngine::Model* modelHammer_ = nullptr;
 
 	KamataEngine::Model* modelPlayerHp_ = nullptr;
+	KamataEngine::Model* modelItemHp_ = nullptr; // ★追加：ドロップアイテム用モデルポインタ
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 	std::unique_ptr<Player> player_ = nullptr;
@@ -85,9 +94,13 @@ private:
 
 	std::list<BaseEnemy*> enemies_;
 	std::list<BaseEffect*> effects_;
+	std::list<Item*> items_; // ★追加：ドロップアイテムリスト
 
 	bool reloadRequested_ = false;
 
 	// ★ ステージマネージャ参照用のポインタ
 	StageManager* stageManager_ = nullptr;
+
+	// ボス出現判定用フラグ
+	bool isBossSpawned_ = false;
 };

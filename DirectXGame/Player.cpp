@@ -2,10 +2,12 @@
 #include "Player.h"
 #include "BaseEnemy.h"
 #include "CameraController.h"
+#include "Enemy.h" // ★追加：アイテム状態チェックのため
 #include "GlobalVariables.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
-#include "PlayerHp.h" // ★追加：PlayerHpの関数を使用するため
+#include "PlayerHp.h"    // ★追加：PlayerHpの関数を使用するため
+#include "ShieldEnemy.h" // ★追加：アイテム状態チェックのため
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -693,13 +695,12 @@ void Player::BehaviorHammerSkillUpdate() {
 
 	// アニメーションの前半（手を上げる）と後半（振り下ろす）
 	if (progress < 0.4f) {
-		// 0.0 ~ 0.4 の間で両手を上に上げる（前に突き出すようにX軸負方向、または上に上げるよう回転）
-		// ここではバンザイするように-120度（-2.09ラジアン）まで回転させます
+		// 0.0 ~ 0.4 の間で両手を上に上げる
 		float t = progress / 0.4f;
 		armRotationX = EaseOut(0.0f, -4.0f, t);
 		isHammerVisible_ = true; // 手を上げ始めると同時にハンマーを表示
 	} else {
-		// 0.4 ~ 1.0 の間で一気に振り下ろす（-120度から前方に叩きつけるように+60度まで）
+		// 0.4 ~ 1.0 の間で一気に振り下ろす
 		float t = (progress - 0.4f) / 0.6f;
 		armRotationX = EaseOut(-4.0f, -1.5f, t);
 	}
@@ -712,7 +713,7 @@ void Player::BehaviorHammerSkillUpdate() {
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// 各部位のローカル・ワールド行列計算（既存 of 親子関係と同様）
+	// 各部位のローカル・ワールド行列計算
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
 	worldTransformBody_.TransferMatrix();
@@ -746,12 +747,10 @@ void Player::BehaviorHammerSkillUpdate() {
 
 	// ★ ハンマーを右手に追従させる制御
 	if (isHammerVisible_) {
-		// 右手の位置から少し前方にずらすなど、武器の持ち手位置に合わせてローカルオフセットを調整します
 		KamataEngine::Vector3 hammerLocalPos = {0.0f, 0.5f, 0.2f};
-		KamataEngine::Vector3 hammerLocalRot = {-3.0f, 0.0f, 0.0f}; // 必要に応じてモデルの向きを回転
+		KamataEngine::Vector3 hammerLocalRot = {-3.0f, 0.0f, 0.0f};
 
 		KamataEngine::Matrix4x4 localMatrixHammer = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, hammerLocalRot, hammerLocalPos);
-		// 右手のワールド行列に対して乗算することで、手と一緒に動くようになります
 		worldTransformHammer_.matWorld_ = MultiplyMatrix(localMatrixHammer, worldTransformRight_.matWorld_);
 		worldTransformHammer_.TransferMatrix();
 	}
@@ -1055,7 +1054,7 @@ Player::AABB Player::GetAABB() const {
 	aabb.min.z = center.z - halfDepth;
 
 	aabb.max.x = center.x + kPaddingRight; // ★変更
-	aabb.max.y = center.y + kPaddingTop;   // ★変更（元の +1.5f 固定処理を外す場合はこのまま）
+	aabb.max.y = center.y + kPaddingTop;   // ★変更
 	aabb.max.z = center.z + halfDepth;
 
 	return aabb;

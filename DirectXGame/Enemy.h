@@ -28,6 +28,13 @@ public:
 	static void RegisterGlobalVariables();
 	static void ApplyGlobalVariables();
 
+	// アイテムドロップ状態（死亡演出中）かどうかの判定
+	bool IsItemState() const { return behavior_ == Behavior::kDead; }
+
+	// ★追加：アイテム生成要求のチェックとリセット
+	bool IsItemSpawnRequested() const { return isItemSpawnRequested_; }
+	void ResetItemSpawnRequest() { isItemSpawnRequested_ = false; }
+
 private:
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelEnemy_ = nullptr;
@@ -45,4 +52,6 @@ private:
 	Behavior behavior_ = Behavior::kRoot;
 	float deadTimer_ = 0.0f;
 	static inline float kDeadDuration = 1.0f;
+
+	bool isItemSpawnRequested_ = false; // ★追加：アイテムドロップ要求フラグ
 };

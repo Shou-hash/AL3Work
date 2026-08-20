@@ -44,6 +44,7 @@ void ShieldEnemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* c
 	isDead_ = false;
 	isCollisionDisabled_ = false;
 	deadTimer_ = 0.0f;
+	isItemSpawnRequested_ = false; // ★追加
 
 	// ガード用モデル (ring) のロード
 	if (modelGuardEffect_ == nullptr) {
@@ -123,7 +124,12 @@ void ShieldEnemy::OnDead() {
 	behavior_ = Behavior::kDead;
 	isCollisionDisabled_ = true;
 	deadTimer_ = 0.0f;
-	velocity_ = {0.0f, 0.0f, 0.0f};
+	isItemSpawnRequested_ = true; // ★追加：アイテム生成要求
+
+	// 放物線上に打ち上げる初期速度を設定（X軸は現在の向きを維持、Y軸に上方向の力を加える）
+	float jumpPowerY = 0.25f;
+	float speedX = (lrDirection_ == ShieldEnemyLRDirection::kRight) ? 0.03f : -0.03f;
+	velocity_ = {speedX, jumpPowerY, 0.0f};
 }
 
 void ShieldEnemy::BehaviorRootUpdate() {
@@ -188,7 +194,16 @@ void ShieldEnemy::BehaviorDeadUpdate() {
 	deadTimer_ += 1.0f / 60.0f;
 	float t = std::clamp(deadTimer_ / kDeadDuration, 0.0f, 1.0f);
 
-	worldTransform_.translation_.y += 0.05f;
+	// 重力を適用して放物線運動（落下）させる
+	float gravity = 0.012f;
+	velocity_.y -= gravity;
+
+	// 座標更新
+	worldTransform_.translation_.x += velocity_.x;
+	worldTransform_.translation_.y += velocity_.y;
+	worldTransform_.translation_.z += velocity_.z;
+
+	// 回転演出は維持
 	worldTransform_.rotation_.y += 0.1f;
 
 	float scale = 1.0f - t;
@@ -213,29 +228,19 @@ void ShieldEnemy::Update() {
 		break;
 	}
 
-	// 敵本体の行列転送
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// ガードエフェクトの更新
-	for (auto* effect : guardEffects_) {
+	// エフェクトの更新
+	for (auto it = guardEffects_.begin(); it != guardEffects_.end();) {
+		GuardEffect* effect = *it;
 		effect->timer++;
 		if (effect->timer >= effect->duration) {
-			effect->isDead = true;
-		} else {
-			float scaleProgress = 1.0f + (static_cast<float>(effect->timer) / effect->duration) * 1.5f;
-			effect->worldTransform.scale_ = {scaleProgress, scaleProgress, scaleProgress};
-			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);
-			effect->worldTransform.TransferMatrix();
-		}
-	}
-
-	// 削除フラグの立ったエフェクトのメモリ解放
-	for (auto it = guardEffects_.begin(); it != guardEffects_.end();) {
-		if ((*it)->isDead) {
-			delete *it;
+			delete effect;
 			it = guardEffects_.erase(it);
 		} else {
+			effect->worldTransform.matWorld_ = MakeAffineMatrix(effect->worldTransform.scale_, effect->worldTransform.rotation_, effect->worldTransform.translation_);
+			effect->worldTransform.TransferMatrix();
 			++it;
 		}
 	}
@@ -250,11 +255,10 @@ void ShieldEnemy::Draw() {
 		modelShieldEnemy_->Draw(worldTransform_, *camera_);
 	}
 
-	if (modelGuardEffect_ && camera_) {
-		for (const auto* effect : guardEffects_) {
-			if (effect) {
-				modelGuardEffect_->Draw(effect->worldTransform, *camera_);
-			}
+	// ガードエフェクト描画
+	for (GuardEffect* effect : guardEffects_) {
+		if (modelGuardEffect_ && camera_) {
+			modelGuardEffect_->Draw(effect->worldTransform, *camera_);
 		}
 	}
 }
