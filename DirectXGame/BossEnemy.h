@@ -6,10 +6,15 @@
 class MapChipField;
 class Player;
 
+enum class BossEnemyLRDirection {
+	kLeft,
+	kRight,
+};
+
 class BossEnemy : public BaseEnemy {
 public:
 	BossEnemy() = default;
-	~BossEnemy() override = default;
+	~BossEnemy() override;
 
 	void Initialize(
 	    KamataEngine::Model* modelBody, KamataEngine::Model* modelHead, KamataEngine::Model* modelLeft, KamataEngine::Model* modelRight, KamataEngine::Camera* camera,
@@ -45,5 +50,15 @@ private:
 
 	// ボス用HPおよびクールダウン時間
 	int32_t hp_ = 5;
+	int32_t maxHp_ = 5;
 	float damageCooldown_ = 0.0f;
+
+	// 歩行移動関連
+	BossEnemyLRDirection lrDirection_ = BossEnemyLRDirection::kLeft;
+	static inline const float kWalkspeed = 0.03f;
+
+	// HPバー表示用スプライト
+	uint32_t textureHandle_ = 0;
+	KamataEngine::Sprite* spriteHpBG_ = nullptr;
+	KamataEngine::Sprite* spriteHpBar_ = nullptr;
 };

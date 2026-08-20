@@ -2,8 +2,14 @@
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "Player.h"
+#include <algorithm>
 #include <cmath>
 #include <numbers>
+
+BossEnemy::~BossEnemy() {
+	delete spriteHpBG_;
+	delete spriteHpBar_;
+}
 
 KamataEngine::Matrix4x4 BossEnemy::MultiplyMatrix(const KamataEngine::Matrix4x4& a, const KamataEngine::Matrix4x4& b) {
 	KamataEngine::Matrix4x4 r = {};
@@ -42,9 +48,20 @@ void BossEnemy::Initialize(
 
 	animTimer_ = 0.0f;
 	hp_ = 5;
+	maxHp_ = 5;
 	damageCooldown_ = 0.0f;
 	isDead_ = false;
 	isCollisionDisabled_ = false;
+	lrDirection_ = BossEnemyLRDirection::kLeft;
+
+	// スプライトの生成
+	textureHandle_ = KamataEngine::TextureManager::Load("white1x1.png");
+	if (spriteHpBG_ == nullptr) {
+		spriteHpBG_ = KamataEngine::Sprite::Create(textureHandle_, {0.0f, 0.0f});
+	}
+	if (spriteHpBar_ == nullptr) {
+		spriteHpBar_ = KamataEngine::Sprite::Create(textureHandle_, {0.0f, 0.0f});
+	}
 }
 
 void BossEnemy::Update() {
@@ -59,6 +76,36 @@ void BossEnemy::Update() {
 			damageCooldown_ = 0.0f;
 		}
 	}
+
+	// ★足場の端での移動反転処理（Enemy / ShieldEnemy と同じ構造に統一）
+	if (mapChipField_) {
+		float checkOffsetX = (lrDirection_ == BossEnemyLRDirection::kLeft) ? -1.0f : 1.0f;
+
+		KamataEngine::Vector3 frontPos = worldTransform_.translation_;
+		frontPos.x += checkOffsetX;
+
+		KamataEngine::Vector3 frontDownPos = frontPos;
+		frontDownPos.y -= 1.0f; // ボスの体格（スケール2.5f）に合わせた足元座標
+
+		MapChipType frontType = mapChipField_->GetMapChipTypeByPosition(frontPos);
+		MapChipType frontDownType = mapChipField_->GetMapChipTypeByPosition(frontDownPos);
+
+		if (frontType == MapChipType::kBlock || frontDownType == MapChipType::kBlank) {
+			// 反転処理
+			if (lrDirection_ == BossEnemyLRDirection::kLeft) {
+				lrDirection_ = BossEnemyLRDirection::kRight;
+			} else {
+				lrDirection_ = BossEnemyLRDirection::kLeft;
+			}
+		}
+	}
+
+	// ★移動と向きの更新
+	float moveSpeed = (lrDirection_ == BossEnemyLRDirection::kLeft) ? -kWalkspeed : kWalkspeed;
+	worldTransform_.translation_.x += moveSpeed;
+
+	float baseAngleY = (lrDirection_ == BossEnemyLRDirection::kLeft) ? -std::numbers::pi_v<float> / 2.0f : std::numbers::pi_v<float> / 2.0f;
+	worldTransform_.rotation_.y = baseAngleY;
 
 	// 簡易的な待機スイングアニメーション
 	animTimer_ += 1.0f / 60.0f;
@@ -102,6 +149,40 @@ void BossEnemy::Update() {
 	worldTransformHead_.TransferMatrix();
 	worldTransformLeft_.TransferMatrix();
 	worldTransformRight_.TransferMatrix();
+
+	// ★HPバー（長棒）の表示座標設定（ワールド座標からスクリーン座標へ変換）
+	if (camera_ && spriteHpBG_ && spriteHpBar_) {
+		KamataEngine::Vector3 hpWorldPos = worldTransform_.translation_;
+		hpWorldPos.y += 3.2f; // ボスの頭上に配置
+
+		KamataEngine::Matrix4x4 matViewProj = MultiplyMatrix(camera_->matView, camera_->matProjection);
+
+		float x = hpWorldPos.x * matViewProj.m[0][0] + hpWorldPos.y * matViewProj.m[1][0] + hpWorldPos.z * matViewProj.m[2][0] + matViewProj.m[3][0];
+		float y = hpWorldPos.x * matViewProj.m[0][1] + hpWorldPos.y * matViewProj.m[1][1] + hpWorldPos.z * matViewProj.m[2][1] + matViewProj.m[3][1];
+		float w = hpWorldPos.x * matViewProj.m[0][3] + hpWorldPos.y * matViewProj.m[1][3] + hpWorldPos.z * matViewProj.m[2][3] + matViewProj.m[3][3];
+
+		if (w != 0.0f) {
+			x /= w;
+			y /= w;
+		}
+
+		float screenX = (x + 1.0f) * 0.5f * 1280.0f;
+		float screenY = (1.0f - y) * 0.5f * 720.0f;
+
+		float maxBarWidth = 120.0f;
+		float barHeight = 12.0f;
+		float currentBarWidth = maxBarWidth * (std::max)(0.0f, static_cast<float>(hp_) / static_cast<float>(maxHp_));
+
+		// 背景バーの設定
+		spriteHpBG_->SetPosition({screenX - maxBarWidth * 0.5f, screenY - barHeight * 0.5f});
+		spriteHpBG_->SetSize({maxBarWidth, barHeight});
+		spriteHpBG_->SetColor({0.2f, 0.2f, 0.2f, 0.8f});
+
+		// HP残量バーの設定
+		spriteHpBar_->SetPosition({screenX - maxBarWidth * 0.5f, screenY - barHeight * 0.5f});
+		spriteHpBar_->SetSize({currentBarWidth, barHeight});
+		spriteHpBar_->SetColor({1.0f, 0.2f, 0.2f, 1.0f});
+	}
 }
 
 void BossEnemy::OnCollision(Player* player) {
@@ -139,6 +220,14 @@ void BossEnemy::Draw() {
 		modelHead_->Draw(worldTransformHead_, *camera_);
 		modelLeft_->Draw(worldTransformLeft_, *camera_);
 		modelRight_->Draw(worldTransformRight_, *camera_);
+	}
+
+	// ★HPバーの描画
+	if (spriteHpBG_ && spriteHpBar_ && hp_ > 0) {
+		KamataEngine::Sprite::PreDraw();
+		spriteHpBG_->Draw();
+		spriteHpBar_->Draw();
+		KamataEngine::Sprite::PostDraw();
 	}
 }
 
