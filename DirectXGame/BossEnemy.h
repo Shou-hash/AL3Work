@@ -11,6 +11,16 @@ enum class BossEnemyLRDirection {
 	kRight,
 };
 
+// ★ ボスの行動状態
+enum class BossState {
+	kWalk,             // 通常移動
+	kAttackCharge,     // 突進攻撃溜め（プレイヤーの方向を向く）
+	kAttackDash,       // 突進攻撃（その方向へ移動）
+	kAttackSlamCharge, // 両手叩きつけ溜め（両手を高く振り上げる）
+	kAttackSlam,       // 両手叩きつけ攻撃（両手を振り下ろす）
+	kAttackRecoil,     // 攻撃余韻（硬直）
+};
+
 class BossEnemy : public BaseEnemy {
 public:
 	BossEnemy() = default;
@@ -26,13 +36,24 @@ public:
 	void OnDead() override;
 	AABB GetAABB() const override;
 
+	// ★ 手とプレイヤーの当たり判定用AABB取得メソッド
+	AABB GetLeftHandAABB() const;
+	AABB GetRightHandAABB() const;
+
 	int32_t GetHp() const { return hp_; }
+
+	// ★ プレイヤーポインタの設定
+	void SetPlayer(Player* player) { player_ = player; }
+
+	// ★ 攻撃中（無敵状態）かどうか
+	bool IsAttacking() const { return state_ != BossState::kWalk; }
 
 private:
 	KamataEngine::Matrix4x4 MultiplyMatrix(const KamataEngine::Matrix4x4& a, const KamataEngine::Matrix4x4& b);
 
 	KamataEngine::Camera* camera_ = nullptr;
 	MapChipField* mapChipField_ = nullptr;
+	Player* player_ = nullptr; // ★ プレイヤーポインタ
 
 	// 4部位のモデル
 	KamataEngine::Model* modelBody_ = nullptr;
@@ -53,9 +74,25 @@ private:
 	int32_t maxHp_ = 5;
 	float damageCooldown_ = 0.0f;
 
-	// 歩行移動関連
+	// 歩行移動および攻撃関連
 	BossEnemyLRDirection lrDirection_ = BossEnemyLRDirection::kLeft;
+	BossState state_ = BossState::kWalk; // ★ 現在の行動状態
+
+	float attackCooldown_ = 0.0f; // ★ 攻撃のクールタイム
+	float attackTimer_ = 0.0f;    // ★ 攻撃動作のタイマー
+
 	static inline const float kWalkspeed = 0.03f;
+	static inline const float kDashSpeed = 0.42f; // ★ 突進攻撃速度
+
+	// ★ 攻撃制御パラメータ設定
+	static inline const float kAttackSearchDistanceX = 6.0f;  // 攻撃検知X距離
+	static inline const float kAttackSearchDistanceY = 3.0f;  // 攻撃検知Y距離
+	static inline const float kChargeDuration = 0.5f;         // 溜め時間（秒）
+	static inline const float kDashDuration = 0.8f;           // 突進時間（秒）
+	static inline const float kSlamChargeDuration = 0.6f;     // 叩きつけ溜め時間（秒）
+	static inline const float kSlamDuration = 0.4f;           // 叩きつけ時間（秒）
+	static inline const float kRecoilDuration = 0.5f;         // 余韻時間（秒）
+	static inline const float kAttackCooldownDuration = 2.5f; // 攻撃クールダウン（秒）
 
 	// HPバー表示用スプライト
 	uint32_t textureHandle_ = 0;

@@ -3,7 +3,7 @@
 #include "Enemy.h"
 #include "GlobalVariables.h"
 #include "HitEffect.h"
-#include "Item.h" // ★追加
+#include "Item.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "ShieldEnemy.h"
@@ -48,7 +48,7 @@ GameScene::~GameScene() {
 	delete modelHammer_;
 
 	delete modelPlayerHp_;
-	delete modelItemHp_; // ★追加
+	delete modelItemHp_;
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -60,7 +60,6 @@ GameScene::~GameScene() {
 	}
 	effects_.clear();
 
-	// ★追加：アイテムリストの解放
 	for (Item* item : items_) {
 		delete item;
 	}
@@ -75,28 +74,23 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	isBossSpawned_ = false;
 
 	// ステージ切り替え時に前回のデータを完全にクリアする
-	// 1. プレイヤーのスマートポインタを解放
 	player_.reset();
 
-	// 2. 敵キャラクターリストの解放とクリア
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
 	}
 	enemies_.clear();
 
-	// 3. エフェクトリストの解放とクリア
 	for (BaseEffect* effect : effects_) {
 		delete effect;
 	}
 	effects_.clear();
 
-	// 4. ドロップアイテムリストの解放とクリア（★追加）
 	for (Item* item : items_) {
 		delete item;
 	}
 	items_.clear();
 
-	// 5. マップチップ（ブロック）のWorldTransform配列の解放とクリア
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
 			delete worldTransformBlock;
@@ -104,7 +98,6 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	}
 	worldTransformBlocks_.clear();
 
-	// 6. 既存のマップチップフィールドのインスタンスがあれば破棄
 	if (mapChipField_) {
 		delete mapChipField_;
 		mapChipField_ = nullptr;
@@ -114,7 +107,6 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	Player::RegisterGlobalVariables();
 	Enemy::RegisterGlobalVariables();
 
-	// 全ファイルのロード後に登録値を適用
 	GlobalVariables::GetInstance()->LoadFiles();
 	Player::ApplyGlobalVariables();
 	Enemy::ApplyGlobalVariables();
@@ -123,10 +115,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	fade_->Initialize();
 	fade_->Start(Fade::Status::FadeIn, 1.0f);
 
-	// ※ここで新しくクリアな状態のインスタンスが作られます
 	mapChipField_ = new MapChipField;
 
-	// ★ 現在のステージインデックスから CSV ファイルパスを生成 (stageDatas0.csv, stageDatas1.csv, stageDatas2.csv)
 	int currentStageIdx = stageManager_ ? stageManager_->GetCurrentStageIndex() : 0;
 	std::string stageFileName = "Resources/stageDatas" + std::to_string(currentStageIdx) + ".csv";
 	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
@@ -138,7 +128,6 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	debugCamera_ = new DebugCamera(1280, 720);
 	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
 
-	// 4つの各部位のOBJファイルを読み込み
 	modelPlayerHead_ = Model::CreateFromOBJ("player_head", true);
 	modelPlayerBody_ = Model::CreateFromOBJ("player_body", true);
 	modelPlayerLeft_ = Model::CreateFromOBJ("player_left", true);
@@ -157,7 +146,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelHitEffect_ = Model::CreateFromOBJ("particle", true);
 
 	modelPlayerHp_ = Model::CreateFromOBJ("itemHP", true);
-	modelItemHp_ = Model::CreateFromOBJ("itemHP", true); // ★追加：アイテムモデル読み込み
+	modelItemHp_ = Model::CreateFromOBJ("itemHP", true);
 
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
@@ -165,17 +154,14 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
-	GenerateFieldObjects();
-
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
+
+	GenerateFieldObjects();
 
 	if (player_) {
 		cameraController_->SetTarget(player_.get());
 		player_->SetCameraController(cameraController_.get());
-	}
-
-	if (player_) {
 		player_->SetModelHammer(modelHammer_);
 	}
 
@@ -225,7 +211,6 @@ void GameScene::GenerateFieldObjects() {
 
 				player_->Initialize(modelPlayerBody_, &camera_, playerPosition);
 				player_->SetMapChipField(mapChipField_);
-
 				player_->SetModelHammer(modelHammer_);
 
 				break;
@@ -248,23 +233,26 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 	switch (subID) {
 	case 0: {
 		Enemy* enemy = new Enemy();
-		// ★第4引数に mapChipField_ を追加して初期化
 		enemy->Initialize(modelEnemy_, &camera_, enemyPosition, mapChipField_);
 		enemies_.push_back(enemy);
 		break;
 	}
 	case 1: {
 		ShieldEnemy* enemy = new ShieldEnemy();
-		// ★第4引数に mapChipField_ を追加して初期化
 		enemy->Initialize(modelShieldEnemy_, &camera_, enemyPosition, mapChipField_);
 		enemies_.push_back(enemy);
 		break;
 	}
-	case 2: { // ★追加：E2判定時
+	case 2: {
 		BossEnemy* enemy = new BossEnemy();
 		enemy->Initialize(modelBossBody_, modelBossHead_, modelBossLeft_, modelBossRight_, &camera_, enemyPosition, mapChipField_);
 		enemies_.push_back(enemy);
 		isBossSpawned_ = true;
+
+		// カメラコントローラーにボスを登録
+		if (cameraController_) {
+			cameraController_->SetBoss(enemy);
+		}
 		break;
 	}
 	default:
@@ -277,7 +265,6 @@ bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
 }
 
 void GameScene::Update() {
-	// ゲームシーンでのみ ImGui (GlobalVariables) を更新・表示する
 	GlobalVariables::GetInstance()->Update();
 	Player::ApplyGlobalVariables();
 	Enemy::ApplyGlobalVariables();
@@ -292,17 +279,14 @@ void GameScene::Update() {
 		int currentIdx = stageManager_->GetCurrentStageIndex();
 		int stageCount = stageManager_->GetStageCount();
 
-		// ★ スライダー変更時にインデックスを更新し、リロードフラグを立てる
 		if (ImGui::SliderInt("Stage Index", &currentIdx, 0, stageCount - 1)) {
 			stageManager_->SetCurrentStageIndex(currentIdx);
 			reloadRequested_ = true;
 		}
 	}
 
-	// プレイヤーの各部位の調整用ImGuiを追加
 	if (player_) {
 		if (ImGui::TreeNode("Player Part Transforms")) {
-			// 各部位の調整項目を展開
 			if (ImGui::TreeNode("Head")) {
 				float* headPos = &(player_->GetWorldTransformHead().translation_.x);
 				float* headRot = &(player_->GetWorldTransformHead().rotation_.x);
@@ -313,7 +297,6 @@ void GameScene::Update() {
 				ImGui::TreePop();
 			}
 
-			// Body の調整
 			if (ImGui::TreeNode("Body")) {
 				float* bodyPos = &(player_->GetWorldTransformBody().translation_.x);
 				float* bodyRot = &(player_->GetWorldTransformBody().rotation_.x);
@@ -324,7 +307,6 @@ void GameScene::Update() {
 				ImGui::TreePop();
 			}
 
-			// Left の調整
 			if (ImGui::TreeNode("Left Arm/Leg")) {
 				float* leftPos = &(player_->GetWorldTransformLeft().translation_.x);
 				float* leftRot = &(player_->GetWorldTransformLeft().rotation_.x);
@@ -335,7 +317,6 @@ void GameScene::Update() {
 				ImGui::TreePop();
 			}
 
-			// Right の調整
 			if (ImGui::TreeNode("Right Arm/Leg")) {
 				float* rightPos = &(player_->GetWorldTransformRight().translation_.x);
 				float* rightRot = &(player_->GetWorldTransformRight().rotation_.x);
@@ -416,7 +397,6 @@ void GameScene::ChangePhase() {
 			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
 			effects_.push_back(deathParticles);
 		} else if (isBossSpawned_) {
-			// ボスが撃破されたか判定
 			bool bossAlive = false;
 			for (BaseEnemy* enemy : enemies_) {
 				if (dynamic_cast<BossEnemy*>(enemy) && !enemy->IsDead()) {
@@ -474,9 +454,12 @@ void GameScene::UpdatePlay() {
 
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
+			// ★ ボスにプレイヤーポインタを設定
+			if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
+				boss->SetPlayer(player_.get());
+			}
 			enemy->Update();
 
-			// ★追加：敵死亡時にドロップアイテム（itemHp.obj）を生成する処理
 			if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
 				if (normalEnemy->IsItemSpawnRequested()) {
 					Item* newItem = new Item();
@@ -495,13 +478,11 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// ★追加：ドロップアイテムの更新およびプレイヤーによる自動拾い・HP回復判定
 	for (auto it = items_.begin(); it != items_.end();) {
 		Item* item = *it;
 		if (item) {
 			item->Update();
 
-			// プレイヤーがアイテムに近づいたら自動で拾ってHPを回復
 			if (player_ && !item->IsDead()) {
 				Player::AABB playerAABB = player_->GetAABB();
 				Item::AABB itemAABB = item->GetAABB();
@@ -510,7 +491,7 @@ void GameScene::UpdatePlay() {
 				    playerAABB.min.z < itemAABB.max.z && playerAABB.max.z > itemAABB.min.z) {
 
 					if (playerHp_) {
-						playerHp_->IncreaseHp(); // ★HP回復
+						playerHp_->IncreaseHp();
 					}
 					item->OnCollision(player_.get());
 				}
@@ -654,7 +635,6 @@ void GameScene::Draw() {
 		}
 	}
 
-	// ★追加：ドロップアイテムの描画
 	for (Item* item : items_) {
 		if (item) {
 			Model::PreDraw();

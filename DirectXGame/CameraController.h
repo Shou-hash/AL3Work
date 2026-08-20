@@ -2,6 +2,7 @@
 #include "Kamataengine.h"
 
 class Player;
+class BossEnemy;
 
 struct Rect {
 	float left = 0.0f;
@@ -27,6 +28,9 @@ public:
 	// 追従対象の設定
 	void SetTarget(Player* target) { target_ = target; }
 
+	// ボスの設定
+	void SetBoss(BossEnemy* boss) { boss_ = boss; }
+
 	void SetMovableArea(const Rect& area) { movableArea_ = area; }
 
 	// モード管理用のアクセッサ
@@ -36,10 +40,14 @@ public:
 	// 画面の左端座標を取得する（プレイヤーの押し出し・挟まれ判定用）
 	float GetCameraLeftX() const;
 
+	// ボス演出中かどうかの判定
+	bool IsBossPerformance() const { return isBossPerformance_; }
+
 private:
 	// モードごとの更新処理
 	void UpdateFollow();
 	void UpdateForcedScroll();
+	void UpdateBossPerformance();
 
 	// プレイヤーを画面内に押し戻す処理
 	void ConstrainPlayerInScreen();
@@ -47,6 +55,7 @@ private:
 private:
 	KamataEngine::Camera* camera_ = nullptr;
 	Player* target_ = nullptr;
+	BossEnemy* boss_ = nullptr;
 	KamataEngine::Vector3 targetOffset_ = {0.0f, 0.5f, -15.0f};
 
 	KamataEngine::Vector3 targetPosition_;
@@ -61,4 +70,15 @@ private:
 	CameraMode mode_ = CameraMode::kFollow;             // 現在のカメラモード
 	static inline const float kScrollSpeed = 0.03f;     // 強制スクロールの速度
 	static inline const float kHalfScreenWidth = 10.0f; // 画面の中心から端までのワールド座標上の幅（調整可能）
+
+	// ボス演出用変数
+	bool isBossPerformance_ = false;            // ボス演出中フラグ
+	bool isBossPerformanceFinished_ = false;    // ボス演出完了フラグ
+	float bossEventTimer_ = 0.0f;               // 演出経過時間タイマー
+	KamataEngine::Vector3 bossEventStartPos_{}; // 演出開始時のカメラ位置
+
+	static inline const float kBossTriggerDistance = 12.0f; // ボス演出が発動する距離
+	static inline const float kBossInTime = 1.0f;           // ボスへ移動・ズームインにかかる時間
+	static inline const float kBossHoldTime = 1.5f;         // ボスを映し続ける時間
+	static inline const float kBossOutTime = 1.0f;          // プレイヤーへ復帰・ズームアウトにかかる時間
 };
