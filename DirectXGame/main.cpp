@@ -105,15 +105,20 @@ void UpdateScene() {
 		}
 		break;
 
-	case Scene::kEnd: // ★ エンドシーンの更新と遷移分岐
+	case Scene::kEnd: // エンドシーンの更新と遷移分岐
 		endScene->Update();
 
 		if (endScene->IsFinished()) {
 			EndScene::MenuType selected = endScene->GetSelectedMenu();
 			if (selected == EndScene::MenuType::Return) {
-				// ゲームに戻る (GameSceneの状態を引き継いでそのまま再開、必要に応じて内部フェーズをkPlayに戻す等の処理)
-				ChangeScene(Scene::kGame);
-				// 本来はGameScene側のInitializeを呼ばずフェードイン等のみ更新する設計に合わせます
+				// ★ セレクトシーンに戻る
+				ChangeScene(Scene::kSelect);
+				selectScene->Initialize(stageManager);
+
+				// ゲームシーンのクリーンアップ＆再生成
+				delete gameScene;
+				gameScene = nullptr;
+				gameScene = new GameScene();
 			} else if (selected == EndScene::MenuType::Retry) {
 				// リトライ (現在のステージインデックスを維持したままGameを再生成して初期化)
 				delete gameScene;

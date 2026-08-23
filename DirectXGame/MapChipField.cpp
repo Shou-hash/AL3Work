@@ -10,7 +10,8 @@ namespace {
 std::map<char, MapChipType> mapChipTypeTable = {
     {'B', MapChipType::kBlock },
     {'P', MapChipType::kPlayer},
-    {'E', MapChipType::kEnemy }, // 追加（E0, E1 などで指定可能になります）
+    {'E', MapChipType::kEnemy },
+    {'G', MapChipType::kGoal  }, // ★追加：ゴール（G0で指定可能）
 };
 } // namespace
 

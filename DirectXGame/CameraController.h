@@ -43,11 +43,16 @@ public:
 	// ボス演出中かどうかの判定
 	bool IsBossPerformance() const { return isBossPerformance_; }
 
+	// ★追加：ゴール演出の開始と判定
+	void StartGoalPerformance(const KamataEngine::Vector3& goalPos);
+	bool IsGoalPerformance() const { return isGoalPerformance_; }
+
 private:
 	// モードごとの更新処理
 	void UpdateFollow();
 	void UpdateForcedScroll();
 	void UpdateBossPerformance();
+	void UpdateGoalPerformance(); // ★追加：ゴール演出更新
 
 	// プレイヤーを画面内に押し戻す処理
 	void ConstrainPlayerInScreen();
@@ -81,4 +86,15 @@ private:
 	static inline const float kBossInTime = 1.0f;           // ボスへ移動・ズームインにかかる時間
 	static inline const float kBossHoldTime = 1.5f;         // ボスを映し続ける時間
 	static inline const float kBossOutTime = 1.0f;          // プレイヤーへ復帰・ズームアウトにかかる時間
+
+	// ★追加：ゴール演出用変数
+	bool isGoalPerformance_ = false;            // ゴール演出中フラグ
+	bool isGoalPerformanceFinished_ = false;    // ゴール演出完了フラグ
+	float goalEventTimer_ = 0.0f;               // ゴール演出タイマー
+	KamataEngine::Vector3 goalEventStartPos_{}; // ゴール演出開始時のカメラ位置
+	KamataEngine::Vector3 goalTargetPos_{};     // ゴールの目標カメラ位置
+
+	static inline const float kGoalInTime = 1.0f;   // ゴールへ移動・ズームインにかかる時間
+	static inline const float kGoalHoldTime = 1.5f; // ゴールを映し続ける時間
+	static inline const float kGoalOutTime = 1.0f;  // プレイヤーへ復帰にかかる時間
 };

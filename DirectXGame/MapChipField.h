@@ -8,6 +8,7 @@ enum class MapChipType {
 	kBlock,  // ブロック
 	kPlayer, // プレイヤー
 	kEnemy,  // 敵
+	kGoal,   // ★追加：ゴール
 };
 
 // 1マス分のデータ

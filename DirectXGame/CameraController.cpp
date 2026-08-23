@@ -18,6 +18,10 @@ void CameraController::Initialize(KamataEngine::Camera* camera) {
 	isBossPerformance_ = false;
 	isBossPerformanceFinished_ = false;
 	bossEventTimer_ = 0.0f;
+
+	isGoalPerformance_ = false;
+	isGoalPerformanceFinished_ = false;
+	goalEventTimer_ = 0.0f;
 }
 
 void CameraController::Reset() {
@@ -40,6 +44,21 @@ void CameraController::Reset() {
 	isBossPerformance_ = false;
 	isBossPerformanceFinished_ = false;
 	bossEventTimer_ = 0.0f;
+
+	isGoalPerformance_ = false;
+	isGoalPerformanceFinished_ = false;
+	goalEventTimer_ = 0.0f;
+}
+
+void CameraController::StartGoalPerformance(const KamataEngine::Vector3& goalPos) {
+	isGoalPerformance_ = true;
+	isGoalPerformanceFinished_ = false;
+	goalEventTimer_ = 0.0f;
+	if (camera_) {
+		goalEventStartPos_ = camera_->translation_;
+	}
+	goalTargetPos_ = goalPos;
+	goalTargetPos_.z -= 7.5f; // 通常(-15.0f)より近づけてズームイン
 }
 
 void CameraController::Update() {
@@ -48,23 +67,29 @@ void CameraController::Update() {
 	}
 
 	// ボスへの接近判定と演出の開始
-	if (boss_ && !boss_->IsDead() && !isBossPerformance_ && !isBossPerformanceFinished_) {
-		const KamataEngine::WorldTransform& playerTransform = target_->GetWorldTransform();
-		const KamataEngine::WorldTransform& bossTransform = boss_->GetWorldTransform();
+	if (boss_) {
+		if (boss_->IsDead()) {
+			boss_ = nullptr; // ボス死亡時にポインタをクリア
+		} else if (!isBossPerformance_ && !isBossPerformanceFinished_) {
+			const KamataEngine::WorldTransform& playerTransform = target_->GetWorldTransform();
+			const KamataEngine::WorldTransform& bossTransform = boss_->GetWorldTransform();
 
-		float dx = bossTransform.translation_.x - playerTransform.translation_.x;
-		float dy = bossTransform.translation_.y - playerTransform.translation_.y;
-		float dist = std::sqrt(dx * dx + dy * dy);
+			float dx = bossTransform.translation_.x - playerTransform.translation_.x;
+			float dy = bossTransform.translation_.y - playerTransform.translation_.y;
+			float dist = std::sqrt(dx * dx + dy * dy);
 
-		if (dist <= kBossTriggerDistance) {
-			isBossPerformance_ = true;
-			bossEventTimer_ = 0.0f;
-			bossEventStartPos_ = camera_->translation_;
+			if (dist <= kBossTriggerDistance) {
+				isBossPerformance_ = true;
+				bossEventTimer_ = 0.0f;
+				bossEventStartPos_ = camera_->translation_;
+			}
 		}
 	}
 
 	// モードに応じてカメラの座標を更新
-	if (isBossPerformance_) {
+	if (isGoalPerformance_) {
+		UpdateGoalPerformance();
+	} else if (isBossPerformance_) {
 		UpdateBossPerformance();
 	} else if (mode_ == CameraMode::kFollow) {
 		UpdateFollow();
@@ -72,9 +97,11 @@ void CameraController::Update() {
 		UpdateForcedScroll();
 	}
 
-	// 移動範囲（movableArea_）に収まるように制限（クランプ）
-	camera_->translation_.x = std::clamp(camera_->translation_.x, movableArea_.left, movableArea_.right);
-	camera_->translation_.y = std::clamp(camera_->translation_.y, movableArea_.bottom, movableArea_.top);
+	// 移動範囲（movableArea_）に収まるように制限（演出中は目標地点まで移動できるよう制限を解除）
+	if (!isBossPerformance_ && !isGoalPerformance_) {
+		camera_->translation_.x = std::clamp(camera_->translation_.x, movableArea_.left, movableArea_.right);
+		camera_->translation_.y = std::clamp(camera_->translation_.y, movableArea_.bottom, movableArea_.top);
+	}
 
 	// 画面内への押し出し制限処理（強制スクロール時などに機能）
 	ConstrainPlayerInScreen();
@@ -161,23 +188,69 @@ void CameraController::UpdateBossPerformance() {
 	}
 }
 
+void CameraController::UpdateGoalPerformance() {
+	if (!target_ || !camera_) {
+		isGoalPerformance_ = false;
+		return;
+	}
+
+	goalEventTimer_ += 1.0f / 60.0f;
+
+	const KamataEngine::WorldTransform& playerWorldTransform = target_->GetWorldTransform();
+
+	// 復帰時の目標位置（プレイヤー追従位置）
+	KamataEngine::Vector3 playerTargetPos;
+	playerTargetPos.x = playerWorldTransform.translation_.x + targetOffset_.x;
+	playerTargetPos.y = playerWorldTransform.translation_.y + targetOffset_.y;
+	playerTargetPos.z = playerWorldTransform.translation_.z + targetOffset_.z;
+
+	float totalTime = kGoalInTime + kGoalHoldTime + kGoalOutTime;
+
+	if (goalEventTimer_ <= kGoalInTime) {
+		// 1. イージングでゴールへ移動＆ズームイン
+		float t = goalEventTimer_ / kGoalInTime;
+		t = std::clamp(t, 0.0f, 1.0f);
+		float easeVal = EaseInOutCubic(t);
+
+		camera_->translation_.x = Lerp(goalEventStartPos_.x, goalTargetPos_.x, easeVal);
+		camera_->translation_.y = Lerp(goalEventStartPos_.y, goalTargetPos_.y, easeVal);
+		camera_->translation_.z = Lerp(goalEventStartPos_.z, goalTargetPos_.z, easeVal);
+
+	} else if (goalEventTimer_ <= kGoalInTime + kGoalHoldTime) {
+		// 2. ゴールを中心に画面を維持
+		camera_->translation_ = goalTargetPos_;
+
+	} else if (goalEventTimer_ <= totalTime) {
+		// 3. イージングでプレイヤー位置へ復帰＆ズームアウト
+		float t = (goalEventTimer_ - kGoalInTime - kGoalHoldTime) / kGoalOutTime;
+		t = std::clamp(t, 0.0f, 1.0f);
+		float easeVal = EaseInOutCubic(t);
+
+		camera_->translation_.x = Lerp(goalTargetPos_.x, playerTargetPos.x, easeVal);
+		camera_->translation_.y = Lerp(goalTargetPos_.y, playerTargetPos.y, easeVal);
+		camera_->translation_.z = Lerp(goalTargetPos_.z, playerTargetPos.z, easeVal);
+
+	} else {
+		// 演出終了
+		isGoalPerformance_ = false;
+		isGoalPerformanceFinished_ = true;
+	}
+}
+
 void CameraController::ConstrainPlayerInScreen() {
 	// プレイヤーが死亡している場合は処理しない
 	if (target_->IsDead()) {
 		return;
 	}
-
-	// カメラの左端位置を計算
-	// float cameraLeftX = GetCameraLeftX();
-
-	// プレイヤーの現在のトランスフォーム（非constで座標を書き換えるためにキャスト、またはPlayer側に変更関数を用意する代わりに直接アクセスを想定）
-	// PlayerクラスのworldTransform_を書き換えるため、Player側に安全な押し出しを判定させるために左端を通知するアプローチをとります。
-	// ※このスクリプトではPlayer::Update側からカメラ左端を参照して補正・死亡判定を行うため、ここでは何もしません（Player.cpp側で統合処理します）。
 }
 
 float CameraController::GetCameraLeftX() const {
 	if (!camera_) {
 		return 0.0f;
+	}
+	// カメラ演出中は押し出し判定をスキップするため、十分小さな値を返す
+	if (isBossPerformance_ || isGoalPerformance_) {
+		return -9999.0f;
 	}
 	return camera_->translation_.x - kHalfScreenWidth;
 }

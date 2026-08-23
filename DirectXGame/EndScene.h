@@ -17,7 +17,7 @@ public:
 	};
 
 	enum class MenuType {
-		Return, // ゲームに戻る
+		Return, // セレクトシーンに戻る (ステージ選択)
 		Retry,  // リトライ
 		Title,  // タイトルに戻る
 		Exit,   // ゲーム終了

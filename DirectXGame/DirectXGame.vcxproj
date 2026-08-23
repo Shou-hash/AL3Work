@@ -173,6 +173,7 @@
     <ClCompile Include="Fade.cpp" />
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="GlobalVariables.cpp" />
+    <ClCompile Include="Goal.cpp" />
     <ClCompile Include="HitEffect.cpp" />
     <ClCompile Include="Item.cpp" />
     <ClCompile Include="main.cpp" />
@@ -294,6 +295,7 @@
     <ClInclude Include="Fade.h" />
     <ClInclude Include="GameScene.h" />
     <ClInclude Include="GlobalVariables.h" />
+    <ClInclude Include="Goal.h" />
     <ClInclude Include="HitEffect.h" />
     <ClInclude Include="Item.h" />
     <ClInclude Include="MapChipField.h" />

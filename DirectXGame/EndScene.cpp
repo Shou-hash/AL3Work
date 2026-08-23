@@ -149,7 +149,7 @@ void EndScene::Update() {
 #ifdef _DEBUG
 	ImGui::Begin("End Scene");
 	ImGui::Text("Select item with Up/Down arrow keys and press SPACE.");
-	const char* menuNames[] = {"Return", "Retry", "Title", "Exit"};
+	const char* menuNames[] = {"Select Scene", "Retry", "Title", "Exit"};
 	ImGui::Text("Current Selection: %s", menuNames[static_cast<int32_t>(currentSelect_)]);
 	ImGui::End();
 #endif

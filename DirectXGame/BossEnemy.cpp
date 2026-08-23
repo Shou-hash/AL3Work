@@ -449,37 +449,3 @@ BaseEnemy::AABB BossEnemy::GetAABB() const {
 
 	return aabb;
 }
-
-// ★ 左手の当たり判定用AABBを取得（サイズを正しく修正）
-BaseEnemy::AABB BossEnemy::GetLeftHandAABB() const {
-	if (isCollisionDisabled_ || isDead_) {
-		return AABB{
-		    {0.0f, 0.0f, 0.0f},
-            {0.0f, 0.0f, 0.0f}
-        };
-	}
-
-	AABB aabb;
-	KamataEngine::Vector3 pos = {worldTransformLeft_.matWorld_.m[3][0], worldTransformLeft_.matWorld_.m[3][1], worldTransformLeft_.matWorld_.m[3][2]};
-
-	aabb.min = {pos.x - 1.5f, pos.y - 1.5f, pos.z - 1.5f};
-	aabb.max = {pos.x + 1.5f, pos.y + 1.5f, pos.z + 1.5f};
-	return aabb;
-}
-
-// ★ 右手の当たり判定用AABBを取得（サイズを正しく修正）
-BaseEnemy::AABB BossEnemy::GetRightHandAABB() const {
-	if (isCollisionDisabled_ || isDead_) {
-		return AABB{
-		    {0.0f, 0.0f, 0.0f},
-            {0.0f, 0.0f, 0.0f}
-        };
-	}
-
-	AABB aabb;
-	KamataEngine::Vector3 pos = {worldTransformRight_.matWorld_.m[3][0], worldTransformRight_.matWorld_.m[3][1], worldTransformRight_.matWorld_.m[3][2]};
-
-	aabb.min = {pos.x - 1.5f, pos.y - 1.5f, pos.z - 1.5f};
-	aabb.max = {pos.x + 1.5f, pos.y + 1.5f, pos.z + 1.5f};
-	return aabb;
-}

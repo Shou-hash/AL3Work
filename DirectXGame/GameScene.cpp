@@ -2,6 +2,7 @@
 #include "DeathParticles.h"
 #include "Enemy.h"
 #include "GlobalVariables.h"
+#include "Goal.h"
 #include "HitEffect.h"
 #include "Item.h"
 #include "Matrix4x4.h"
@@ -49,6 +50,7 @@ GameScene::~GameScene() {
 
 	delete modelPlayerHp_;
 	delete modelItemHp_;
+	delete modelGoal_; // ★追加：ゴール用モデルの解放
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -72,9 +74,12 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 	isBossSpawned_ = false;
+	isGoalReached_ = false;                 // ★追加：ゴール到達フラグの初期化
+	isBossDefeatedGoalPerfStarted_ = false; // ★追加：ボス撃破後ゴール演出フラグの初期化
 
 	// ステージ切り替え時に前回のデータを完全にクリアする
 	player_.reset();
+	goal_.reset(); // ★追加：前回のゴールデータクリア
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -147,6 +152,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	modelPlayerHp_ = Model::CreateFromOBJ("itemHP", true);
 	modelItemHp_ = Model::CreateFromOBJ("itemHP", true);
+	modelGoal_ = Model::CreateFromOBJ("goal", true); // ★追加：ゴール用モデルの生成
 
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
@@ -182,6 +188,18 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	Rect stageArea = {10.0f, 90.0f, 5.0f, 100.0f};
 	cameraController_->SetMovableArea(stageArea);
 	cameraController_->Reset();
+
+	// ★ ステージごとのゴール表示・カメラ演出の制御
+	if (goal_) {
+		if (currentStageIdx == 0 || currentStageIdx == 1) {
+			// ステージ0, 1: ゴールを表示・判定有効にしてカメラ演出開始
+			goal_->SetIsActive(true);
+			cameraController_->StartGoalPerformance(goal_->GetWorldTransform().translation_);
+		} else if (currentStageIdx == 2) {
+			// ステージ2: 最初はゴールを非表示・判定無効にする
+			goal_->SetIsActive(false);
+		}
+	}
 }
 
 void GameScene::GenerateFieldObjects() {
@@ -217,6 +235,15 @@ void GameScene::GenerateFieldObjects() {
 			}
 			case MapChipType::kEnemy: {
 				GenerateEnemy(j, i);
+				break;
+			}
+			case MapChipType::kGoal: { // ★追加：ゴールの生成処理
+				if (goal_ != nullptr) {
+					break;
+				}
+				Vector3 goalPosition = mapChipField_->GetMapChipPositionByIndex(j, i);
+				goal_ = std::make_unique<Goal>();
+				goal_->Initialize(modelGoal_, &camera_, goalPosition);
 				break;
 			}
 			default:
@@ -331,6 +358,20 @@ void GameScene::Update() {
 		}
 	}
 
+	if (goal_) {
+		if (ImGui::TreeNode("Goal Transform")) {
+			float* goalPos = &(goal_->GetWorldTransform().translation_.x);
+			float* goalRot = &(goal_->GetWorldTransform().rotation_.x);
+			float* goalScale = &(goal_->GetWorldTransform().scale_.x);
+
+			ImGui::DragFloat3("Position", goalPos, 0.01f);
+			ImGui::DragFloat3("Rotation", goalRot, 0.01f);
+			ImGui::DragFloat3("Scale", goalScale, 0.01f);
+
+			ImGui::TreePop();
+		}
+	}
+
 	ImGui::End();
 #endif
 
@@ -396,19 +437,10 @@ void GameScene::ChangePhase() {
 			KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
 			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
 			effects_.push_back(deathParticles);
-		} else if (isBossSpawned_) {
-			bool bossAlive = false;
-			for (BaseEnemy* enemy : enemies_) {
-				if (dynamic_cast<BossEnemy*>(enemy) && !enemy->IsDead()) {
-					bossAlive = true;
-					break;
-				}
-			}
-			if (!bossAlive) {
-				phase_ = Phase::kFadeOut;
-				if (fade_) {
-					fade_->Start(Fade::Status::FadeOut, 1.0f);
-				}
+		} else if (isGoalReached_) { // ★追加：ゴール到達判定
+			phase_ = Phase::kFadeOut;
+			if (fade_) {
+				fade_->Start(Fade::Status::FadeOut, 1.0f);
 			}
 		}
 		break;
@@ -450,6 +482,39 @@ void GameScene::UpdatePlay() {
 
 	if (playerHp_) {
 		playerHp_->Update(camera_.translation_);
+	}
+
+	// ★追加：ボス撃破時のゴール出現およびカメラ演出処理
+	if (isBossSpawned_ && goal_) {
+		bool bossAlive = false;
+		for (BaseEnemy* enemy : enemies_) {
+			if (dynamic_cast<BossEnemy*>(enemy) && !enemy->IsDead()) {
+				bossAlive = true;
+				break;
+			}
+		}
+		if (!bossAlive && !isBossDefeatedGoalPerfStarted_) {
+			isBossDefeatedGoalPerfStarted_ = true;
+			goal_->SetIsActive(true); // ゴール出現（表示＆当たり判定を有効化）
+			if (cameraController_) {
+				cameraController_->StartGoalPerformance(goal_->GetWorldTransform().translation_); // カメラをゴール位置へ移動＆ズーム演出
+			}
+		}
+	}
+
+	// ★追加：ゴールの更新と衝突判定
+	if (goal_) {
+		goal_->Update();
+
+		if (player_ && !player_->IsDead() && goal_->IsActive()) {
+			Player::AABB playerAABB = player_->GetAABB();
+			Goal::AABB goalAABB = goal_->GetAABB();
+
+			if (playerAABB.min.x < goalAABB.max.x && playerAABB.max.x > goalAABB.min.x && playerAABB.min.y < goalAABB.max.y && playerAABB.max.y > goalAABB.min.y && playerAABB.min.z < goalAABB.max.z &&
+			    playerAABB.max.z > goalAABB.min.z) {
+				isGoalReached_ = true;
+			}
+		}
 	}
 
 	for (BaseEnemy* enemy : enemies_) {
@@ -547,6 +612,13 @@ void GameScene::UpdatePlay() {
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
+			// ★追加: 削除する敵がボスの場合は CameraController のポインタをクリア
+			if (dynamic_cast<BossEnemy*>(enemy)) {
+				if (cameraController_) {
+					cameraController_->SetBoss(nullptr);
+				}
+			}
+
 			delete enemy;
 			it = enemies_.erase(it);
 		} else {
@@ -626,6 +698,13 @@ void GameScene::Draw() {
 		}
 	}
 	skydome->Draw();
+
+	// ★追加：ゴールの描画
+	if (goal_) {
+		Model::PreDraw();
+		goal_->Draw();
+		Model::PostDraw();
+	}
 
 	for (BaseEffect* effect : effects_) {
 		if (effect) {

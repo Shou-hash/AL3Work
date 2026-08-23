@@ -5,6 +5,7 @@
 #include "CameraController.h"
 #include "Enemy.h"
 #include "Fade.h"
+#include "Goal.h" // ★追加：Goalクラスのインクルード
 #include "Item.h" // ★追加：Itemクラスのインクルード
 #include "Kamataengine.h"
 #include "MapChipField.h"
@@ -85,11 +86,13 @@ private:
 
 	KamataEngine::Model* modelPlayerHp_ = nullptr;
 	KamataEngine::Model* modelItemHp_ = nullptr; // ★追加：ドロップアイテム用モデルポインタ
+	KamataEngine::Model* modelGoal_ = nullptr;   // ★追加：ゴール用モデルポインタ
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 	std::unique_ptr<Player> player_ = nullptr;
 	std::unique_ptr<CameraController> cameraController_ = nullptr;
 	std::unique_ptr<PlayerHp> playerHp_ = nullptr;
+	std::unique_ptr<Goal> goal_ = nullptr; // ★追加：ゴール
 	MapChipField* mapChipField_ = nullptr;
 
 	std::list<BaseEnemy*> enemies_;
@@ -103,4 +106,10 @@ private:
 
 	// ボス出現判定用フラグ
 	bool isBossSpawned_ = false;
+
+	// ★ ゴール到達判定用フラグ
+	bool isGoalReached_ = false;
+
+	// ★ ボス撃破後のゴール演出開始フラグ
+	bool isBossDefeatedGoalPerfStarted_ = false;
 };

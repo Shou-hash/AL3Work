@@ -36,10 +36,6 @@ public:
 	void OnDead() override;
 	AABB GetAABB() const override;
 
-	// ★ 手とプレイヤーの当たり判定用AABB取得メソッド
-	AABB GetLeftHandAABB() const;
-	AABB GetRightHandAABB() const;
-
 	int32_t GetHp() const { return hp_; }
 
 	// ★ プレイヤーポインタの設定
