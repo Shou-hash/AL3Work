@@ -163,6 +163,7 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AudioManager.cpp" />
     <ClCompile Include="BaseEffect.cpp" />
     <ClCompile Include="BaseEnemy.cpp" />
     <ClCompile Include="BossEnemy.cpp" />
@@ -285,6 +286,7 @@
     <None Include="Resources\shaders\Sprite.hlsli" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AudioManager.h" />
     <ClInclude Include="BaseEffect.h" />
     <ClInclude Include="BaseEnemy.h" />
     <ClInclude Include="BossEnemy.h" />

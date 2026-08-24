@@ -1,4 +1,5 @@
 #include "GameScene.h"
+#include "AudioManager.h"
 #include "DeathParticles.h"
 #include "Enemy.h"
 #include "GlobalVariables.h"
@@ -50,7 +51,7 @@ GameScene::~GameScene() {
 
 	delete modelPlayerHp_;
 	delete modelItemHp_;
-	delete modelGoal_; // ★追加：ゴール用モデルの解放
+	delete modelGoal_; // ゴール用モデルの解放
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -69,17 +70,21 @@ GameScene::~GameScene() {
 }
 
 void GameScene::Initialize(StageManager* stageDataManager) {
+
+	// ★ ゲームシーンに入った時にBGMを再生
+	AudioManager::GetInstance()->PlayBGM(BGMType::kGame);
+
 	stageManager_ = stageDataManager;
 
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 	isBossSpawned_ = false;
-	isGoalReached_ = false;                 // ★追加：ゴール到達フラグの初期化
-	isBossDefeatedGoalPerfStarted_ = false; // ★追加：ボス撃破後ゴール演出フラグの初期化
+	isGoalReached_ = false;                 // ゴール到達フラグの初期化
+	isBossDefeatedGoalPerfStarted_ = false; // ボス撃破後ゴール演出フラグの初期化
 
 	// ステージ切り替え時に前回のデータを完全にクリアする
 	player_.reset();
-	goal_.reset(); // ★追加：前回のゴールデータクリア
+	goal_.reset(); // 前回のゴールデータクリア
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -152,7 +157,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	modelPlayerHp_ = Model::CreateFromOBJ("itemHP", true);
 	modelItemHp_ = Model::CreateFromOBJ("itemHP", true);
-	modelGoal_ = Model::CreateFromOBJ("goal", true); // ★追加：ゴール用モデルの生成
+	modelGoal_ = Model::CreateFromOBJ("goal", true); // ゴール用モデルの生成
 
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
@@ -189,7 +194,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	cameraController_->SetMovableArea(stageArea);
 	cameraController_->Reset();
 
-	// ★ ステージごとのゴール表示・カメラ演出の制御
+	// ステージごとのゴール表示・カメラ演出の制御
 	if (goal_) {
 		if (currentStageIdx == 0 || currentStageIdx == 1) {
 			// ステージ0, 1: ゴールを表示・判定有効にしてカメラ演出開始
@@ -237,7 +242,7 @@ void GameScene::GenerateFieldObjects() {
 				GenerateEnemy(j, i);
 				break;
 			}
-			case MapChipType::kGoal: { // ★追加：ゴールの生成処理
+			case MapChipType::kGoal: { // ゴールの生成処理
 				if (goal_ != nullptr) {
 					break;
 				}
@@ -437,7 +442,7 @@ void GameScene::ChangePhase() {
 			KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
 			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
 			effects_.push_back(deathParticles);
-		} else if (isGoalReached_) { // ★追加：ゴール到達判定
+		} else if (isGoalReached_) { // ゴール到達判定
 			phase_ = Phase::kFadeOut;
 			if (fade_) {
 				fade_->Start(Fade::Status::FadeOut, 1.0f);
@@ -484,7 +489,7 @@ void GameScene::UpdatePlay() {
 		playerHp_->Update(camera_.translation_);
 	}
 
-	// ★追加：ボス撃破時のゴール出現およびカメラ演出処理
+	// ボス撃破時のゴール出現およびカメラ演出処理
 	if (isBossSpawned_ && goal_) {
 		bool bossAlive = false;
 		for (BaseEnemy* enemy : enemies_) {
@@ -502,7 +507,7 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// ★追加：ゴールの更新と衝突判定
+	// ゴールの更新と衝突判定
 	if (goal_) {
 		goal_->Update();
 
@@ -519,7 +524,7 @@ void GameScene::UpdatePlay() {
 
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
-			// ★ ボスにプレイヤーポインタを設定
+			// ボスにプレイヤーポインタを設定
 			if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
 				boss->SetPlayer(player_.get());
 			}
@@ -612,7 +617,7 @@ void GameScene::UpdatePlay() {
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
-			// ★追加: 削除する敵がボスの場合は CameraController のポインタをクリア
+			// 削除する敵がボスの場合は CameraController のポインタをクリア
 			if (dynamic_cast<BossEnemy*>(enemy)) {
 				if (cameraController_) {
 					cameraController_->SetBoss(nullptr);
@@ -699,7 +704,7 @@ void GameScene::Draw() {
 	}
 	skydome->Draw();
 
-	// ★追加：ゴールの描画
+	// ゴールの描画
 	if (goal_) {
 		Model::PreDraw();
 		goal_->Draw();

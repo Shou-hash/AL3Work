@@ -1,4 +1,5 @@
 #include "TitleScene.h"
+#include "AudioManager.h" // ★ BGM管理クラスのインクルード
 #include "Kamataengine.h"
 #include "Matrix4x4.h"
 #include <cmath>
@@ -26,6 +27,9 @@ TitleScene::~TitleScene() {
 }
 
 void TitleScene::Initialize() {
+	// ★ タイトルBGMの再生
+	AudioManager::GetInstance()->PlayBGM(BGMType::kTitle);
+
 	finished_ = false;
 	phase_ = Phase::FadeIn;
 
@@ -92,17 +96,12 @@ void TitleScene::Update() {
 		// 1. 自動右移動 & 自動ジャンプ制御（本編物理完全同期版）
 		// -------------------------------------------------
 
-		// タイトルシーン側でのローカルな物理計算(velocityYやisGroundedの二重管理)を完全に撤廃。
-		// 代わりに、Playerの正規の当たり判定に必要な移動入力構造体を作成します。
 		Player::CollisionMapInfo collisionMapInfo;
 
 		// 常に右へ進む移動量（本編の移動速度 0.04f に設定）
 		collisionMapInfo.moveAmount.x = 0.04f;
 		collisionMapInfo.moveAmount.z = 0.0f;
 
-		// プレイヤーの現在の「本物の接地状態」をPlayerクラスの変数などから同期・推測。
-		// ※Playerクラスに `bool IsOnGround()` 等のゲッターがあれば `player_->IsOnGround()` に差し替えてください。
-		// ここでは、現在の座標から足元のマップチップを直接見て本物の接地を確定させます。
 		bool realGrounded = false;
 		KamataEngine::Vector3 footPos = {
 		    transformRoot.translation_.x,
@@ -113,9 +112,6 @@ void TitleScene::Update() {
 			realGrounded = true;
 		}
 
-		// 本編の重力システムを適用（現在のプレイヤーのY速度に本編と同じ重力を加算、またはPlayerに任せる）
-		// ここではPlayerの挙動を狂わせないため、Player内部で保持されているであろう落下速度（moveAmount.y）をベースに処理します。
-		// 一旦、前回の移動結果や重力に基づいたY移動量を設定。
 		static float currentVelocityY = 0.0f;
 		if (!realGrounded) {
 			currentVelocityY += -0.015f; // 重力

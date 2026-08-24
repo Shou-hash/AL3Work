@@ -1,4 +1,5 @@
 #include "EndScene.h"
+#include "AudioManager.h" // ★ BGM管理クラスのインクルード
 #include "Matrix4x4.h"
 #include "StageManager.h"
 #include <cmath>
@@ -18,6 +19,9 @@ EndScene::~EndScene() {
 }
 
 void EndScene::Initialize(StageManager* stageDataManager) {
+	// ★ エンドBGMの再生
+	AudioManager::GetInstance()->PlayBGM(BGMType::kEnd);
+
 	stageManager_ = stageDataManager;
 	finished_ = false;
 	phase_ = Phase::FadeIn;
@@ -80,13 +84,13 @@ void EndScene::Update() {
 					animationTimers_[i] = 1.0f;
 			}
 
-			float scaleFactor = 0.8f + (animationTimers_[i] * 0.3f); // 0.8f -> 1.1f への補間
+			float scaleFactor = 0.8f + (animationTimers_[i] * 0.3f);
 			if (menuSprites_[i]) {
 				menuSprites_[i]->SetSize({300.0f * scaleFactor, 60.0f * scaleFactor});
 
 				// サイン波でアルファ値を周期的に明滅させて目立たせる
 				float alpha = 0.8f + std::sin(flashTimer_) * 0.2f;
-				menuSprites_[i]->SetColor({0.7f, 1.0f, 0.7f, alpha}); // 選択中は薄緑色で強調
+				menuSprites_[i]->SetColor({0.7f, 1.0f, 0.7f, alpha});
 			}
 		} else {
 			// 止まっている時（非選択）の演出：速やかに縮小させ、暗めの半透明にする

@@ -1,6 +1,7 @@
-#include "EndScene.h" // ★ EndSceneのヘッダーを追加
+#include "AudioManager.h"
+#include "EndScene.h"
 #include "GameScene.h"
-#include "GlobalVariables.h" // ★ GlobalVariablesのヘッダーを追加
+#include "GlobalVariables.h"
 #include "Kamataengine.h"
 #include "SelectScene.h"
 #include "StageManager.h"
@@ -17,7 +18,7 @@ enum class Scene {
 	kUnknown = 0,
 	kTitle,
 	kSelect,
-	kEnd, // ★ エンドシーンを追加
+	kEnd,
 	kGame,
 };
 
@@ -25,10 +26,10 @@ enum class Scene {
 Scene scene = Scene::kUnknown;
 TitleScene* titleScene = nullptr;
 SelectScene* selectScene = nullptr;
-EndScene* endScene = nullptr; // ★ エンドシーンの追加
+EndScene* endScene = nullptr;
 GameScene* gameScene = nullptr;
 StageManager* stageManager = nullptr;
-bool isExitRequested = false; // ★ アプリ終了フラグ
+bool isExitRequested = false;
 
 // シーン切り替え関数
 void ChangeScene(Scene newScene) { scene = newScene; }
@@ -41,18 +42,15 @@ void LoadDebugSettings() {
 
 	std::string line;
 	while (std::getline(file, line)) {
-		// 空行やコメント行のスキップ
 		if (line.empty() || line[0] == '#' || line[0] == ';') {
 			continue;
 		}
 
-		// '=' をスペースに置換して stream で読みやすくする
 		std::replace(line.begin(), line.end(), '=', ' ');
 
 		std::stringstream lineStream(line);
 		std::string key, value;
 		if (lineStream >> key >> value) {
-			// ステージ設定
 			if (key == "InitialStage") {
 				stageManager->SetCurrentStageIndexByName(value);
 			}
@@ -62,8 +60,6 @@ void LoadDebugSettings() {
 
 // シーンごとの更新処理と遷移管理を行う関数
 void UpdateScene() {
-
-	// ★ グローバル変数の更新（ImGui描画など）の呼び出しを追加
 	GlobalVariables::GetInstance()->Update();
 
 	switch (scene) {
@@ -71,7 +67,6 @@ void UpdateScene() {
 		titleScene->Update();
 
 		if (titleScene->IsFinished()) {
-			// タイトルシーンが終了したらセレクトシーンへ切り替え
 			ChangeScene(Scene::kSelect);
 			selectScene->Initialize(stageManager);
 		}
@@ -81,7 +76,6 @@ void UpdateScene() {
 		selectScene->Update();
 
 		if (selectScene->IsFinished()) {
-			// セレクトシーンが終了したらゲームシーンへ切り替え
 			ChangeScene(Scene::kGame);
 			gameScene->Initialize(stageManager);
 		}
@@ -91,13 +85,9 @@ void UpdateScene() {
 		gameScene->Update();
 
 		if (gameScene->isFinished()) {
-			// ★ ゲーム終了時に直接タイトルではなく、選択を挟むためにエンドシーンへ切り替え
 			ChangeScene(Scene::kEnd);
 			endScene->Initialize(stageManager);
-		}
-		// リロード要求（ボタン押し）があった場合の処理
-		else if (gameScene->IsReloadRequested()) {
-			// シーンリロード
+		} else if (gameScene->IsReloadRequested()) {
 			delete gameScene;
 			gameScene = nullptr;
 			gameScene = new GameScene();
@@ -105,29 +95,25 @@ void UpdateScene() {
 		}
 		break;
 
-	case Scene::kEnd: // エンドシーンの更新と遷移分岐
+	case Scene::kEnd:
 		endScene->Update();
 
 		if (endScene->IsFinished()) {
 			EndScene::MenuType selected = endScene->GetSelectedMenu();
 			if (selected == EndScene::MenuType::Return) {
-				// ★ セレクトシーンに戻る
 				ChangeScene(Scene::kSelect);
 				selectScene->Initialize(stageManager);
 
-				// ゲームシーンのクリーンアップ＆再生成
 				delete gameScene;
 				gameScene = nullptr;
 				gameScene = new GameScene();
 			} else if (selected == EndScene::MenuType::Retry) {
-				// リトライ (現在のステージインデックスを維持したままGameを再生成して初期化)
 				delete gameScene;
 				gameScene = nullptr;
 				gameScene = new GameScene();
-				gameScene->Initialize(stageManager);
 				ChangeScene(Scene::kGame);
+				gameScene->Initialize(stageManager);
 			} else if (selected == EndScene::MenuType::Title) {
-				// タイトルに戻る
 				ChangeScene(Scene::kTitle);
 				titleScene->Initialize();
 
@@ -135,7 +121,6 @@ void UpdateScene() {
 				gameScene = nullptr;
 				gameScene = new GameScene();
 			} else if (selected == EndScene::MenuType::Exit) {
-				// アプリケーションの終了要求
 				isExitRequested = true;
 			}
 		}
@@ -158,7 +143,7 @@ void DrawScene() {
 		gameScene->Draw();
 		break;
 
-	case Scene::kEnd: // ★ エンドシーンの描画を追加
+	case Scene::kEnd:
 		endScene->Draw();
 		break;
 	}
@@ -173,43 +158,35 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Initialize(L"LE2C_12_ショウ_ズーウェン_AL3");
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 
+	// ★ オーディオマネージャーの初期化（BGMの読み込み）
+	AudioManager::GetInstance()->Initialize();
+
 	// ★1. まず最初に StageManager を生成＆CSV読み込みする
 	stageManager = new StageManager();
 	stageManager->LoadStageDatas();
 
 	// ★2. シーンのインスタンス生成
 	titleScene = new TitleScene();
-	titleScene->Initialize();
-
 	selectScene = new SelectScene();
-	endScene = new EndScene(); // ★ エンドシーンの生成
+	endScene = new EndScene();
+	gameScene = new GameScene();
 
 #ifdef _DEBUG
 	// デバッグ設定ファイル読み込み
 	LoadDebugSettings();
-
-	// ゲームシーンの初期化
-	scene = Scene::kGame;
-	gameScene = new GameScene();
-	gameScene->Initialize(stageManager);
-#else
-	// リリース時の初期化
-	titleScene = new TitleScene();
-	titleScene->Initialize();
-	gameScene = new GameScene();
-	ChangeScene(Scene::kTitle);
 #endif
 
 #ifdef _DEBUG
 	ImGuiManager* imguiManager = ImGuiManager::GetInstance();
 #endif
 
-	// 最初のシーンを設定
+	// 最初のシーン（タイトル）の初期化と設定
 	ChangeScene(Scene::kTitle);
+	titleScene->Initialize();
 
 	// メインループ
 	while (true) {
-		if (KamataEngine::Update() || isExitRequested) { // ★ 終了フラグの検知を追加
+		if (KamataEngine::Update() || isExitRequested) {
 			break;
 		}
 
@@ -231,6 +208,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		dxCommon->PostDraw();
 	}
 
+	// ★ オーディオマネージャーの終了処理
+	AudioManager::GetInstance()->Finalize();
+
 	// エンジンの終了処理
 	Finalize();
 
@@ -239,7 +219,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	titleScene = nullptr;
 	delete selectScene;
 	selectScene = nullptr;
-	delete endScene; // ★ エンドシーンの解放
+	delete endScene;
 	endScene = nullptr;
 	delete gameScene;
 	gameScene = nullptr;
