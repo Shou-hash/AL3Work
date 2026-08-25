@@ -155,7 +155,7 @@ using namespace KamataEngine;
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// 初期化
-	Initialize(L"LE2C_12_ショウ_ズーウェン_AL3");
+	Initialize(L"LE2C_12_ショウ_ズーウェン_ダイス・ルミナ統合の玉座");
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 
 	// ★ オーディオマネージャーの初期化（BGMの読み込み）

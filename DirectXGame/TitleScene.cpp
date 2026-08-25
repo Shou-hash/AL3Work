@@ -1,5 +1,5 @@
 #include "TitleScene.h"
-#include "AudioManager.h" // ★ BGM管理クラスのインクルード
+#include "AudioManager.h"
 #include "Kamataengine.h"
 #include "Matrix4x4.h"
 #include <cmath>
@@ -22,12 +22,11 @@ TitleScene::~TitleScene() {
 	}
 	worldTransformBlocks_.clear();
 
-	// ★ スカイドームの解放
 	delete modelSkydome_;
+	delete modelTitleName_;
 }
 
 void TitleScene::Initialize() {
-	// ★ タイトルBGMの再生
 	AudioManager::GetInstance()->PlayBGM(BGMType::kTitle);
 
 	finished_ = false;
@@ -68,45 +67,37 @@ void TitleScene::Initialize() {
 
 	player_ = new Player();
 	player_->Initialize(modelPlayerBody_, &camera_, {5.0f, 4.0f, 0.0f});
-
-	// ★ Playerにタイトルシーンのマップチップフィールドを登録
 	player_->SetMapChipField(mapChipField_);
 
-	// ★ スカイドームの初期化
 	modelSkydome_ = KamataEngine::Model::CreateFromOBJ("skydome", true);
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
+
+	// ★ タイトル名モデルの初期化（Scale拡大 & Y軸180度回転）
+	modelTitleName_ = KamataEngine::Model::CreateFromOBJ("TitleName", true);
+	worldTransformTitleName_.Initialize();
+	worldTransformTitleName_.scale_ = {2.0f, 2.0f, 2.0f};             // ★ スケールを大きく変更 (画面サイズに合わせて数値を調整してください)
+	worldTransformTitleName_.rotation_.y = std::numbers::pi_v<float>; // ★ Y軸回転を180度(π rad)に設定
+	worldTransformTitleName_.translation_ = {10.0f, 8.0f, 0.0f};
 }
 
 void TitleScene::Update() {
 	fade_->Update();
-
-	// ★ スカイドームの更新
 	skydome->Update();
 
 	if (player_) {
-		// const_castによる参照取得
 		KamataEngine::WorldTransform& transformRoot = const_cast<KamataEngine::WorldTransform&>(player_->GetWorldTransform());
 		KamataEngine::WorldTransform& transformHead = const_cast<KamataEngine::WorldTransform&>(player_->GetWorldTransformHead());
 		KamataEngine::WorldTransform& transformBody = const_cast<KamataEngine::WorldTransform&>(player_->GetWorldTransformBody());
 		KamataEngine::WorldTransform& transformLeft = const_cast<KamataEngine::WorldTransform&>(player_->GetWorldTransformLeft());
 		KamataEngine::WorldTransform& transformRight = const_cast<KamataEngine::WorldTransform&>(player_->GetWorldTransformRight());
 
-		// -------------------------------------------------
-		// 1. 自動右移動 & 自動ジャンプ制御（本編物理完全同期版）
-		// -------------------------------------------------
-
 		Player::CollisionMapInfo collisionMapInfo;
-
-		// 常に右へ進む移動量（本編の移動速度 0.04f に設定）
 		collisionMapInfo.moveAmount.x = 0.04f;
 		collisionMapInfo.moveAmount.z = 0.0f;
 
 		bool realGrounded = false;
-		KamataEngine::Vector3 footPos = {
-		    transformRoot.translation_.x,
-		    transformRoot.translation_.y - 0.55f, // プレイヤーの中心から足元へのオフセット（サイズに合わせて調整）
-		    transformRoot.translation_.z};
+		KamataEngine::Vector3 footPos = {transformRoot.translation_.x, transformRoot.translation_.y - 0.55f, transformRoot.translation_.z};
 		MapChipField::IndexSet footIndex = mapChipField_->GetMapChipIndexByPosition(footPos);
 		if (mapChipField_->GetMapChipTypeByIndex(footIndex.x, footIndex.y) == MapChipType::kBlock) {
 			realGrounded = true;
@@ -114,49 +105,37 @@ void TitleScene::Update() {
 
 		static float currentVelocityY = 0.0f;
 		if (!realGrounded) {
-			currentVelocityY += -0.015f; // 重力
+			currentVelocityY += -0.015f;
 		} else {
-			currentVelocityY = 0.0f; // 接地時はリセット
+			currentVelocityY = 0.0f;
 		}
 
-		// ★【先読み壁検知自動ジャンプ】
 		if (realGrounded) {
-			// プレイヤーの少し前方（右側）の座標をシミュレート
 			KamataEngine::Vector3 checkPos = {transformRoot.translation_.x + 0.6f, transformRoot.translation_.y, transformRoot.translation_.z};
-
-			// マップチップのインデックスを取得
 			MapChipField::IndexSet indexSet = mapChipField_->GetMapChipIndexByPosition(checkPos);
-
-			// 目の前にブロックが存在するならジャンプ初速を与える
 			MapChipType frontTile = mapChipField_->GetMapChipTypeByIndex(indexSet.x, indexSet.y);
 			if (frontTile == MapChipType::kBlock) {
-				currentVelocityY = 0.35f; // ジャンプ力
+				currentVelocityY = 0.35f;
 				realGrounded = false;
 			}
 		}
 
-		// 確定した移動量を設定して本編の当たり判定に投げる
 		collisionMapInfo.moveAmount.y = currentVelocityY;
 		collisionMapInfo.onGround = realGrounded;
 
-		// ★ プレイヤー本来のマジのマップ衝突判定を呼び出す（めり込みがここで自動補正される）
 		player_->MapCollision(collisionMapInfo);
 
-		// 衝突判定によって「めり込み補正」された正しい移動量を座標に適用
 		transformRoot.translation_.x += collisionMapInfo.moveAmount.x;
 		transformRoot.translation_.y += collisionMapInfo.moveAmount.y;
 		transformRoot.translation_.z += collisionMapInfo.moveAmount.z;
 
-		// プレイヤー本体の内部ステート（接地フラグなど）を同期
 		player_->ApplyGroundingStatus(collisionMapInfo);
 
-		// 実際の補正結果をローカルの速度にもフィードバック（頭をぶつけた、または着地したなど）
 		currentVelocityY = collisionMapInfo.moveAmount.y;
 		if (collisionMapInfo.onGround) {
 			currentVelocityY = 0.0f;
 		}
 
-		// 画面右端まで行ったら左端にループ（すべての状態を安全に初期化）
 		if (transformRoot.translation_.x > 40.0f) {
 			transformRoot.translation_.x = 2.0f;
 			transformRoot.translation_.y = 10.0f;
@@ -166,17 +145,13 @@ void TitleScene::Update() {
 			player_->ApplyGroundingStatus(collisionMapInfo);
 		}
 
-		// カメラをプレイヤーに追従させる
 		camera_.translation_.x = transformRoot.translation_.x;
 
-		// -------------------------------------------------
-		// 2. アニメーション & 各パーツの行列計算
-		// -------------------------------------------------
 		static float titleWalkTimer = 0.0f;
 		if (collisionMapInfo.onGround) {
 			titleWalkTimer += 0.03f;
 		} else {
-			titleWalkTimer = 0.0f; // 空中ではポーズ固定
+			titleWalkTimer = 0.0f;
 		}
 
 		float pi = std::numbers::pi_v<float>;
@@ -189,15 +164,12 @@ void TitleScene::Update() {
 		transformLeft.rotation_.x = walkTilt;
 		transformRight.rotation_.x = -walkTilt;
 
-		// 行列の計算と転送
 		transformRoot.matWorld_ = MakeAffineMatrix(transformRoot.scale_, transformRoot.rotation_, transformRoot.translation_);
 		transformRoot.TransferMatrix();
 
-		// 親子関係の合成
 		transformBody.matWorld_ = Multiply(MakeAffineMatrix(transformBody.scale_, transformBody.rotation_, transformBody.translation_), transformRoot.matWorld_);
 		transformHead.matWorld_ = Multiply(MakeAffineMatrix(transformHead.scale_, transformHead.rotation_, transformHead.translation_), transformBody.matWorld_);
 
-		// 腕の回転中心オフセットを考慮した合成
 		KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
 
 		KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, transformLeft.rotation_, {0.0f, 0.0f, 0.0f});
@@ -214,14 +186,12 @@ void TitleScene::Update() {
 		transformRight.matWorld_ = Multiply(postTranslateRight, Multiply(rotateRight, preTranslateRight));
 		transformRight.matWorld_ = Multiply(transformRight.matWorld_, transformBody.matWorld_);
 
-		// 行列転送
 		transformBody.TransferMatrix();
 		transformHead.TransferMatrix();
 		transformLeft.TransferMatrix();
 		transformRight.TransferMatrix();
 	}
 
-	// タイトルステージのブロック行列の更新処理
 	for (auto& worldTransformBlockLine : worldTransformBlocks_) {
 		for (auto* worldTransformBlock : worldTransformBlockLine) {
 			if (!worldTransformBlock) {
@@ -232,9 +202,24 @@ void TitleScene::Update() {
 		}
 	}
 
+	// ★ タイトル名モデルの演出処理（待機時の上下移動 ＆ SPACE押下時の回転）
+	static float titleFloatingTimer = 0.0f;
+	if (phase_ == Phase::FadeOut) {
+		// SPACE押下後（フェードアウトフェーズ）：くるくる回転
+		worldTransformTitleName_.rotation_.y += 0.15f;
+	} else {
+		// 待機時（FadeIn / Normalフェーズ）：Sin波で上下ゆらゆら移動
+		titleFloatingTimer += 0.05f;
+		worldTransformTitleName_.translation_.y = 8.0f + std::sin(titleFloatingTimer) * 0.3f;
+	}
+
+	// タイトル名モデルの追従と行列更新処理
+	worldTransformTitleName_.translation_.x = camera_.translation_.x;
+	worldTransformTitleName_.matWorld_ = MakeAffineMatrix(worldTransformTitleName_.scale_, worldTransformTitleName_.rotation_, worldTransformTitleName_.translation_);
+	worldTransformTitleName_.TransferMatrix();
+
 	camera_.UpdateMatrix();
 
-	// シーンフェーズ管理
 	switch (phase_) {
 	case Phase::FadeIn:
 		if (fade_->IsFinished())
@@ -265,8 +250,13 @@ void TitleScene::Draw() {
 		}
 	}
 
-	// ★ スカイドームの描画
 	skydome->Draw();
+
+	if (modelTitleName_) {
+		KamataEngine::Model::PreDraw();
+		modelTitleName_->Draw(worldTransformTitleName_, camera_);
+		KamataEngine::Model::PostDraw();
+	}
 
 	if (player_) {
 		KamataEngine::Model::PreDraw();

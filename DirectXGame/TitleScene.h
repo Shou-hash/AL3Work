@@ -48,4 +48,8 @@ private:
 	// ★ スカイドーム用変数を追加
 	KamataEngine::Model* modelSkydome_ = nullptr;
 	std::unique_ptr<Skydome> skydome = nullptr;
+
+	// ★ タイトル名用変数を追加
+	KamataEngine::Model* modelTitleName_ = nullptr;
+	KamataEngine::WorldTransform worldTransformTitleName_;
 };

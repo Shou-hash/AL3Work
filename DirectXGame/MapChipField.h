@@ -4,11 +4,12 @@
 
 // マップチップ種別
 enum class MapChipType {
-	kBlank,  // 空白
-	kBlock,  // ブロック
-	kPlayer, // プレイヤー
-	kEnemy,  // 敵
-	kGoal,   // ★追加：ゴール
+	kBlank,       // 空白
+	kBlock,       // ブロック
+	kPlayer,      // プレイヤー
+	kEnemy,       // 敵
+	kGoal,        // ★追加：ゴール
+	kExplanation, // ★追加：解説ブロック
 };
 
 // 1マス分のデータ

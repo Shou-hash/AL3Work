@@ -12,6 +12,14 @@ void AudioManager::Initialize() {
 	titleBgmHandle_ = audio->LoadWave("./Resources/Sound/title.mp3");
 	selectBgmHandle_ = audio->LoadWave("./Resources/Sound/select.mp3");
 	endBgmHandle_ = audio->LoadWave("./Resources/Sound/end.mp3");
+
+	// 各SE用に個別の変数へ読み込み
+	attackSeHandle_ = audio->LoadWave("./Resources/Sound/attack.mp3");
+	bossDashSeHandle_ = audio->LoadWave("./Resources/Sound/bossDush.mp3");
+	bossAttackSeHandle_ = audio->LoadWave("./Resources/Sound/bossAttack.mp3");
+	dashSeHandle_ = audio->LoadWave("./Resources/Sound/dush.mp3");
+	hummerSeHandle_ = audio->LoadWave("./Resources/Sound/hummer.mp3");
+	stageSeHandle_ = audio->LoadWave("./Resources/Sound/stage.mp3");
 }
 
 void AudioManager::Finalize() { StopBGM(); }
@@ -58,4 +66,22 @@ void AudioManager::StopBGM() {
 	}
 
 	currentBGM_ = BGMType::kNone;
+}
+
+void AudioManager::PlaySE(SEType type) {
+	KamataEngine::Audio* audio = KamataEngine::Audio::GetInstance();
+
+	if (type == SEType::kAttack) {
+		audio->PlayWave(attackSeHandle_, false);
+	} else if (type == SEType::kBossDash) {
+		audio->PlayWave(bossDashSeHandle_, false);
+	} else if (type == SEType::kBossAttack) {
+		audio->PlayWave(bossAttackSeHandle_, false);
+	} else if (type == SEType::kDash) {
+		audio->PlayWave(dashSeHandle_, false);
+	} else if (type == SEType::kHummer) {
+		audio->PlayWave(hummerSeHandle_, false);
+	} else if (type == SEType::kStage) {
+		audio->PlayWave(stageSeHandle_, false);
+	}
 }

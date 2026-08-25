@@ -25,7 +25,6 @@ public:
 	bool IsFinished() const { return finished_; }
 
 private:
-
 	bool finished_ = false;
 	Phase phase_ = Phase::FadeIn;
 

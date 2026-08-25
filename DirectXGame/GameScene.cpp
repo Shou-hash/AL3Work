@@ -10,6 +10,7 @@
 #include "Player.h"
 #include "ShieldEnemy.h"
 #include "StageManager.h"
+#include <numbers> // ★追加：π参照用
 #ifdef _DEBUG
 #include <imgui.h>
 #endif
@@ -26,6 +27,11 @@ GameScene::~GameScene() {
 		}
 	}
 	worldTransformBlocks_.clear();
+
+	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
+		delete worldTransformExplanation;
+	}
+	worldTransformExplanations_.clear();
 
 	delete debugCamera_;
 	delete modelSkydome_;
@@ -51,7 +57,8 @@ GameScene::~GameScene() {
 
 	delete modelPlayerHp_;
 	delete modelItemHp_;
-	delete modelGoal_; // ゴール用モデルの解放
+	delete modelGoal_;        // ゴール用モデルの解放
+	delete modelExplanation_; // 解説ブロック用モデルの解放
 
 	for (BaseEnemy* enemy : enemies_) {
 		delete enemy;
@@ -108,6 +115,11 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	}
 	worldTransformBlocks_.clear();
 
+	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
+		delete worldTransformExplanation;
+	}
+	worldTransformExplanations_.clear();
+
 	if (mapChipField_) {
 		delete mapChipField_;
 		mapChipField_ = nullptr;
@@ -157,7 +169,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	modelPlayerHp_ = Model::CreateFromOBJ("itemHP", true);
 	modelItemHp_ = Model::CreateFromOBJ("itemHP", true);
-	modelGoal_ = Model::CreateFromOBJ("goal", true); // ゴール用モデルの生成
+	modelGoal_ = Model::CreateFromOBJ("goal", true);               // ゴール用モデルの生成
+	modelExplanation_ = Model::CreateFromOBJ("Explanation", true); // 解説ブロック用モデルの生成
 
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
@@ -249,6 +262,14 @@ void GameScene::GenerateFieldObjects() {
 				Vector3 goalPosition = mapChipField_->GetMapChipPositionByIndex(j, i);
 				goal_ = std::make_unique<Goal>();
 				goal_->Initialize(modelGoal_, &camera_, goalPosition);
+				break;
+			}
+			case MapChipType::kExplanation: { // 解説ブロックの生成処理
+				WorldTransform* worldTransform = new WorldTransform();
+				worldTransform->Initialize();
+				worldTransform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
+				worldTransform->rotation_.y = std::numbers::pi_v<float>; // ★ Y軸回転を180度（πラジアン）に設定
+				worldTransformExplanations_.push_back(worldTransform);
 				break;
 			}
 			default:
@@ -400,7 +421,7 @@ void GameScene::Update() {
 	debugCamera_->Update();
 
 #ifdef _DEBUG
-	if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
+	if (Input::GetInstance()->TriggerKey(DIK_D)) {
 		isDebugCameraActive_ = !isDebugCameraActive_;
 	}
 #endif
@@ -423,6 +444,15 @@ void GameScene::Update() {
 			worldTransformBlock->matWorld_ = affineMatrix;
 			worldTransformBlock->TransferMatrix();
 		}
+	}
+
+	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
+		if (!worldTransformExplanation) {
+			continue;
+		}
+		Matrix4x4 affineMatrix = MakeAffineMatrix(worldTransformExplanation->scale_, worldTransformExplanation->rotation_, worldTransformExplanation->translation_);
+		worldTransformExplanation->matWorld_ = affineMatrix;
+		worldTransformExplanation->TransferMatrix();
 	}
 }
 
@@ -583,6 +613,22 @@ void GameScene::UpdatePlay() {
 		if (attackAABB.has_value()) {
 			for (BaseEnemy* enemy : enemies_) {
 				if (enemy && !enemy->IsDead() && IsCollision(attackAABB.value(), enemy->GetAABB())) {
+					BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy);
+					bool isHitSuccess = true;
+					if (boss) {
+						if (boss->IsAttacking()) {
+							isHitSuccess = false;
+						}
+					}
+
+					if (isHitSuccess) {
+						if (player_->GetBehavior() == Behavior::kHammerSkill) {
+							AudioManager::GetInstance()->PlaySE(SEType::kHummer);
+						} else if (player_->GetBehavior() == Behavior::kAttack) {
+							AudioManager::GetInstance()->PlaySE(SEType::kDash);
+						}
+					}
+
 					enemy->OnCollision(player_.get());
 
 					if (dynamic_cast<Enemy*>(enemy)) {
@@ -590,7 +636,7 @@ void GameScene::UpdatePlay() {
 						newEffect->Initialize(enemy->GetWorldTransform().translation_);
 						effects_.push_back(newEffect);
 						enemy->OnDead();
-					} else if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
+					} else if (boss) {
 						HitEffect* newEffect = new HitEffect();
 						newEffect->Initialize(enemy->GetWorldTransform().translation_);
 						effects_.push_back(newEffect);
@@ -702,6 +748,17 @@ void GameScene::Draw() {
 			Model::PostDraw();
 		}
 	}
+
+	// 解説ブロックの描画
+	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
+		if (!worldTransformExplanation) {
+			continue;
+		}
+		Model::PreDraw();
+		modelExplanation_->Draw(*worldTransformExplanation, camera_);
+		Model::PostDraw();
+	}
+
 	skydome->Draw();
 
 	// ゴールの描画

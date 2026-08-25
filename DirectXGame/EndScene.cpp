@@ -12,7 +12,7 @@ EndScene::~EndScene() {
 	delete fade_;
 	delete modelSkydome_;
 
-	// スプライトの解放
+	// ★ モデルの解放
 	for (int32_t i = 0; i < kNumMenus; ++i) {
 		delete menuSprites_[i];
 	}
@@ -39,22 +39,22 @@ void EndScene::Initialize(StageManager* stageDataManager) {
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
-	// スプライト（white1x1.png）のロードと配置初期化
-	uint32_t textureHandle = KamataEngine::TextureManager::Load("white1x1.png");
+	// メニュー選択モデル（Return.obj, Retry.obj, Title.obj, Exit.obj）のロードと配置初期化
+	menuSprites_[0] = KamataEngine::Model::CreateFromOBJ("Return", true);
+	menuSprites_[1] = KamataEngine::Model::CreateFromOBJ("Retry", true);
+	menuSprites_[2] = KamataEngine::Model::CreateFromOBJ("Title", true);
+	menuSprites_[3] = KamataEngine::Model::CreateFromOBJ("Exit", true);
 
 	// 4つの項目を画面中央付近に縦並びで配置
-	float startY = 200.0f;
-	float spacing = 120.0f;
-	float posX = 640.0f; // 画面中央
-	float baseWidth = 300.0f;
-	float baseHeight = 60.0f;
+	float startY = 6.5f;
+	float spacing = 1.0f;
+	float posX = 10.0f;
+	float posZ = -7.0f;
 
 	for (int32_t i = 0; i < kNumMenus; ++i) {
-		menuSprites_[i] = KamataEngine::Sprite::Create(textureHandle, {posX, startY + (i * spacing)});
-		if (menuSprites_[i]) {
-			menuSprites_[i]->SetSize({baseWidth, baseHeight});
-			menuSprites_[i]->SetAnchorPoint({0.5f, 0.5f});
-		}
+		worldTransforms_[i].Initialize();
+		worldTransforms_[i].translation_ = {posX, startY - (i * spacing), posZ};
+		worldTransforms_[i].rotation_.y = std::numbers::pi_v<float>; // ★ Y軸回転を180度（πラジアン）に設定
 		animationTimers_[i] = 0.0f;
 	}
 	flashTimer_ = 0.0f;
@@ -85,15 +85,9 @@ void EndScene::Update() {
 			}
 
 			float scaleFactor = 0.8f + (animationTimers_[i] * 0.3f);
-			if (menuSprites_[i]) {
-				menuSprites_[i]->SetSize({300.0f * scaleFactor, 60.0f * scaleFactor});
-
-				// サイン波でアルファ値を周期的に明滅させて目立たせる
-				float alpha = 0.8f + std::sin(flashTimer_) * 0.2f;
-				menuSprites_[i]->SetColor({0.7f, 1.0f, 0.7f, alpha});
-			}
+			worldTransforms_[i].scale_ = {scaleFactor, scaleFactor, scaleFactor};
 		} else {
-			// 止まっている時（非選択）の演出：速やかに縮小させ、暗めの半透明にする
+			// 止まっている時（非選択）の演出：速やかに縮小させる
 			if (animationTimers_[i] > 0.0f) {
 				animationTimers_[i] -= 0.1f;
 				if (animationTimers_[i] < 0.0f)
@@ -101,11 +95,13 @@ void EndScene::Update() {
 			}
 
 			float scaleFactor = 0.85f + (animationTimers_[i] * 0.25f);
-			if (menuSprites_[i]) {
-				menuSprites_[i]->SetSize({300.0f * scaleFactor, 60.0f * scaleFactor});
-				menuSprites_[i]->SetColor({0.4f, 0.4f, 0.4f, 0.5f});
-			}
+			worldTransforms_[i].scale_ = {scaleFactor, scaleFactor, scaleFactor};
 		}
+
+		// ワールド行列の更新
+		KamataEngine::Matrix4x4 affineMatrix = MakeAffineMatrix(worldTransforms_[i].scale_, worldTransforms_[i].rotation_, worldTransforms_[i].translation_);
+		worldTransforms_[i].matWorld_ = affineMatrix;
+		worldTransforms_[i].TransferMatrix();
 	}
 
 	// シーンフェーズ管理
@@ -155,6 +151,18 @@ void EndScene::Update() {
 	ImGui::Text("Select item with Up/Down arrow keys and press SPACE.");
 	const char* menuNames[] = {"Select Scene", "Retry", "Title", "Exit"};
 	ImGui::Text("Current Selection: %s", menuNames[static_cast<int32_t>(currentSelect_)]);
+
+	// ★ 各ボタンの Rotation 調整用ツリー
+	if (ImGui::TreeNode("Menu Rotations")) {
+		for (int32_t i = 0; i < kNumMenus; ++i) {
+			ImGui::PushID(i);
+			float* rot = &(worldTransforms_[i].rotation_.x);
+			ImGui::DragFloat3(menuNames[i], rot, 0.01f);
+			ImGui::PopID();
+		}
+		ImGui::TreePop();
+	}
+
 	ImGui::End();
 #endif
 }
@@ -163,14 +171,14 @@ void EndScene::Draw() {
 	// ★ スカイドームの描画
 	skydome->Draw();
 
-	// メニュー選択画像の描画処理
-	KamataEngine::Sprite::PreDraw();
+	// メニュー選択モデルの描画処理
+	KamataEngine::Model::PreDraw();
 	for (int32_t i = 0; i < kNumMenus; ++i) {
 		if (menuSprites_[i]) {
-			menuSprites_[i]->Draw();
+			menuSprites_[i]->Draw(worldTransforms_[i], camera_);
 		}
 	}
-	KamataEngine::Sprite::PostDraw();
+	KamataEngine::Model::PostDraw();
 
 	fade_->Draw();
 }

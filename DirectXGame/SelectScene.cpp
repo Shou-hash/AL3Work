@@ -135,6 +135,9 @@ void SelectScene::Update() {
 			}
 
 			animationTimers_[currentSelectIndex_] = 0.0f;
+
+			// ★ ステージ選択SE再生
+			AudioManager::GetInstance()->PlaySE(SEType::kStage);
 		}
 		if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_RIGHT) || KamataEngine::Input::GetInstance()->TriggerKey(DIK_D)) {
 			animationTimers_[currentSelectIndex_] = 0.5f;
@@ -145,6 +148,9 @@ void SelectScene::Update() {
 			}
 
 			animationTimers_[currentSelectIndex_] = 0.0f;
+
+			// ★ ステージ選択SE再生
+			AudioManager::GetInstance()->PlaySE(SEType::kStage);
 		}
 
 		// 決定キー（SPACE）でステージ確定＆フェードアウト開始
@@ -173,6 +179,9 @@ void SelectScene::Update() {
 					animationTimers_[i] = 0.0f;
 			}
 			animationTimers_[currentSelectIndex_] = 0.0f;
+
+			// ★ ステージ選択SE再生
+			AudioManager::GetInstance()->PlaySE(SEType::kStage);
 		}
 		ImGui::Text("Current Selection: %s", stageManager_->GetStageData(currentSelectIndex_).name.c_str());
 	}

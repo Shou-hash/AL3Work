@@ -85,8 +85,11 @@ private:
 	KamataEngine::Model* modelHammer_ = nullptr;
 
 	KamataEngine::Model* modelPlayerHp_ = nullptr;
-	KamataEngine::Model* modelItemHp_ = nullptr; // ★追加：ドロップアイテム用モデルポインタ
-	KamataEngine::Model* modelGoal_ = nullptr;   // ★追加：ゴール用モデルポインタ
+	KamataEngine::Model* modelItemHp_ = nullptr;      // ★追加：ドロップアイテム用モデルポインタ
+	KamataEngine::Model* modelGoal_ = nullptr;        // ★追加：ゴール用モデルポインタ
+	KamataEngine::Model* modelExplanation_ = nullptr; // ★追加：解説ブロック用モデルポインタ
+
+	std::vector<KamataEngine::WorldTransform*> worldTransformExplanations_; // 解説ブロック用ワールドトランスフォーム配列
 
 	std::unique_ptr<Skydome> skydome = nullptr;
 	std::unique_ptr<Player> player_ = nullptr;

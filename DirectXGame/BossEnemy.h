@@ -44,6 +44,9 @@ public:
 	// ★ 攻撃中（無敵状態）かどうか
 	bool IsAttacking() const { return state_ != BossState::kWalk; }
 
+	// ★ 行動状態の取得
+	BossState GetState() const { return state_; }
+
 private:
 	KamataEngine::Matrix4x4 MultiplyMatrix(const KamataEngine::Matrix4x4& a, const KamataEngine::Matrix4x4& b);
 

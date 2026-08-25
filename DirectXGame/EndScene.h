@@ -53,9 +53,10 @@ private:
 	// 最終的に確定されたメニュー項目
 	MenuType selectedMenu_ = MenuType::Return;
 
-	// メニュー選択画像用（white1x1.png）のスプライトポインタ配列
+	// ★ メニュー選択モデル用（Return.obj, Retry.obj, Title.obj, Exit.obj）のモデルポインタ配列
 	static inline const int32_t kNumMenus = static_cast<int32_t>(MenuType::Count);
-	KamataEngine::Sprite* menuSprites_[kNumMenus] = {nullptr};
+	KamataEngine::Model* menuSprites_[kNumMenus] = {nullptr};
+	KamataEngine::WorldTransform worldTransforms_[kNumMenus];
 
 	// 演出用変数
 	float animationTimers_[kNumMenus] = {0.0f}; // 各項目のスケール補間用タイマー

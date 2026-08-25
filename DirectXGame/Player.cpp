@@ -1,6 +1,8 @@
 #define NOMINMAX
 #include "Player.h"
+#include "AudioManager.h"
 #include "BaseEnemy.h"
+#include "BossEnemy.h"
 #include "CameraController.h"
 #include "Enemy.h" // ★追加：アイテム状態チェックのため
 #include "GlobalVariables.h"
@@ -167,6 +169,9 @@ void Player::OnCollision() {
 		return;
 	}
 
+	// 効果音の再生
+	AudioManager::GetInstance()->PlaySE(SEType::kAttack);
+
 	// ★変更：HPを一個減らし、ノックバック状態へ移行させることで連続減少を防ぐ
 	if (playerHp_) {
 		playerHp_->DecreaseHp();
@@ -238,7 +243,7 @@ void Player::BehaviorRootInit() {
 void Player::BehaviorRootUpdate() {
 	Move();
 
-	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_D)) {
+	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_SPACE)) {
 		behaviorRequest_ = Behavior::kAttack;
 	}
 
@@ -846,6 +851,20 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 					isKnockbackRequested_ = false;
 				}
 			} else if (behavior_ != Behavior::kKnockback) { // ★変更：ノックバック中（クールタイム中）でなければ処理
+				// ★ 被弾時効果音の再生
+				BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy);
+				if (boss) {
+					if (boss->GetState() == BossState::kAttackDash) {
+						AudioManager::GetInstance()->PlaySE(SEType::kBossDash);
+					} else if (boss->GetState() == BossState::kAttackSlam || boss->GetState() == BossState::kAttackSlamCharge) {
+						AudioManager::GetInstance()->PlaySE(SEType::kBossAttack);
+					} else {
+						AudioManager::GetInstance()->PlaySE(SEType::kAttack);
+					}
+				} else {
+					AudioManager::GetInstance()->PlaySE(SEType::kAttack);
+				}
+
 				// ★変更：HPを一個減らし、ノックバック状態へ移行させることで連続ダメージを防ぐ
 				if (playerHp_) {
 					playerHp_->DecreaseHp();
@@ -1026,18 +1045,10 @@ void Player::Draw() {
 			modelPlayerLeft_->Draw(worldTransformLeft_, *camera_);
 			modelPlayerRight_->Draw(worldTransformRight_, *camera_);
 
-			// ★ スキル発動中かつハンマー表示フラグが有効なら描画
+			// ★ ハンマーの描画処理を追加（スキル発動中かつモデルが存在する場合）
 			if (isHammerVisible_ && modelHammer_) {
 				modelHammer_->Draw(worldTransformHammer_, *camera_);
 			}
-		} else if (modelPlayer_) {
-			modelPlayer_->Draw(worldTransform_, *camera_);
-		}
-	}
-
-	if (modelHitEffect_ && camera_ && !hitEffects_.empty()) {
-		for (const auto* effect : hitEffects_) {
-			modelHitEffect_->Draw(effect->worldTransform, *camera_);
 		}
 	}
 }

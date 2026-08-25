@@ -89,6 +89,8 @@ public:
 	}
 	LRDirection GetLRDirection() const { return lrDirection_; }
 
+	Behavior GetBehavior() const { return behavior_; }
+
 	void OnCollision();
 	void CheckEnemyCollision(const std::list<BaseEnemy*>& enemies);
 
