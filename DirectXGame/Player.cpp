@@ -15,27 +15,6 @@
 #include <cmath>
 #include <numbers>
 
-// 行列の掛け算ヘルパー関数 (main.cppのコードを参考)
-KamataEngine::Matrix4x4 MultiplyMatrix(const KamataEngine::Matrix4x4& a, const KamataEngine::Matrix4x4& b) {
-	KamataEngine::Matrix4x4 r = {};
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			float sum = 0.0f;
-			for (int k = 0; k < 4; ++k) {
-				sum += a.m[i][k] * b.m[k][j];
-			}
-			r.m[i][j] = sum;
-		}
-	}
-	return r;
-}
-
-// アフィン行列作成ヘルパー関数
-KamataEngine::Matrix4x4 CreateAffineMatrix(const KamataEngine::Vector3& scale, const KamataEngine::Vector3& rotate, const KamataEngine::Vector3& translation) {
-	// 各軸の回転行列、拡縮、平行移動を組み合わせて作成する簡易的な処理
-	return MakeAffineMatrix(scale, rotate, translation);
-}
-
 // --- GlobalVariables 調整項目の登録 ---
 void Player::RegisterGlobalVariables() {
 	GlobalVariables* globalVariables = GlobalVariables::GetInstance();
@@ -91,12 +70,6 @@ Player::~Player() {
 		delete effect;
 	}
 	hitEffects_.clear();
-
-	// 個別モデルの削除
-	delete modelPlayerHead_;
-	delete modelPlayerBody_;
-	delete modelPlayerLeft_;
-	delete modelPlayerRight_;
 }
 
 void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
@@ -107,27 +80,11 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	worldTransform_.rotation_.y = std::numbers::pi_v<float> / 2.0f;
 	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
 
-	// 4つの各部位のOBJファイルを読み取って適用
-	modelPlayerHead_ = KamataEngine::Model::CreateFromOBJ("player_head", true);
-	modelPlayerBody_ = KamataEngine::Model::CreateFromOBJ("player_body", true);
-	modelPlayerLeft_ = KamataEngine::Model::CreateFromOBJ("player_left", true);
-	modelPlayerRight_ = KamataEngine::Model::CreateFromOBJ("player_right", true);
-
-	// 各部位のWorldTransform初期化
-	worldTransformHead_.Initialize();
-	worldTransformBody_.Initialize();
-	worldTransformLeft_.Initialize();
-	worldTransformRight_.Initialize();
-
-	// 必要に応じて各部位の初期位置(ローカルのオフセット)を設定
-	worldTransformBody_.translation_ = {0.0f, 0.0f, 0.0f};  // ルート（体）
-	worldTransformHead_.translation_ = {0.0f, 0.0f, 0.0f};  // 体の上
-	worldTransformLeft_.translation_ = {-0.0f, 0.0f, 0.0f}; // 体の左
-	worldTransformRight_.translation_ = {0.0f, 0.0f, 0.0f}; // 体の右
+	// アニメーション管理の初期化
+	animation_.Initialize();
 
 	lrDirection_ = LRDirection::kRight;
-	turnTimer_ = kTimeTurn;
-	turnFirstRotationY_ = worldTransform_.rotation_.y;
+	animation_.OnDirectionChanged(worldTransform_.rotation_.y);
 	velocity_ = {0.0f, 0.0f, 0.0f};
 	onGround_ = true;
 	isDead_ = false;
@@ -136,10 +93,6 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	behaviorRequest_ = std::nullopt;
 	isKnockbackRequested_ = false;
 	knockbackTimer_ = 0.0f;
-	attackPhase_ = AttackPhase::kCharge;
-	attackParameter_ = 0;
-
-	walkAnimationTimer_ = 0.0f;
 
 	if (modelHitEffect_ == nullptr) {
 		modelHitEffect_ = KamataEngine::Model::CreateFromOBJ("hit_effect", true);
@@ -150,11 +103,6 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 		delete effect;
 	}
 	hitEffects_.clear();
-
-	// ハンマーのトランスフォーム初期化
-	worldTransformHammer_.Initialize();
-	hammerSkillTimer_ = 0.0f;
-	isHammerVisible_ = false;
 }
 
 void Player::KeysPush() {}
@@ -172,16 +120,15 @@ void Player::OnCollision() {
 	// 効果音の再生
 	AudioManager::GetInstance()->PlaySE(SEType::kAttack);
 
-	// ★変更：HPを一個減らし、ノックバック状態へ移行させることで連続減少を防ぐ
 	if (playerHp_) {
 		playerHp_->DecreaseHp();
 		if (playerHp_->IsDead()) {
-			isDead_ = true;
+			behaviorRequest_ = Behavior::kDeath; // ★ ノックバックではなく死亡演出へ移行
 		} else {
 			behaviorRequest_ = Behavior::kKnockback;
 		}
 	} else {
-		isDead_ = true;
+		behaviorRequest_ = Behavior::kDeath;
 	}
 }
 
@@ -194,8 +141,7 @@ void Player::Move() {
 	if (KamataEngine::Input::GetInstance()->PushKey(DIK_RIGHT)) {
 		if (lrDirection_ != LRDirection::kRight) {
 			lrDirection_ = LRDirection::kRight;
-			turnFirstRotationY_ = worldTransform_.rotation_.y;
-			turnTimer_ = 0.0f;
+			animation_.OnDirectionChanged(worldTransform_.rotation_.y);
 		}
 		if (velocity_.x < 0.0f) {
 			velocity_.x *= (1.0f - kAttenuation);
@@ -204,8 +150,7 @@ void Player::Move() {
 	} else if (KamataEngine::Input::GetInstance()->PushKey(DIK_LEFT)) {
 		if (lrDirection_ != LRDirection::kLeft) {
 			lrDirection_ = LRDirection::kLeft;
-			turnFirstRotationY_ = worldTransform_.rotation_.y;
-			turnTimer_ = 0.0f;
+			animation_.OnDirectionChanged(worldTransform_.rotation_.y);
 		}
 		if (velocity_.x > 0.0f) {
 			velocity_.x *= (1.0f - kAttenuation);
@@ -233,11 +178,7 @@ void Player::BehaviorRootInit() {
 	// 通常状態に戻る際、スケールとZ軸回転(傾斜)をリセット
 	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
 	worldTransform_.rotation_.z = 0.0f;
-	worldTransformLeft_.rotation_.z = 0.0f;
-	worldTransformRight_.rotation_.z = 0.0f;
-	walkAnimationTimer_ = 0.0f;
-
-	isHammerVisible_ = false;
+	animation_.BehaviorRootInit();
 }
 
 void Player::BehaviorRootUpdate() {
@@ -266,184 +207,25 @@ void Player::BehaviorRootUpdate() {
 
 	CheckScreenEdgeCollision();
 
-	if (turnTimer_ < kTimeTurn) {
-		turnTimer_ += 1.0f / 60.0f;
-		if (turnTimer_ > kTimeTurn) {
-			turnTimer_ = kTimeTurn;
-		}
-	}
-
-	const float pi = std::numbers::pi_v<float>;
-
-	// 目標角度の設定
-	// 右向き (kRight) : +PI / 2  (+90度)
-	// 左向き (kLeft)  : -PI / 2  (-90度)
-	float targetRotationY = (lrDirection_ == LRDirection::kRight) ? (pi / 2.0f) : (-pi / 2.0f);
-
-	// 開始角度から目標角度への最短の差分(diff)を求める
-	float diff = targetRotationY - turnFirstRotationY_;
-
-	// 差分を -PI ~ +PI の範囲に正規化する (常に180度以内の最短角度で回す)
-	while (diff > pi) {
-		diff -= 2.0f * pi;
-	}
-	while (diff < -pi) {
-		diff += 2.0f * pi;
-	}
-
-	// イージング(EaseOut)を適用して回転
-	float ratio = turnTimer_ / kTimeTurn;
-	float easeRatio = EaseOut(0.0f, 1.0f, ratio);
-
-	worldTransform_.rotation_.y = turnFirstRotationY_ + diff * easeRatio;
-
-	// 歩きアニメーション処理を追加
-	if (onGround_ && std::abs(velocity_.x) > 0.01f) {
-		// 移動速度に応じてアニメーション時間を進める
-		walkAnimationTimer_ += (std::abs(velocity_.x) / kLimitRunSpeed) * 0.025f;
-
-		// Z軸の角度を使って左右のパーツを交互にスイングさせる（最大約25度傾く想定）
-		float walkTilt = std::sin(walkAnimationTimer_ * 2.0f * pi) * 0.75f;
-		worldTransformLeft_.rotation_.x = walkTilt;
-		worldTransformRight_.rotation_.x = -walkTilt;
-	} else {
-		// 移動していないか空中にいる時は徐々に直立に戻す
-		worldTransformLeft_.rotation_.x *= 0.8f;
-		worldTransformRight_.rotation_.x *= 0.8f;
-		if (std::abs(worldTransformLeft_.rotation_.x) < 0.001f) {
-			worldTransformLeft_.rotation_.x = 0.0f;
-			worldTransformRight_.rotation_.x = 0.0f;
-			walkAnimationTimer_ = 0.0f;
-		}
-	}
-
-	// プレイヤー全体のルート行列を計算
-	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
-	worldTransform_.TransferMatrix();
-
-	// 各ノードのローカル行列（LocalMatrix）を計算
-	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
-	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-
-	// 中心を下にずらす ＝ モデルの見た目を相対的に上に持っていくため、Y軸にプラスします
-	KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
-
-	// 【Left Arm/Leg】
-	// ① 原点中心の回転行列
-	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
-	// ② 中心をずらすための逆移動行列（前後の移動で回転中心をオフセット）
-	KamataEngine::Matrix4x4 preTranslateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
-
-	// ③ 本来の座標（translation_）に中心のオフセットを足した位置へ移動する行列
-	KamataEngine::Vector3 finalTranslationLeft = {
-	    worldTransformLeft_.translation_.x + centerOffset.x, worldTransformLeft_.translation_.y + centerOffset.y, worldTransformLeft_.translation_.z + centerOffset.z};
-	KamataEngine::Matrix4x4 postTranslateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationLeft);
-
-	// ④ すべてを合成 (右から順に適用: 中心移動 ➔ 回転 ➔ 本来の位置へ配置)
-	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(postTranslateLeft, MultiplyMatrix(rotateLeft, preTranslateLeft));
-
-	// 【Right Arm/Leg】
-	// ① 原点中心の回転行列
-	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
-	// ② 中心をずらすための逆移動行列
-	KamataEngine::Matrix4x4 preTranslateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
-
-	// ③ 本来の座標に中心のオフセットを足した位置へ移動する行列
-	KamataEngine::Vector3 finalTranslationRight = {
-	    worldTransformRight_.translation_.x + centerOffset.x, worldTransformRight_.translation_.y + centerOffset.y, worldTransformRight_.translation_.z + centerOffset.z};
-	KamataEngine::Matrix4x4 postTranslateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationRight);
-
-	// ④ すべてを合成
-	KamataEngine::Matrix4x4 localMatrixRight = MultiplyMatrix(postTranslateRight, MultiplyMatrix(rotateRight, preTranslateRight));
-
-	// 親子関係に基づきワールド行列（WorldMatrix）を計算
-	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
-	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
-	worldTransformLeft_.matWorld_ = MultiplyMatrix(localMatrixLeft, worldTransformBody_.matWorld_);
-	worldTransformRight_.matWorld_ = MultiplyMatrix(localMatrixRight, worldTransformBody_.matWorld_);
-
-	// 各部位の行列を転送
-	worldTransformBody_.TransferMatrix();
-	worldTransformHead_.TransferMatrix();
-	worldTransformLeft_.TransferMatrix();
-	worldTransformRight_.TransferMatrix();
+	// アニメーションおよび部位のワールド行列計算
+	animation_.BehaviorRootUpdate(worldTransform_, lrDirection_, velocity_, onGround_, kLimitRunSpeed, kTimeTurn);
 }
 
-void Player::BehaviorAttackInit() {
-	attackPhase_ = AttackPhase::kCharge;
-	attackParameter_ = 0;
-	// 攻撃移行時は歩き用のZ軸回転角度をリセット
-	worldTransformLeft_.rotation_.z = 0.0f;
-	worldTransformRight_.rotation_.z = 0.0f;
-}
+void Player::BehaviorAttackInit() { animation_.BehaviorAttackInit(); }
 
 void Player::BehaviorAttackUpdate() {
-	attackParameter_++;
-	KamataEngine::Vector3 velocity = {};
+	KamataEngine::Vector3 attackVelocityMove = {};
+	bool isHitEffectNeeded = false;
+	bool isAttackFinished = false;
 
-	// 傾き角度の設定
-	const float kMaxTiltAngle = 0.4f; // 前傾の最大角度（ラジアン）
+	animation_.BehaviorAttackUpdate(worldTransform_, lrDirection_, kAttackVelocity, attackVelocityMove, isHitEffectNeeded, isAttackFinished);
 
-	// 【修正】符号を反転
-	// 右向き：プラス回転(Z軸)で前傾、左向き：マイナス回転(Z軸)で前傾
-	float tiltSign = (lrDirection_ == LRDirection::kRight) ? 1.0f : -1.0f;
-	float targetTilt = kMaxTiltAngle * tiltSign;
-
-	// スケールは固定
-	worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
-
-	switch (attackPhase_) {
-	case AttackPhase::kCharge:
-	default: {
-		float t = static_cast<float>(attackParameter_) / static_cast<float>(kChargeDuration);
-		t = std::min(t, 1.0f);
-
-		// 0から前傾角度まで滑らかに傾斜
-		worldTransform_.rotation_.z = EaseOut(0.0f, targetTilt, t);
-
-		if (attackParameter_ >= kChargeDuration) {
-			attackPhase_ = AttackPhase::kDash;
-			attackParameter_ = 0;
-
-			CreateHitEffect(worldTransform_.translation_);
-		}
-		break;
-	}
-
-	case AttackPhase::kDash: {
-		// 突進中は傾きを保持
-		worldTransform_.rotation_.z = targetTilt;
-
-		if (lrDirection_ == LRDirection::kRight) {
-			velocity.x = +kAttackVelocity;
-		} else {
-			velocity.x = -kAttackVelocity;
-		}
-
-		if (attackParameter_ >= kDashDuration) {
-			attackPhase_ = AttackPhase::kRecoil;
-			attackParameter_ = 0;
-		}
-		break;
-	}
-
-	case AttackPhase::kRecoil: {
-		float t = static_cast<float>(attackParameter_) / static_cast<float>(kRecoilDuration);
-		t = std::min(t, 1.0f);
-
-		// 前傾姿勢から元の直立(0)へ滑らかに戻る
-		worldTransform_.rotation_.z = EaseOut(targetTilt, 0.0f, t);
-
-		if (attackParameter_ >= kRecoilDuration) {
-			worldTransform_.rotation_.z = 0.0f;
-			behaviorRequest_ = Behavior::kRoot;
-		}
-		break;
-	}
+	if (isHitEffectNeeded) {
+		CreateHitEffect(worldTransform_.translation_);
 	}
 
 	CollisionMapInfo collisionMapInfo;
-	collisionMapInfo.moveAmount = velocity;
+	collisionMapInfo.moveAmount = attackVelocityMove;
 	collisionMapInfo.onGround = onGround_;
 	MapCollision(collisionMapInfo);
 
@@ -461,31 +243,10 @@ void Player::BehaviorAttackUpdate() {
 
 	CheckScreenEdgeCollision();
 
-	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
-	worldTransform_.TransferMatrix();
-
-	// 攻撃時も同様に各メッシュの親子関係行列を計算
-	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
-	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-
-	// ★【修正】攻撃時も回転中心の修正を適用
-	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
-	KamataEngine::Matrix4x4 translateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformLeft_.translation_);
-	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(translateLeft, rotateLeft);
-
-	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
-	KamataEngine::Matrix4x4 translateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformRight_.translation_);
-	KamataEngine::Matrix4x4 localMatrixRight = MultiplyMatrix(translateRight, rotateRight);
-
-	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
-	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
-	worldTransformLeft_.matWorld_ = MultiplyMatrix(localMatrixLeft, worldTransformBody_.matWorld_);
-	worldTransformRight_.matWorld_ = MultiplyMatrix(localMatrixRight, worldTransformBody_.matWorld_);
-
-	worldTransformBody_.TransferMatrix();
-	worldTransformHead_.TransferMatrix();
-	worldTransformLeft_.TransferMatrix();
-	worldTransformRight_.TransferMatrix();
+	if (isAttackFinished) {
+		worldTransform_.rotation_.z = 0.0f;
+		behaviorRequest_ = Behavior::kRoot;
+	}
 }
 
 void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
@@ -509,7 +270,8 @@ void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 }
 
 std::optional<Player::AABB> Player::GetAttackAABB() const {
-	if ((behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill && (hammerSkillTimer_ / kHammerSkillDuration) >= 0.4f)) {
+	if ((behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) ||
+	    (behavior_ == Behavior::kHammerSkill && (animation_.GetHammerSkillTimer() / PlayerAnimation::GetHammerSkillDuration()) >= 0.4f)) {
 
 		AABB aabb;
 		const auto& pos = worldTransform_.translation_;
@@ -530,7 +292,7 @@ std::optional<Player::AABB> Player::GetAttackAABB() const {
 }
 
 void Player::Update() {
-	if (isDead_) {
+	if (isDeathAnimationFinished_) {
 		return;
 	}
 
@@ -564,6 +326,9 @@ void Player::Update() {
 		case Behavior::kHammerSkill:
 			BehaviorHammerSkillInit();
 			break;
+		case Behavior::kDeath:
+			BehaviorDeathInit();
+			break;
 		}
 
 		behaviorRequest_ = std::nullopt;
@@ -581,6 +346,9 @@ void Player::Update() {
 		break;
 	case Behavior::kHammerSkill:
 		BehaviorHammerSkillUpdate();
+		break;
+	case Behavior::kDeath:
+		BehaviorDeathUpdate();
 		break;
 	}
 
@@ -607,11 +375,22 @@ void Player::Update() {
 	}
 }
 
+void Player::BehaviorDeathInit() {
+	isDead_ = true;
+	animation_.BehaviorDeathInit(worldTransform_);
+}
+
+void Player::BehaviorDeathUpdate() {
+	bool isFinished = false;
+	animation_.BehaviorDeathUpdate(isFinished);
+	if (isFinished) {
+		isDeathAnimationFinished_ = true; // 演出終了
+	}
+}
+
 void Player::BehaviorKnockbackInitialize() {
 	knockbackTimer_ = 0.0f;
-	// ノックバック移行時も回転角度をクリア
-	worldTransformLeft_.rotation_.z = 0.0f;
-	worldTransformRight_.rotation_.z = 0.0f;
+	animation_.BehaviorKnockbackInit();
 }
 
 void Player::BehaviorKnockbackUpdate() {
@@ -651,32 +430,8 @@ void Player::BehaviorKnockbackUpdate() {
 
 	CheckScreenEdgeCollision();
 
-	// 以下、既存の行列計算と転送処理
-	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
-	worldTransform_.TransferMatrix();
-
-	// ノックバック時も親子関係行列を更新
-	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
-	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-
-	// ★ノックバック時も回転中心の修正を適用
-	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
-	KamataEngine::Matrix4x4 translateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformLeft_.translation_);
-	KamataEngine::Matrix4x4 localMatrixLeft = MultiplyMatrix(translateLeft, rotateLeft);
-
-	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
-	KamataEngine::Matrix4x4 translateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, worldTransformRight_.translation_);
-	KamataEngine::Matrix4x4 localMatrixRight = MultiplyMatrix(translateRight, rotateRight);
-
-	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
-	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
-	worldTransformLeft_.matWorld_ = MultiplyMatrix(localMatrixLeft, worldTransformBody_.matWorld_);
-	worldTransformRight_.matWorld_ = MultiplyMatrix(localMatrixRight, worldTransformBody_.matWorld_);
-
-	worldTransformBody_.TransferMatrix();
-	worldTransformHead_.TransferMatrix();
-	worldTransformLeft_.TransferMatrix();
-	worldTransformRight_.TransferMatrix();
+	// 行列計算と転送処理
+	animation_.BehaviorKnockbackUpdate(worldTransform_);
 
 	if (knockbackTimer_ >= kKnockbackTotalDuration) {
 		behaviorRequest_ = Behavior::kRoot;
@@ -684,86 +439,17 @@ void Player::BehaviorKnockbackUpdate() {
 }
 
 void Player::BehaviorHammerSkillInit() {
-	hammerSkillTimer_ = 0.0f;
-	isHammerVisible_ = false;
+	animation_.BehaviorHammerSkillInit();
 	velocity_ = {0.0f, 0.0f, 0.0f}; // スキル発動中は移動を停止
 }
 
 void Player::BehaviorHammerSkillUpdate() {
-	hammerSkillTimer_ += 1.0f / 60.0f;
-	float progress = hammerSkillTimer_ / kHammerSkillDuration;
-	if (progress > 1.0f) {
-		progress = 1.0f;
-	}
-
-	float armRotationX = 0.0f;
-
-	// アニメーションの前半（手を上げる）と後半（振り下ろす）
-	if (progress < 0.4f) {
-		// 0.0 ~ 0.4 の間で両手を上に上げる
-		float t = progress / 0.4f;
-		armRotationX = EaseOut(0.0f, -4.0f, t);
-		isHammerVisible_ = true; // 手を上げ始めると同時にハンマーを表示
-	} else {
-		// 0.4 ~ 1.0 の間で一気に振り下ろす
-		float t = (progress - 0.4f) / 0.6f;
-		armRotationX = EaseOut(-4.0f, -1.5f, t);
-	}
-
-	// 両手に同じ回転を適用（左右対称に上げる）
-	worldTransformLeft_.rotation_.x = armRotationX;
-	worldTransformRight_.rotation_.x = armRotationX;
-
-	// プレイヤー本体のベース行列の計算
-	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
-	worldTransform_.TransferMatrix();
-
-	// 各部位のローカル・ワールド行列計算
-	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
-	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform_.matWorld_);
-	worldTransformBody_.TransferMatrix();
-
-	KamataEngine::Matrix4x4 localMatrixHead = MakeAffineMatrix(worldTransformHead_.scale_, worldTransformHead_.rotation_, worldTransformHead_.translation_);
-	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
-	worldTransformHead_.TransferMatrix();
-
-	// 回転の中心オフセットを考慮した腕の行列計算
-	KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
-
-	// 左手
-	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
-	KamataEngine::Matrix4x4 preTranslateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
-	KamataEngine::Vector3 finalTranslationLeft = {
-	    worldTransformLeft_.translation_.x + centerOffset.x, worldTransformLeft_.translation_.y + centerOffset.y, worldTransformLeft_.translation_.z + centerOffset.z};
-	KamataEngine::Matrix4x4 postTranslateLeft = MakeAffineMatrix(worldTransformLeft_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationLeft);
-	worldTransformLeft_.matWorld_ = MultiplyMatrix(postTranslateLeft, MultiplyMatrix(rotateLeft, preTranslateLeft));
-	worldTransformLeft_.matWorld_ = MultiplyMatrix(worldTransformLeft_.matWorld_, worldTransformBody_.matWorld_);
-	worldTransformLeft_.TransferMatrix();
-
-	// 右手
-	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
-	KamataEngine::Matrix4x4 preTranslateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
-	KamataEngine::Vector3 finalTranslationRight = {
-	    worldTransformRight_.translation_.x + centerOffset.x, worldTransformRight_.translation_.y + centerOffset.y, worldTransformRight_.translation_.z + centerOffset.z};
-	KamataEngine::Matrix4x4 postTranslateRight = MakeAffineMatrix(worldTransformRight_.scale_, {0.0f, 0.0f, 0.0f}, finalTranslationRight);
-	worldTransformRight_.matWorld_ = MultiplyMatrix(postTranslateRight, MultiplyMatrix(rotateRight, preTranslateRight));
-	worldTransformRight_.matWorld_ = MultiplyMatrix(worldTransformRight_.matWorld_, worldTransformBody_.matWorld_);
-	worldTransformRight_.TransferMatrix();
-
-	// ★ ハンマーを右手に追従させる制御
-	if (isHammerVisible_) {
-		KamataEngine::Vector3 hammerLocalPos = {0.0f, 0.5f, 0.2f};
-		KamataEngine::Vector3 hammerLocalRot = {-3.0f, 0.0f, 0.0f};
-
-		KamataEngine::Matrix4x4 localMatrixHammer = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, hammerLocalRot, hammerLocalPos);
-		worldTransformHammer_.matWorld_ = MultiplyMatrix(localMatrixHammer, worldTransformRight_.matWorld_);
-		worldTransformHammer_.TransferMatrix();
-	}
+	bool isSkillFinished = false;
+	animation_.BehaviorHammerSkillUpdate(worldTransform_, isSkillFinished);
 
 	// アニメーション終了判定
-	if (hammerSkillTimer_ >= kHammerSkillDuration) {
+	if (isSkillFinished) {
 		behaviorRequest_ = Behavior::kRoot;
-		isHammerVisible_ = false;
 	}
 }
 
@@ -869,12 +555,12 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 				if (playerHp_) {
 					playerHp_->DecreaseHp();
 					if (playerHp_->IsDead()) {
-						isDead_ = true;
+						behaviorRequest_ = Behavior::kDeath; // ★ 死亡演出へ
 					} else {
 						behaviorRequest_ = Behavior::kKnockback;
 					}
 				} else {
-					isDead_ = true;
+					behaviorRequest_ = Behavior::kDeath;
 				}
 			}
 			break;
@@ -1033,24 +719,12 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 }
 
 void Player::Draw() {
-	if (isDead_) {
-		return;
+	if (isDeathAnimationFinished_) {
+		return; // 演出が終わったら非表示
 	}
 
 	// 各部位の個別モデルをそれぞれの階層構造行列で描画
-	if (camera_) {
-		if (modelPlayerBody_ && modelPlayerHead_ && modelPlayerLeft_ && modelPlayerRight_) {
-			modelPlayerBody_->Draw(worldTransformBody_, *camera_);
-			modelPlayerHead_->Draw(worldTransformHead_, *camera_);
-			modelPlayerLeft_->Draw(worldTransformLeft_, *camera_);
-			modelPlayerRight_->Draw(worldTransformRight_, *camera_);
-
-			// ★ ハンマーの描画処理を追加（スキル発動中かつモデルが存在する場合）
-			if (isHammerVisible_ && modelHammer_) {
-				modelHammer_->Draw(worldTransformHammer_, *camera_);
-			}
-		}
-	}
+	animation_.Draw(camera_, modelHammer_);
 }
 
 Player::AABB Player::GetAABB() const {

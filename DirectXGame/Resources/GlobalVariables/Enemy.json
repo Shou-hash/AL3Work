@@ -1,0 +1,9 @@
+{
+    "Enemy": {
+        "DeadDuration": 1.0,
+        "WalkMotionAngleEnd": 30.0,
+        "WalkMotionAnglestart": -20.0,
+        "WalkMotionTime": 1.0,
+        "Walkspeed": 0.05000000074505806
+    }
+}

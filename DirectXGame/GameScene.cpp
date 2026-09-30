@@ -465,14 +465,15 @@ void GameScene::ChangePhase() {
 		break;
 
 	case Phase::kPlay:
-		if (player_ && player_->IsDead()) {
+		// ★ プレイヤーの散らばり演出が終了したら Phase::kDeath (または FadeOut) へ移行
+		if (player_ && player_->IsDeathAnimationFinished()) {
 			phase_ = Phase::kDeath;
 
 			DeathParticles* deathParticles = new DeathParticles();
 			KamataEngine::Vector3 deathPosition = player_->GetWorldTransform().translation_;
 			deathParticles->Initialize(modelDeathParticles_, &camera_, deathPosition);
 			effects_.push_back(deathParticles);
-		} else if (isGoalReached_) { // ゴール到達判定
+		} else if (isGoalReached_) {
 			phase_ = Phase::kFadeOut;
 			if (fade_) {
 				fade_->Start(Fade::Status::FadeOut, 1.0f);

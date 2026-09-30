@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseEnemy.h"
 #include "KamataEngine.h"
+#include "PlayerAnimation.h"
 #include <3d/WorldTransform.h>
 #include <array>
 #include <list>
@@ -17,16 +18,11 @@ enum class LRDirection {
 };
 
 enum class Behavior {
-	kRoot,       // 通常行動
-	kAttack,     // 攻撃行動
-	kKnockback,  // ノックバック状態
-	kHammerSkill // ★ハンマースキルを追加
-};
-
-enum class AttackPhase {
-	kCharge, // 溜め
-	kDash,   // 突進
-	kRecoil, // 余韻
+	kRoot,        // 通常行動
+	kAttack,      // 攻撃行動
+	kKnockback,   // ノックバック状態
+	kHammerSkill, // ハンマースキルを追加
+	kDeath        // 死亡アニメーション状態
 };
 
 class Player {
@@ -68,7 +64,13 @@ public:
 
 	void SetMapChipField(MapChipField* mapChipField) { mapChipField_ = mapChipField; }
 	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; }
-	void SetPlayerHp(PlayerHp* playerHp) { playerHp_ = playerHp; } // ★ 追加
+	void SetPlayerHp(PlayerHp* playerHp) { playerHp_ = playerHp; }
+
+	// ★ 死亡アニメーション演出が完了したか判定する関数
+	bool IsDeathAnimationFinished() const { return isDeathAnimationFinished_; }
+
+	void BehaviorDeathInit();   // ★追加
+	void BehaviorDeathUpdate(); // ★追加
 
 	const KamataEngine::Vector3& GetVelocity() const { return velocity_; }
 	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
@@ -77,15 +79,16 @@ public:
 	std::vector<KamataEngine::WorldTransform>& GetMeshWorldTransforms() { return meshWorldTransforms_; }
 
 	// ★ 各部位の個別WorldTransformを取得する関数を追加
-	KamataEngine::WorldTransform& GetWorldTransformHead() { return worldTransformHead_; }
-	KamataEngine::WorldTransform& GetWorldTransformBody() { return worldTransformBody_; }
-	KamataEngine::WorldTransform& GetWorldTransformLeft() { return worldTransformLeft_; }
-	KamataEngine::WorldTransform& GetWorldTransformRight() { return worldTransformRight_; }
+	KamataEngine::WorldTransform& GetWorldTransformHead() { return animation_.GetWorldTransformHead(); }
+	KamataEngine::WorldTransform& GetWorldTransformBody() { return animation_.GetWorldTransformBody(); }
+	KamataEngine::WorldTransform& GetWorldTransformLeft() { return animation_.GetWorldTransformLeft(); }
+	KamataEngine::WorldTransform& GetWorldTransformRight() { return animation_.GetWorldTransformRight(); }
 
 	bool IsDead() const { return isDead_; }
 	// ★ハンマースキルの振り下ろしタイミング（進捗0.4以上）も攻撃中として判定するよう修正
 	bool IsAttacking() const {
-		return (behavior_ == Behavior::kAttack && attackPhase_ == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill && (hammerSkillTimer_ / kHammerSkillDuration) >= 0.4f);
+		return (behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) ||
+		       (behavior_ == Behavior::kHammerSkill && (animation_.GetHammerSkillTimer() / PlayerAnimation::GetHammerSkillDuration()) >= 0.4f);
 	}
 	LRDirection GetLRDirection() const { return lrDirection_; }
 
@@ -130,20 +133,10 @@ private:
 	Behavior behavior_ = Behavior::kRoot;
 	std::optional<Behavior> behaviorRequest_ = std::nullopt;
 
-	float EaseOut(float start, float end, float t) {
-		float easing = 1.0f - std::pow(1.0f - t, 3.0f);
-		return start + (end - start) * easing;
-	}
-
-	float EaseIn(float start, float end, float t) {
-		float easing = std::pow(t, 3.0f);
-		return start + (end - start) * easing;
-	}
-
 	// 調整項目（GlobalVariables によって外部から変動可能）
-	static inline float kAcceleration = 0.03f;
-	static inline float kAttenuation = 0.5f;
-	static inline float kLimitRunSpeed = 0.5f;
+	static inline float kAcceleration = 0.015f;
+	static inline float kAttenuation = 0.4f;
+	static inline float kLimitRunSpeed = 0.025f;
 	static inline float kTimeTurn = 0.8f;
 	static inline float kGravityAcceleration = 0.08f;
 	static inline float kLimitFallSpeed = 1.0f;
@@ -163,8 +156,6 @@ private:
 	bool isDead_ = false;
 	bool isKnockbackRequested_ = false;
 
-	float turnFirstRotationY_ = 0.0f;
-	float turnTimer_ = 0.0f;
 	KamataEngine::Camera* camera_ = nullptr;
 	KamataEngine::Model* modelPlayer_ = nullptr;
 	KamataEngine::WorldTransform worldTransform_;
@@ -172,27 +163,12 @@ private:
 	// 各Meshを単独で調整するためのWorldTransform配列
 	std::vector<KamataEngine::WorldTransform> meshWorldTransforms_;
 
-	// 各部位の個別モデルポインタ
-	KamataEngine::Model* modelPlayerHead_ = nullptr;
-	KamataEngine::Model* modelPlayerBody_ = nullptr;
-	KamataEngine::Model* modelPlayerLeft_ = nullptr;
-	KamataEngine::Model* modelPlayerRight_ = nullptr;
-
-	// 各部位の個別WorldTransform (0: Head, 1: Body, 2: Left, 3: Right)
-	KamataEngine::WorldTransform worldTransformHead_;
-	KamataEngine::WorldTransform worldTransformBody_;
-	KamataEngine::WorldTransform worldTransformLeft_;
-	KamataEngine::WorldTransform worldTransformRight_;
+	// プレイヤーアニメーション管理クラス
+	PlayerAnimation animation_;
 
 	LRDirection lrDirection_ = LRDirection::kRight;
 
-	AttackPhase attackPhase_ = AttackPhase::kCharge;
-	uint32_t attackParameter_ = 0;
-
-	static inline uint32_t kChargeDuration = 8;
-	static inline uint32_t kDashDuration = 8;
-	static inline uint32_t kRecoilDuration = 10;
-	static inline float kAttackVelocity = 0.85f;
+	static inline float kAttackVelocity = 0.4f;
 
 	KamataEngine::Model* modelHitEffect_ = nullptr;
 	std::list<HitEffect*> hitEffects_;
@@ -201,15 +177,8 @@ private:
 	static inline float kKnockbackSpeedDuration = 0.2f;
 	static inline float kKnockbackTotalDuration = 0.5f;
 
-	// 歩きアニメーション用のタイマー変数
-	float walkAnimationTimer_ = 0.0f;
-
 	// Playerクラスのprivateメンバに追加
 	KamataEngine::Model* modelHammer_ = nullptr;
-	KamataEngine::WorldTransform worldTransformHammer_;
 
-	// アニメーション制御用タイマーとフラグ
-	float hammerSkillTimer_ = 0.0f;
-	bool isHammerVisible_ = false;
-	static inline float kHammerSkillDuration = 0.6f; // スキル全体の時間（秒）
+	bool isDeathAnimationFinished_ = false; // ★追加
 };

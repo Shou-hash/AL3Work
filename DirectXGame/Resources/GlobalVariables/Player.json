@@ -1,14 +1,93 @@
 {
     "Player": {
-        "Acceleration": 0.5210000276565552,
+        "Acceleration": 0.029999999329447746,
+        "ArmCenterOffset": [
+            0.0,
+            -0.01600000075995922,
+            0.0
+        ],
         "AttackVelocity": 0.8500000238418579,
         "Attenuation": 0.5,
+        "BodyRotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "BodyScale": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "BodyTranslation": [
+            0.0,
+            -0.3919999897480011,
+            0.0
+        ],
         "GravityAcceleration": 0.07999999821186066,
-        "Height": 0.800000011920929,
+        "HeadRotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "HeadScale": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "HeadTranslation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "HeadYAfterAttach": -0.4000000059604645,
+        "HeadYBeforeAttach": -1.0,
         "JumpAcceleration": 1.0,
+        "LassoBothArmHoldTime": 1.5,
+        "LassoLaunchDuration": 0.6000000238418579,
+        "LassoMaxReach": 6.0,
+        "LassoReturnDuration": 0.4000000059604645,
+        "LassoSpinDuration": 0.4000000059604645,
+        "LeftArmRotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "LeftArmScale": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "LeftArmTranslation": [
+            -0.05000000074505806,
+            -0.3919999897480011,
+            0.0
+        ],
         "LimitFallSpeed": 1.0,
-        "LimitRunSpeed": 0.43700000643730164,
-        "TimeTurn": 0.5199999809265137,
-        "Width": 0.800000011920929
+        "LimitRunSpeed": 0.5,
+        "PaddingBottom": 0.5,
+        "PaddingLeft": 0.4000000059604645,
+        "PaddingRight": 0.4000000059604645,
+        "PaddingTop": 0.5,
+        "RightArmRotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "RightArmScale": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "RightArmTranslation": [
+            0.05000000074505806,
+            -0.3919999897480011,
+            0.0
+        ],
+        "StringScale": [
+            0.44999998807907104,
+            -0.23399999737739563,
+            0.15000000596046448
+        ],
+        "TimeTurn": 0.800000011920929
     }
 }
