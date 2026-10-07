@@ -168,6 +168,7 @@
     <ClCompile Include="BaseEnemy.cpp" />
     <ClCompile Include="BossEnemy.cpp" />
     <ClCompile Include="CameraController.cpp" />
+    <ClCompile Include="BackgroundBlocks.cpp" />
     <ClCompile Include="DeathParticles.cpp" />
     <ClCompile Include="EndScene.cpp" />
     <ClCompile Include="Enemy.cpp" />
@@ -292,6 +293,7 @@
     <ClInclude Include="BaseEnemy.h" />
     <ClInclude Include="BossEnemy.h" />
     <ClInclude Include="CameraController.h" />
+    <ClInclude Include="BackgroundBlocks.h" />
     <ClInclude Include="DeathParticles.h" />
     <ClInclude Include="EndScene.h" />
     <ClInclude Include="Enemy.h" />

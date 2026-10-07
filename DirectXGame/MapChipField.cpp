@@ -48,26 +48,29 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 			std::string word;
 			std::getline(lineStream, word, ',');
 
-			// 空白の場合はスキップ
 			if (word.empty()) {
 				continue;
 			}
 
-			// 先頭文字がいずれかのマップチップ種別に該当するか確認
 			if (!mapChipTypeTable.contains(word[kChipType])) {
 				continue;
 			}
 
-			// 先頭文字でマップチップのタイプを判別
+			// マップチップのタイプを設定
 			mapChipData_.data[i][j].type = mapChipTypeTable[word[kChipType]];
 
-			// サブIDを含まない場合はスキップ（0番で確定）
 			if (word.size() <= kChipSubID) {
 				continue;
 			}
 
-			// マップチップのサブIDを設定
-			mapChipData_.data[i][j].subID = static_cast<uint8_t>(word[kChipSubID] - '0');
+			// サブIDの読み込み
+			uint8_t subID = static_cast<uint8_t>(word[kChipSubID] - '0');
+			mapChipData_.data[i][j].subID = subID;
+
+			// ★追加: B1 (Block 且つ subIDが1) の場合は kBlockFall として設定
+			if (mapChipData_.data[i][j].type == MapChipType::kBlock && subID == 1) {
+				mapChipData_.data[i][j].type = MapChipType::kBlockFall;
+			}
 		}
 	}
 }

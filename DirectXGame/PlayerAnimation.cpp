@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "PlayerAnimation.h"
 #include "Player.h"
 #include <algorithm>
@@ -65,11 +66,13 @@ void PlayerAnimation::Initialize() {
 }
 
 void PlayerAnimation::BehaviorRootInit() {
-	// 通常状態に戻る際、スケールとZ軸回転(傾斜)をリセット
-	worldTransformLeft_.rotation_.z = 0.0f;
-	worldTransformRight_.rotation_.z = 0.0f;
-	walkAnimationTimer_ = 0.0f;
+	// ★ 各部位の回転角度を完全に初期化 (X, Y, Z 軸すべて 0 にリセット)
+	worldTransformHead_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformBody_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformLeft_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformRight_.rotation_ = {0.0f, 0.0f, 0.0f};
 
+	walkAnimationTimer_ = 0.0f;
 	isHammerVisible_ = false;
 }
 
@@ -180,9 +183,12 @@ void PlayerAnimation::BehaviorRootUpdate(KamataEngine::WorldTransform& worldTran
 void PlayerAnimation::BehaviorAttackInit() {
 	attackPhase_ = AttackPhase::kCharge;
 	attackParameter_ = 0;
-	// 攻撃移行時は歩き用のZ軸回転角度をリセット
-	worldTransformLeft_.rotation_.z = 0.0f;
-	worldTransformRight_.rotation_.z = 0.0f;
+
+	// ★ 攻撃移行時にも部位の回転角度をリセット
+	worldTransformHead_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformBody_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformLeft_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformRight_.rotation_ = {0.0f, 0.0f, 0.0f};
 }
 
 void PlayerAnimation::BehaviorAttackUpdate(KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, float attackVelocity, KamataEngine::Vector3& outVelocity, bool& outCreateHitEffect, bool& outFinished) {
@@ -280,9 +286,11 @@ void PlayerAnimation::BehaviorAttackUpdate(KamataEngine::WorldTransform& worldTr
 }
 
 void PlayerAnimation::BehaviorKnockbackInit() {
-	// ノックバック移行時も回転角度をクリア
-	worldTransformLeft_.rotation_.z = 0.0f;
-	worldTransformRight_.rotation_.z = 0.0f;
+	// ★ 被弾ノックバック時にも部位の回転角度をリセット
+	worldTransformHead_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformBody_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformLeft_.rotation_ = {0.0f, 0.0f, 0.0f};
+	worldTransformRight_.rotation_ = {0.0f, 0.0f, 0.0f};
 }
 
 void PlayerAnimation::BehaviorKnockbackUpdate(KamataEngine::WorldTransform& worldTransform) {
@@ -314,43 +322,155 @@ void PlayerAnimation::BehaviorKnockbackUpdate(KamataEngine::WorldTransform& worl
 	worldTransformRight_.TransferMatrix();
 }
 
-void PlayerAnimation::BehaviorHammerSkillInit() {
+// ★ コンボ段階に応じた初期化
+void PlayerAnimation::BehaviorHammerSkillInit(uint32_t comboIndex) {
+	comboIndex_ = comboIndex;
 	hammerSkillTimer_ = 0.0f;
-	isHammerVisible_ = false;
+	isHammerVisible_ = true;
 }
 
-void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& worldTransform, bool& outFinished) {
+void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, bool& outHitCheck, bool& outCanCombo, bool& outFinished) {
+	(void)lrDirection; // 未使用警告の抑制
+
 	hammerSkillTimer_ += 1.0f / 60.0f;
+	outHitCheck = false;
+	outCanCombo = false;
 	outFinished = false;
 
-	float progress = hammerSkillTimer_ / kHammerSkillDuration;
-	if (progress > 1.0f) {
-		progress = 1.0f;
-	}
+	// ★ 5段階のコンボ時間取得
+	float duration = kHammerSkillDurationStep0;
+	if (comboIndex_ == 1)
+		duration = kHammerSkillDurationStep1;
+	else if (comboIndex_ == 2)
+		duration = kHammerSkillDurationStep2;
+	else if (comboIndex_ == 3)
+		duration = kHammerSkillDurationStep3;
+	else if (comboIndex_ == 4)
+		duration = kHammerSkillDurationStep4;
 
-	float armRotationX = 0.0f;
+	float progress = std::min(hammerSkillTimer_ / duration, 1.0f);
 
-	// アニメーションの前半（手を上げる）と後半（振り下ろす）
-	if (progress < 0.4f) {
-		// 0.0 ~ 0.4 の間で両手を上に上げる
-		float t = progress / 0.4f;
-		armRotationX = EaseOut(0.0f, -4.0f, t);
-		isHammerVisible_ = true; // 手を上げ始めると同時にハンマーを表示
+	// 腕とハンマーの回転・位置・スケール変調用変数
+	KamataEngine::Vector3 armRotL = {};
+	KamataEngine::Vector3 armRotR = {};
+	KamataEngine::Vector3 hammerLocalPos = {0.0f, 0.5f, 0.2f};
+	KamataEngine::Vector3 hammerLocalRot = {-3.0f, 0.0f, 0.0f};
+	KamataEngine::Vector3 hammerLocalScale = {1.0f, 1.0f, 1.0f}; // ★ ハンマースケール変数を追加
+
+	// ----------------------------------------------------
+	// 連撃のステップごとのモーション＆スケール変化
+	// ----------------------------------------------------
+	if (comboIndex_ == 0) {
+		// 【1段目】斜め切り (1.0 -> 1.25 へ軽く拡大)
+		if (progress < 0.35f) {
+			float t = progress / 0.35f;
+			armRotR = {EaseOut(0.0f, -2.5f, t), EaseOut(0.0f, 0.8f, t), EaseOut(0.0f, -0.6f, t)};
+			armRotL = armRotR;
+			// 振りかぶり時にわずかにしならせる
+			hammerLocalScale = {EaseOut(1.0f, 0.9f, t), EaseOut(1.0f, 1.1f, t), EaseOut(1.0f, 0.9f, t)};
+		} else {
+			float t = (progress - 0.35f) / 0.65f;
+			armRotR = {EaseOut(-2.5f, 1.5f, t), EaseOut(0.8f, -0.4f, t), EaseOut(-0.6f, 0.8f, t)};
+			armRotL = armRotR;
+			// ヒットの瞬間に全体的に拡大
+			hammerLocalScale = {EaseOut(1.25f, 1.1f, t), EaseOut(1.25f, 1.1f, t), EaseOut(1.25f, 1.1f, t)};
+		}
+		if (progress >= 0.35f && progress <= 0.45f)
+			outHitCheck = true;
+		if (progress >= 0.35f)
+			outCanCombo = true;
+
+	} else if (comboIndex_ == 1) {
+		// 【2段目】横払い (1.1 から引き継ぎ -> 払う瞬間に横へ伸長 1.35)
+		if (progress < 0.3f) {
+			float t = progress / 0.3f;
+			armRotR = {EaseOut(0.0f, -0.8f, t), EaseOut(0.0f, -1.8f, t), EaseOut(0.0f, 0.0f, t)};
+			armRotL = armRotR;
+			hammerLocalScale = {EaseOut(1.1f, 1.2f, t), EaseOut(1.1f, 1.2f, t), EaseOut(1.1f, 1.2f, t)};
+		} else {
+			float t = (progress - 0.3f) / 0.7f;
+			armRotR = {EaseOut(-0.8f, 0.5f, t), EaseOut(-1.8f, 2.0f, t), EaseOut(0.0f, -0.5f, t)};
+			armRotL = armRotR;
+			hammerLocalRot = {-2.0f, 1.5f, 0.0f};
+			// 払う遠心力で左右・奥に伸ばす
+			hammerLocalScale = {EaseOut(1.4f, 1.25f, t), EaseOut(1.1f, 1.25f, t), EaseOut(1.4f, 1.25f, t)};
+		}
+		if (progress >= 0.3f && progress <= 0.45f)
+			outHitCheck = true;
+		if (progress >= 0.35f)
+			outCanCombo = true;
+
+	} else if (comboIndex_ == 2) {
+		// 【3段目】返し横払い (1.25 から引き継ぎ -> 1.5 倍へスケールアップ)
+		if (progress < 0.3f) {
+			float t = progress / 0.3f;
+			armRotR = {EaseOut(0.0f, -0.5f, t), EaseOut(0.0f, 1.8f, t), EaseOut(0.0f, 0.5f, t)};
+			armRotL = armRotR;
+			hammerLocalScale = {EaseOut(1.25f, 1.3f, t), EaseOut(1.25f, 1.3f, t), EaseOut(1.25f, 1.3f, t)};
+		} else {
+			float t = (progress - 0.3f) / 0.7f;
+			armRotR = {EaseOut(-0.5f, 0.8f, t), EaseOut(1.8f, -2.0f, t), EaseOut(0.5f, -0.5f, t)};
+			armRotL = armRotR;
+			hammerLocalRot = {-2.0f, -1.5f, 0.0f};
+			hammerLocalScale = {EaseOut(1.5f, 1.35f, t), EaseOut(1.2f, 1.35f, t), EaseOut(1.5f, 1.35f, t)};
+		}
+		if (progress >= 0.3f && progress <= 0.45f)
+			outHitCheck = true;
+		if (progress >= 0.35f)
+			outCanCombo = true;
+
+	} else if (comboIndex_ == 3) {
+		// 【4段目】すくい上げアッパー (1.35 から引き継ぎ -> 縦に1.7倍伸長)
+		if (progress < 0.35f) {
+			float t = progress / 0.35f;
+			armRotR = {EaseOut(0.0f, 1.5f, t), EaseOut(0.0f, 0.0f, t), EaseOut(0.0f, 0.0f, t)};
+			armRotL = armRotR;
+			hammerLocalPos = {0.0f, -0.2f, 0.4f};
+			// 溜めで横方向に軽く潰す
+			hammerLocalScale = {EaseOut(1.35f, 1.5f, t), EaseOut(1.35f, 1.1f, t), EaseOut(1.35f, 1.5f, t)};
+		} else {
+			float t = (progress - 0.35f) / 0.65f;
+			armRotR = {EaseOut(1.5f, -3.5f, t), EaseOut(0.0f, 0.0f, t), EaseOut(0.0f, 0.0f, t)};
+			armRotL = armRotR;
+			hammerLocalPos = {0.0f, 0.8f, 0.3f};
+			// アッパーで縦方向に大きく伸ばす
+			hammerLocalScale = {EaseOut(1.2f, 1.5f, t), EaseOut(1.7f, 1.5f, t), EaseOut(1.2f, 1.5f, t)};
+		}
+		if (progress >= 0.35f && progress <= 0.50f)
+			outHitCheck = true;
+		if (progress >= 0.35f)
+			outCanCombo = true;
+
 	} else {
-		// 0.4 ~ 1.0 の間で一気に振り下ろす
-		float t = (progress - 0.4f) / 0.6f;
-		armRotationX = EaseOut(-4.0f, -1.5f, t);
+		// 【5段目】溜め叩きつけフィニッシュ (最大2.2倍まで超巨大化)
+		if (progress < 0.4f) {
+			float t = progress / 0.4f;
+			armRotR = {EaseOut(-3.5f, -4.5f, t), 0.0f, 0.0f};
+			armRotL = armRotR;
+			worldTransform.translation_.y += 0.03f;
+			// 振りかぶり時に一気に超巨大化
+			hammerLocalScale = {EaseOut(1.5f, 2.0f, t), EaseOut(1.5f, 2.0f, t), EaseOut(1.5f, 2.0f, t)};
+		} else {
+			float t = (progress - 0.4f) / 0.6f;
+			armRotR = {EaseOut(-4.5f, 1.8f, t), 0.0f, 0.0f};
+			armRotL = armRotR;
+			hammerLocalPos = {0.0f, 0.3f, 0.6f};
+			hammerLocalRot = {-1.0f, 0.0f, 0.0f};
+			// 叩きつけ時に横に潰れる（インパクト強調）➔ 元のサイズ(1.0)に戻る
+			hammerLocalScale = {EaseOut(2.3f, 1.0f, t), EaseOut(1.5f, 1.0f, t), EaseOut(2.3f, 1.0f, t)};
+		}
+		if (progress >= 0.4f && progress <= 0.55f)
+			outHitCheck = true;
 	}
 
-	// 両手に同じ回転を適用（左右対称に上げる）
-	worldTransformLeft_.rotation_.x = armRotationX;
-	worldTransformRight_.rotation_.x = armRotationX;
+	// 計算された角度を腕の回転に設定
+	worldTransformLeft_.rotation_ = armRotL;
+	worldTransformRight_.rotation_ = armRotR;
 
-	// プレイヤー本体のベース行列の計算
+	// 行列計算
 	worldTransform.matWorld_ = MakeAffineMatrix(worldTransform.scale_, worldTransform.rotation_, worldTransform.translation_);
 	worldTransform.TransferMatrix();
 
-	// 各部位のローカル・ワールド行列計算
 	KamataEngine::Matrix4x4 localMatrixBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatrixBody, worldTransform.matWorld_);
 	worldTransformBody_.TransferMatrix();
@@ -359,10 +479,9 @@ void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& wo
 	worldTransformHead_.matWorld_ = MultiplyMatrix(localMatrixHead, worldTransformBody_.matWorld_);
 	worldTransformHead_.TransferMatrix();
 
-	// 回転の中心オフセットを考慮した腕の行列計算
+	// 腕の回転中心オフセット適用
 	KamataEngine::Vector3 centerOffset = {0.0f, -0.5f, 0.0f};
 
-	// 左手
 	KamataEngine::Matrix4x4 rotateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformLeft_.rotation_, {0.0f, 0.0f, 0.0f});
 	KamataEngine::Matrix4x4 preTranslateLeft = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
 	KamataEngine::Vector3 finalTranslationLeft = {
@@ -372,7 +491,6 @@ void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& wo
 	worldTransformLeft_.matWorld_ = MultiplyMatrix(worldTransformLeft_.matWorld_, worldTransformBody_.matWorld_);
 	worldTransformLeft_.TransferMatrix();
 
-	// 右手
 	KamataEngine::Matrix4x4 rotateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, worldTransformRight_.rotation_, {0.0f, 0.0f, 0.0f});
 	KamataEngine::Matrix4x4 preTranslateRight = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {-centerOffset.x, -centerOffset.y, -centerOffset.z});
 	KamataEngine::Vector3 finalTranslationRight = {
@@ -382,20 +500,15 @@ void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& wo
 	worldTransformRight_.matWorld_ = MultiplyMatrix(worldTransformRight_.matWorld_, worldTransformBody_.matWorld_);
 	worldTransformRight_.TransferMatrix();
 
-	// ★ ハンマーを右手に追従させる制御
+	// ★ ハンマーの右手追従（計算した hammerLocalScale を行列に適用）
 	if (isHammerVisible_) {
-		KamataEngine::Vector3 hammerLocalPos = {0.0f, 0.5f, 0.2f};
-		KamataEngine::Vector3 hammerLocalRot = {-3.0f, 0.0f, 0.0f};
-
-		KamataEngine::Matrix4x4 localMatrixHammer = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, hammerLocalRot, hammerLocalPos);
+		KamataEngine::Matrix4x4 localMatrixHammer = MakeAffineMatrix(hammerLocalScale, hammerLocalRot, hammerLocalPos);
 		worldTransformHammer_.matWorld_ = MultiplyMatrix(localMatrixHammer, worldTransformRight_.matWorld_);
 		worldTransformHammer_.TransferMatrix();
 	}
 
-	// アニメーション終了判定
-	if (hammerSkillTimer_ >= kHammerSkillDuration) {
+	if (hammerSkillTimer_ >= duration) {
 		outFinished = true;
-		isHammerVisible_ = false;
 	}
 }
 

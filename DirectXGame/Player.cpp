@@ -270,24 +270,37 @@ void Player::CreateHitEffect(const KamataEngine::Vector3& position) {
 }
 
 std::optional<Player::AABB> Player::GetAttackAABB() const {
-	if ((behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) ||
-	    (behavior_ == Behavior::kHammerSkill && (animation_.GetHammerSkillTimer() / PlayerAnimation::GetHammerSkillDuration()) >= 0.4f)) {
-
+	// ダッシュ攻撃時の当たり判定
+	if (behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) {
 		AABB aabb;
 		const auto& pos = worldTransform_.translation_;
-
-		if (behavior_ == Behavior::kHammerSkill) {
-			// ハンマースキル専用の広い範囲を設定
-			aabb.min = {pos.x - 2.0f, pos.y - 0.5f, pos.z - 0.5f};
-			aabb.max = {pos.x + 2.0f, pos.y + 3.0f, pos.z + 0.5f};
-		} else {
-			// 通常のダッシュ攻撃は既存のパディングを適用
-			aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 0.5f};
-			aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 0.5f};
-		}
-
+		aabb.min = {pos.x - kPaddingLeft, pos.y - kPaddingBottom, pos.z - 1.0f};
+		aabb.max = {pos.x + kPaddingRight, pos.y + kPaddingTop, pos.z + 1.0f};
 		return aabb;
 	}
+
+	// ハンマースキル時の当たり判定
+	if (behavior_ == Behavior::kHammerSkill) {
+		float duration = animation_.GetCurrentHammerSkillDuration();
+		float progress = (duration > 0.0f) ? (animation_.GetHammerSkillTimer() / duration) : 0.0f;
+
+		// 修正①: 判定発生時間を 0.1f 〜 0.9f に緩和して振り始め・振り終わりもカバー
+		if (progress >= 0.1f && progress <= 0.9f) {
+			AABB aabb;
+			const auto& pos = worldTransform_.translation_;
+
+			// 修正②: Z軸（奥行き）を -2.0f 〜 +2.0f に拡大
+			if (lrDirection_ == LRDirection::kRight) {
+				aabb.min = {pos.x - 1.5f, pos.y - 2.5f, pos.z - 2.0f};
+				aabb.max = {pos.x + 3.0f, pos.y + 2.5f, pos.z + 2.0f};
+			} else {
+				aabb.min = {pos.x - 3.0f, pos.y - 2.5f, pos.z - 2.0f};
+				aabb.max = {pos.x + 1.5f, pos.y + 2.5f, pos.z + 2.0f};
+			}
+			return aabb;
+		}
+	}
+
 	return std::nullopt;
 }
 
@@ -438,18 +451,47 @@ void Player::BehaviorKnockbackUpdate() {
 	}
 }
 
+// ★ ハンマー攻撃初期化
 void Player::BehaviorHammerSkillInit() {
-	animation_.BehaviorHammerSkillInit();
-	velocity_ = {0.0f, 0.0f, 0.0f}; // スキル発動中は移動を停止
+	hammerComboIndex_ = 0;
+	comboInputRequested_ = false;
+	animation_.BehaviorHammerSkillInit(hammerComboIndex_);
+	velocity_ = {0.0f, 0.0f, 0.0f};
 }
 
+// ★ ハンマー連撃の更新ロジック
 void Player::BehaviorHammerSkillUpdate() {
+	bool isHitCheck = false;
+	bool isCanCombo = false;
 	bool isSkillFinished = false;
-	animation_.BehaviorHammerSkillUpdate(worldTransform_, isSkillFinished);
 
-	// アニメーション終了判定
+	// アニメーション更新（Hit判定・コンボ受付判定・動作終了判定を取得）
+	animation_.BehaviorHammerSkillUpdate(worldTransform_, lrDirection_, isHitCheck, isCanCombo, isSkillFinished);
+
+	// 連撃受付時間（isCanCombo）中にEキーが押されたら、先行入力としてフラグを保持
+	if (isCanCombo && KamataEngine::Input::GetInstance()->TriggerKey(DIK_E)) {
+		comboInputRequested_ = true;
+	}
+
+	if (isHitCheck) {
+		// 必要に応じて攻撃SEやヒットエフェクト
+	}
+
+	// 現在進行中の連撃動作が「最後まで完了」した時に判定
 	if (isSkillFinished) {
-		behaviorRequest_ = Behavior::kRoot;
+		// 先行入力があり、かつ最終段でない場合は次のコンボ動作へ移行
+		if (comboInputRequested_ && hammerComboIndex_ < 4) {
+			hammerComboIndex_++;
+			comboInputRequested_ = false;
+			animation_.BehaviorHammerSkillInit(hammerComboIndex_);
+
+			// わずかに前進させる（踏み込み処理）
+			float stepForward = (lrDirection_ == LRDirection::kRight) ? 0.3f : -0.3f;
+			worldTransform_.translation_.x += stepForward;
+		} else {
+			// 先行入力がない、または最終段が終わった場合は通常状態へ戻る
+			behaviorRequest_ = Behavior::kRoot;
+		}
 	}
 }
 
@@ -470,9 +512,15 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 			rightBottomPos.y += offset.y;
 			MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(leftBottomPos);
 			MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
-			bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
+			bool isDownPressed = KamataEngine::Input::GetInstance()->PushKey(DIK_DOWN);
 
-			if (!hit) {
+			bool hitBlock = (chipLeftBottom == MapChipType::kBlock || 
+				chipRightBottom == MapChipType::kBlock);
+
+			bool hitBlockFall = (!isDownPressed) && (chipLeftBottom == MapChipType::kBlockFall || 
+				chipRightBottom == MapChipType::kBlockFall);
+
+			if (!hitBlock && !hitBlockFall) {
 				onGround_ = false;
 			}
 		}
@@ -643,10 +691,16 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 
 	MapChipType chipLeftBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kLeftBottom]);
 	MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(positionsNew[kRightBottom]);
-	bool hit = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
 
-	if (hit) {
-		Corner targetCorner = (chipLeftBottom == MapChipType::kBlock) ? kLeftBottom : kRightBottom;
+	// 下キー(DIK_DOWN)が押されている場合は kBlockFall を判定対象から外す
+	bool isDownPressed = KamataEngine::Input::GetInstance()->PushKey(DIK_DOWN);
+
+	bool hitBlock = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
+
+	bool hitBlockFall = (!isDownPressed) && (chipLeftBottom == MapChipType::kBlockFall || chipRightBottom == MapChipType::kBlockFall);
+
+	if (hitBlock || hitBlockFall) {
+		Corner targetCorner = (chipLeftBottom == MapChipType::kBlock || chipLeftBottom == MapChipType::kBlockFall) ? kLeftBottom : kRightBottom;
 		MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(positionsNew[targetCorner]);
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockTopY = blockPos.y + 0.5f;

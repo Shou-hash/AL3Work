@@ -85,11 +85,11 @@ public:
 	KamataEngine::WorldTransform& GetWorldTransformRight() { return animation_.GetWorldTransformRight(); }
 
 	bool IsDead() const { return isDead_; }
-	// ★ハンマースキルの振り下ろしタイミング（進捗0.4以上）も攻撃中として判定するよう修正
-	bool IsAttacking() const {
+	// ★攻撃判定の修正：ハンマー攻撃中も攻撃中として判定
+	bool IsAttacking() const { 
 		return (behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) ||
-		       (behavior_ == Behavior::kHammerSkill && (animation_.GetHammerSkillTimer() / PlayerAnimation::GetHammerSkillDuration()) >= 0.4f);
-	}
+			(behavior_ == Behavior::kHammerSkill); }
+
 	LRDirection GetLRDirection() const { return lrDirection_; }
 
 	Behavior GetBehavior() const { return behavior_; }
@@ -147,8 +147,8 @@ private:
 	MapChipField* mapChipField_ = nullptr;
 	CameraController* cameraController_ = nullptr;
 	PlayerHp* playerHp_ = nullptr; // ★ 追加
-	static inline float kPaddingTop = 1.2f;
-	static inline float kPaddingBottom = 0.4f;
+	static inline float kPaddingTop = 2.0f;
+	static inline float kPaddingBottom = 0.1f;
 	static inline float kPaddingLeft = 0.4f;
 	static inline float kPaddingRight = 0.4f;
 	KamataEngine::Vector3 velocity_ = {};
@@ -181,4 +181,8 @@ private:
 	KamataEngine::Model* modelHammer_ = nullptr;
 
 	bool isDeathAnimationFinished_ = false; // ★追加
+
+	// ★ ハンマー連撃用管理変数
+	uint32_t hammerComboIndex_ = 0;
+	bool comboInputRequested_ = false;
 };

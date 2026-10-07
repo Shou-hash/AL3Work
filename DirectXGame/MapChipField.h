@@ -6,10 +6,11 @@
 enum class MapChipType {
 	kBlank,       // 空白
 	kBlock,       // ブロック
+	kBlockFall,   // ★追加：すり抜けブロック (B1)
 	kPlayer,      // プレイヤー
 	kEnemy,       // 敵
-	kGoal,        // ★追加：ゴール
-	kExplanation, // ★追加：解説ブロック
+	kGoal,        // ゴール
+	kExplanation, // 解説ブロック
 };
 
 // 1マス分のデータ

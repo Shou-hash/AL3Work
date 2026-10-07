@@ -19,14 +19,27 @@ using namespace KamataEngine;
 
 GameScene::~GameScene() {
 	delete fade_;
-	delete model_;
 
-	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
-		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
-			delete worldTransformBlock;
+	// 各モデルの解放
+	delete modelBlock_;
+	delete modelBlockFall_;
+	delete modelBlockFallLeft_; 
+	delete modelBlockFallRight_;
+	delete modelBlockLeft_;
+	delete modelBlockRight_;
+	delete modelBlockAbove_;
+	delete modelBlockBelow_;
+
+	// ブロックデータの解放
+	for (auto& line : blockDatas_) {
+		for (auto* blockData : line) {
+			if (blockData) {
+				delete blockData->transform;
+				delete blockData;
+			}
 		}
 	}
-	worldTransformBlocks_.clear();
+	blockDatas_.clear();
 
 	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
 		delete worldTransformExplanation;
@@ -108,13 +121,6 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	}
 	items_.clear();
 
-	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
-		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
-			delete worldTransformBlock;
-		}
-	}
-	worldTransformBlocks_.clear();
-
 	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
 		delete worldTransformExplanation;
 	}
@@ -143,7 +149,19 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	std::string stageFileName = "Resources/stageDatas" + std::to_string(currentStageIdx) + ".csv";
 	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
 
-	model_ = Model::CreateFromOBJ("block", true);
+	// 背景ブロックの生成（多層視差レイヤーの初期化）
+	backgroundBlocks_ = std::make_unique<BackgroundBlocks>();
+	backgroundBlocks_->Initialize(mapChipField_);
+
+	// ブロックモデルを種類別に読み込み
+	modelBlock_ = Model::CreateFromOBJ("block", true);
+	modelBlockFall_ = Model::CreateFromOBJ("blockFall", true);
+	modelBlockFallLeft_ = Model::CreateFromOBJ("blockFallLeft", true);   
+	modelBlockFallRight_ = Model::CreateFromOBJ("blockFallRight", true); 
+	modelBlockLeft_ = Model::CreateFromOBJ("blockLeft", true);
+	modelBlockRight_ = Model::CreateFromOBJ("blockRight", true);
+	modelBlockAbove_ = Model::CreateFromOBJ("blockAbove", true);
+	modelBlockBelow_ = Model::CreateFromOBJ("blockBelow", true);
 
 	worldTransform_.Initialize();
 	camera_.Initialize();
@@ -221,23 +239,81 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 }
 
 void GameScene::GenerateFieldObjects() {
-	uint32_t numBlockVirtical = mapChipField_->GetNumBlockVertical();
+	uint32_t numBlockVertical = mapChipField_->GetNumBlockVertical();
 	uint32_t numBlockHorizontal = mapChipField_->GetNumBlockHorizontal();
 
-	worldTransformBlocks_.resize(numBlockVirtical);
-	for (uint32_t i = 0; i < numBlockVirtical; ++i) {
-		worldTransformBlocks_[i].resize(numBlockHorizontal);
+	blockDatas_.resize(numBlockVertical);
+	for (uint32_t i = 0; i < numBlockVertical; ++i) {
+		blockDatas_[i].resize(numBlockHorizontal, nullptr);
 		for (uint32_t j = 0; j < numBlockHorizontal; ++j) {
 			MapChipType type = mapChipField_->GetMapChipTypeByIndex(j, i);
 
-			switch (type) {
-			case MapChipType::kBlock: {
-				WorldTransform* worldTransform = new WorldTransform();
-				worldTransform->Initialize();
-				worldTransformBlocks_[i][j] = worldTransform;
-				worldTransformBlocks_[i][j]->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
-				break;
+			// ★ すり抜けブロック (kBlockFall / B1) の生成処理を追加
+			if (type == MapChipType::kBlockFall) {
+				BlockData* blockData = new BlockData();
+				blockData->transform = new WorldTransform();
+				blockData->transform->Initialize();
+
+				// 描画用の座標を少し上げる（例: +0.2f）
+				// ※マップチップデータ(当たり判定用)は元の座標をそのまま利用しているため衝突判定は変わりません
+				Vector3 pos = mapChipField_->GetMapChipPositionByIndex(j, i);
+				pos.y += 0.2f;
+				blockData->transform->translation_ = pos;
+
+				// 左右に隣接するすり抜けブロックの判定
+				bool hasLeft = (j > 0) && (mapChipField_->GetMapChipTypeByIndex(j - 1, i) == MapChipType::kBlockFall);
+				bool hasRight = (j < numBlockHorizontal - 1) && (mapChipField_->GetMapChipTypeByIndex(j + 1, i) == MapChipType::kBlockFall);
+
+				if (!hasLeft && hasRight) {
+					// 左端
+					blockData->model = modelBlockFallLeft_;
+				} else if (hasLeft && !hasRight) {
+					// 右端
+					blockData->model = modelBlockFallRight_;
+				} else {
+					// 中央、または単独
+					blockData->model = modelBlockFall_;
+				}
+
+				blockDatas_[i][j] = blockData;
 			}
+
+			if (type == MapChipType::kBlock) {
+				BlockData* blockData = new BlockData();
+				blockData->transform = new WorldTransform();
+				blockData->transform->Initialize();
+				blockData->transform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
+
+				// --- 周囲の隣接判定 ---
+				// yIndex: -1 が上、+1 が下
+				// xIndex: -1 が左、+1 が右
+				bool hasUp = (i > 0) && (mapChipField_->GetMapChipTypeByIndex(j, i - 1) == MapChipType::kBlock);
+				bool hasDown = (i < numBlockVertical - 1) && (mapChipField_->GetMapChipTypeByIndex(j, i + 1) == MapChipType::kBlock);
+				bool hasLeft = (j > 0) && (mapChipField_->GetMapChipTypeByIndex(j - 1, i) == MapChipType::kBlock);
+				bool hasRight = (j < numBlockHorizontal - 1) && (mapChipField_->GetMapChipTypeByIndex(j + 1, i) == MapChipType::kBlock);
+
+				// 要求されたルールに基づく判定 (地面/天井を優先)
+				if (!hasDown) {
+					// 下が空き（地面）
+					blockData->model = modelBlockAbove_;
+				} else if (!hasUp) {
+					// 上が空き（天井）
+					blockData->model = modelBlockBelow_;
+				} else if (!hasLeft) {
+					// 左が空き（左端の壁）
+					blockData->model = modelBlockRight_;
+				} else if (!hasRight) {
+					// 右が空き（右端の壁）
+					blockData->model = modelBlockLeft_;
+				} else {
+					// 四方が囲まれている場合
+					blockData->model = modelBlock_;
+				}
+
+				blockDatas_[i][j] = blockData;
+			}
+
+			switch (type) {
 			case MapChipType::kPlayer: {
 				if (player_ != nullptr) {
 					break;
@@ -401,6 +477,11 @@ void GameScene::Update() {
 	ImGui::End();
 #endif
 
+	// 背景ブロックの行列・視差計算更新
+	if (backgroundBlocks_) {
+		backgroundBlocks_->Update(camera_);
+	}
+
 	ChangePhase();
 
 	switch (phase_) {
@@ -435,14 +516,15 @@ void GameScene::Update() {
 		camera_.TransferMatrix();
 	}
 
-	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
-		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
-			if (!worldTransformBlock) {
+	// ブロックのワールド行列更新
+	for (auto& line : blockDatas_) {
+		for (auto* blockData : line) {
+			if (!blockData || !blockData->transform) {
 				continue;
 			}
-			Matrix4x4 affineMatrix = MakeAffineMatrix(worldTransformBlock->scale_, worldTransformBlock->rotation_, worldTransformBlock->translation_);
-			worldTransformBlock->matWorld_ = affineMatrix;
-			worldTransformBlock->TransferMatrix();
+			Matrix4x4 affineMatrix = MakeAffineMatrix(blockData->transform->scale_, blockData->transform->rotation_, blockData->transform->translation_);
+			blockData->transform->matWorld_ = affineMatrix;
+			blockData->transform->TransferMatrix();
 		}
 	}
 
@@ -739,13 +821,19 @@ void GameScene::UpdateFadeOut() {
 }
 
 void GameScene::Draw() {
-	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
-		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
-			if (!worldTransformBlock) {
+
+	if (backgroundBlocks_) {
+		backgroundBlocks_->Draw(camera_);
+	}
+
+	// ブロックの分別描画
+	for (auto& line : blockDatas_) {
+		for (auto* blockData : line) {
+			if (!blockData || !blockData->transform || !blockData->model) {
 				continue;
 			}
 			Model::PreDraw();
-			model_->Draw(*worldTransformBlock, camera_);
+			blockData->model->Draw(*blockData->transform, camera_);
 			Model::PostDraw();
 		}
 	}

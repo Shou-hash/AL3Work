@@ -14,6 +14,7 @@
 #include "PlayerHp.h"
 #include "ShieldEnemy.h"
 #include "Skydome.h"
+#include "BackgroundBlocks.h"
 #include <list>
 #include <memory>
 #include <vector>
@@ -26,6 +27,11 @@ enum class Phase {
 	kPlay,    // ゲームプレイ
 	kDeath,   // デス演出
 	kFadeOut, // フェードアウト
+};
+
+struct BlockData {
+	KamataEngine::WorldTransform* transform = nullptr;
+	KamataEngine::Model* model = nullptr;
 };
 
 class GameScene {
@@ -56,8 +62,6 @@ private:
 
 	Fade* fade_ = nullptr;
 
-	KamataEngine::Model* model_ = nullptr;
-	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
 	KamataEngine::Camera camera_{};
 	KamataEngine::WorldTransform worldTransform_;
 	bool isDebugCameraActive_ = false;
@@ -74,7 +78,7 @@ private:
 	KamataEngine::Model* modelPlayerLeft_ = nullptr;
 	KamataEngine::Model* modelPlayerRight_ = nullptr;
 
-	// ★追加：ボス用モデルポインタ
+	//　ボス用モデルポインタ
 	KamataEngine::Model* modelBossHead_ = nullptr;
 	KamataEngine::Model* modelBossBody_ = nullptr;
 	KamataEngine::Model* modelBossLeft_ = nullptr;
@@ -85,9 +89,22 @@ private:
 	KamataEngine::Model* modelHammer_ = nullptr;
 
 	KamataEngine::Model* modelPlayerHp_ = nullptr;
-	KamataEngine::Model* modelItemHp_ = nullptr;      // ★追加：ドロップアイテム用モデルポインタ
-	KamataEngine::Model* modelGoal_ = nullptr;        // ★追加：ゴール用モデルポインタ
-	KamataEngine::Model* modelExplanation_ = nullptr; // ★追加：解説ブロック用モデルポインタ
+	KamataEngine::Model* modelItemHp_ = nullptr;      // ドロップアイテム用モデルポインタ
+	KamataEngine::Model* modelGoal_ = nullptr;        // ゴール用モデルポインタ
+	KamataEngine::Model* modelExplanation_ = nullptr; // 解説ブロック用モデルポインタ
+
+	// ブロック用の各モデルポインタ
+	KamataEngine::Model* modelBlock_ = nullptr;      // 通常ブロック
+	KamataEngine::Model* modelBlockFall_ = nullptr;  // すり抜けブロックモデル
+	KamataEngine::Model* modelBlockFallLeft_ = nullptr;  // すり抜けブロック左端モデル
+	KamataEngine::Model* modelBlockFallRight_ = nullptr; // すり抜けブロック右端モデル
+	KamataEngine::Model* modelBlockLeft_ = nullptr;  // 右端用
+	KamataEngine::Model* modelBlockRight_ = nullptr; // 左端用
+	KamataEngine::Model* modelBlockAbove_ = nullptr; // 地面用
+	KamataEngine::Model* modelBlockBelow_ = nullptr; // 天井用
+
+	// 2次元配列の型を BlockData* に変更
+	std::vector<std::vector<BlockData*>> blockDatas_;
 
 	std::vector<KamataEngine::WorldTransform*> worldTransformExplanations_; // 解説ブロック用ワールドトランスフォーム配列
 
@@ -115,4 +132,7 @@ private:
 
 	// ★ ボス撃破後のゴール演出開始フラグ
 	bool isBossDefeatedGoalPerfStarted_ = false;
+
+	// 背景ブロック管理クラスのインスタンス
+	std::unique_ptr<BackgroundBlocks> backgroundBlocks_ = nullptr;
 };
