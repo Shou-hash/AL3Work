@@ -15,6 +15,7 @@
 #include "ShieldEnemy.h"
 #include "Skydome.h"
 #include "BackgroundBlocks.h"
+#include "FinalBoss.h"
 #include <list>
 #include <memory>
 #include <vector>
@@ -102,6 +103,10 @@ private:
 	KamataEngine::Model* modelBlockRight_ = nullptr; // 左端用
 	KamataEngine::Model* modelBlockAbove_ = nullptr; // 地面用
 	KamataEngine::Model* modelBlockBelow_ = nullptr; // 天井用
+
+	// クラスメンバ変数にモデルポインタを追加(ラスボス)
+	KamataEngine::Model* modelFinalBossBody_ = nullptr;
+	std::array<KamataEngine::Model*, FinalBoss::kNumHands> modelFinalBossHands_{};
 
 	// 2次元配列の型を BlockData* に変更
 	std::vector<std::vector<BlockData*>> blockDatas_;

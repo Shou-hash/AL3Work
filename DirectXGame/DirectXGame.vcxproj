@@ -173,6 +173,7 @@
     <ClCompile Include="EndScene.cpp" />
     <ClCompile Include="Enemy.cpp" />
     <ClCompile Include="Fade.cpp" />
+    <ClCompile Include="FinalBoss.cpp" />
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="GlobalVariables.cpp" />
     <ClCompile Include="Goal.cpp" />
@@ -298,6 +299,7 @@
     <ClInclude Include="EndScene.h" />
     <ClInclude Include="Enemy.h" />
     <ClInclude Include="Fade.h" />
+    <ClInclude Include="FinalBoss.h" />
     <ClInclude Include="GameScene.h" />
     <ClInclude Include="GlobalVariables.h" />
     <ClInclude Include="Goal.h" />

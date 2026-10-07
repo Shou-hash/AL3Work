@@ -1,9 +1,11 @@
 #include "CameraController.h"
 #include "BossEnemy.h"
+#include "FinalBoss.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 float Lerp(float current, float target, float rate) { return current + rate * (target - current); }
 
@@ -22,6 +24,7 @@ void CameraController::Initialize(KamataEngine::Camera* camera) {
 	isGoalPerformance_ = false;
 	isGoalPerformanceFinished_ = false;
 	goalEventTimer_ = 0.0f;
+	frenzyShakeTimer_ = 0.0f;
 }
 
 void CameraController::Reset() {
@@ -48,6 +51,8 @@ void CameraController::Reset() {
 	isGoalPerformance_ = false;
 	isGoalPerformanceFinished_ = false;
 	goalEventTimer_ = 0.0f;
+
+	frenzyShakeTimer_ = 0.0f;
 }
 
 void CameraController::StartGoalPerformance(const KamataEngine::Vector3& goalPos) {
@@ -66,7 +71,7 @@ void CameraController::Update() {
 		return;
 	}
 
-	// ボスへの接近判定と演出の開始
+	// 中ボスへの接近判定と演出の開始
 	if (boss_) {
 		if (boss_->IsDead()) {
 			boss_ = nullptr; // ボス死亡時にポインタをクリア
@@ -86,11 +91,33 @@ void CameraController::Update() {
 		}
 	}
 
+	// ラスボス接近判定
+	if (finalBoss_) {
+		if (finalBoss_->IsDead()) {
+			finalBoss_ = nullptr;
+		} else if (!isBossPerformance_ && !isBossPerformanceFinished_) {
+			const KamataEngine::WorldTransform& playerTransform = target_->GetWorldTransform();
+			const KamataEngine::Vector3& bossPos = finalBoss_->GetBasePosition();
+
+			float dx = bossPos.x - playerTransform.translation_.x;
+			float dy = bossPos.y - playerTransform.translation_.y;
+			if (std::sqrt(dx * dx + dy * dy) <= kFinalBossTriggerDistance) {
+				isBossPerformance_ = true;
+				bossEventTimer_ = 0.0f;
+				bossEventStartPos_ = camera_->translation_;
+			}
+		}
+	}
+
 	// モードに応じてカメラの座標を更新
 	if (isGoalPerformance_) {
 		UpdateGoalPerformance();
 	} else if (isBossPerformance_) {
-		UpdateBossPerformance();
+		if (finalBoss_) {
+			UpdateFinalBossPerformance(); // ★ ラスボス用カメラ移動
+		} else {
+			UpdateBossPerformance();
+		}
 	} else if (mode_ == CameraMode::kFollow) {
 		UpdateFollow();
 	} else if (mode_ == CameraMode::kForcedScroll) {
@@ -105,6 +132,97 @@ void CameraController::Update() {
 
 	// 画面内への押し出し制限処理（強制スクロール時などに機能）
 	ConstrainPlayerInScreen();
+
+	// =========================================================
+	// ★ 追加: ラスボスの発狂演出に伴うカメラシェイク（画面振動）処理
+	// =========================================================
+	if (finalBoss_) {
+		FinalBoss::State bossState = finalBoss_->GetState();
+
+		// 発狂の溜め(kFrenzyInit) または 発狂本番(kFrenzy) の時
+		if (bossState == FinalBoss::State::kFrenzyInit || bossState == FinalBoss::State::kFrenzy) {
+			// タイマーをカウントアップ (60fps相当)
+			frenzyShakeTimer_ += 1.0f / 60.0f;
+
+			// 時間経過割合 (0.0f ～ 1.0f)
+			float progress = std::clamp(frenzyShakeTimer_ / kFrenzyShakeDuration, 0.0f, 1.0f);
+
+			// 1.0f から 0.0f へ向かって二次曲線で滑らかに減衰 (Ease-Out)
+			float decay = (1.0f - progress) * (1.0f - progress);
+			float shakeIntensity = kFrenzyMaxShakeIntensity * decay;
+
+			// 振動幅が残っている間のみ画面を揺らす（最後は完全停止）
+			if (shakeIntensity > 0.001f) {
+				float shakeX = ((static_cast<float>(rand()) / RAND_MAX) * 2.0f - 1.0f) * shakeIntensity;
+				float shakeY = ((static_cast<float>(rand()) / RAND_MAX) * 2.0f - 1.0f) * shakeIntensity;
+
+				camera_->translation_.x += shakeX;
+				camera_->translation_.y += shakeY;
+			}
+		} else {
+			// 発狂状態が終わったらタイマーをリセット
+			frenzyShakeTimer_ = 0.0f;
+		}
+	}
+}
+
+// ★ 追加: ラスボス全体を見せるカメラ演出処理
+void CameraController::UpdateFinalBossPerformance() {
+	if (!finalBoss_ || !target_) {
+		isBossPerformance_ = false;
+		return;
+	}
+
+	bossEventTimer_ += 1.0f / 60.0f;
+
+	const KamataEngine::WorldTransform& playerWorldTransform = target_->GetWorldTransform();
+	const KamataEngine::Vector3& bossBasePos = finalBoss_->GetBasePosition();
+
+	// プレイヤー復帰位置
+	KamataEngine::Vector3 playerTargetPos;
+	playerTargetPos.x = playerWorldTransform.translation_.x + targetOffset_.x;
+	playerTargetPos.y = playerWorldTransform.translation_.y + targetOffset_.y;
+	playerTargetPos.z = playerWorldTransform.translation_.z + targetOffset_.z;
+
+	// ラスボス全体が収まるカメラ位置（Z軸を通常-15から-22等へ大きく引いて広角表示）
+	KamataEngine::Vector3 bossTargetPos;
+	bossTargetPos.x = bossBasePos.x; // ラスボスの中心X座標
+	bossTargetPos.y = bossBasePos.y; // ラスボスの中心Y座標
+	bossTargetPos.z = -22.0f;        // 欠片や手全体が画面に収まるようZ軸を引きに設定
+
+	float totalTime = kBossInTime + kBossHoldTime + kBossOutTime;
+
+	if (bossEventTimer_ <= kBossInTime) {
+		// 1. ボス全貌位置へ移動＆引き（ズームアウト）
+		float t = std::clamp(bossEventTimer_ / kBossInTime, 0.0f, 1.0f);
+		float easeVal = EaseInOutCubic(t);
+
+		camera_->translation_.x = Lerp(bossEventStartPos_.x, bossTargetPos.x, easeVal);
+		camera_->translation_.y = Lerp(bossEventStartPos_.y, bossTargetPos.y, easeVal);
+		camera_->translation_.z = Lerp(bossEventStartPos_.z, bossTargetPos.z, easeVal);
+
+		// 移動完了タイミングでボスの発狂初期アニメーションを開始
+		if (t >= 0.95f) {
+			finalBoss_->StartFrenzy();
+		}
+
+	} else if (bossEventTimer_ <= kBossInTime + kBossHoldTime) {
+		// 2. 全姿と発狂演出を画面内に収めてキープ
+		camera_->translation_ = bossTargetPos;
+
+	} else if (bossEventTimer_ <= totalTime) {
+		// 3. プレイヤー追従位置へ復帰
+		float t = std::clamp((bossEventTimer_ - kBossInTime - kBossHoldTime) / kBossOutTime, 0.0f, 1.0f);
+		float easeVal = EaseInOutCubic(t);
+
+		camera_->translation_.x = Lerp(bossTargetPos.x, playerTargetPos.x, easeVal);
+		camera_->translation_.y = Lerp(bossTargetPos.y, playerTargetPos.y, easeVal);
+		camera_->translation_.z = Lerp(bossTargetPos.z, playerTargetPos.z, easeVal);
+
+	} else {
+		isBossPerformance_ = false;
+		isBossPerformanceFinished_ = true;
+	}
 }
 
 void CameraController::UpdateFollow() {

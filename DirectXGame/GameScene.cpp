@@ -78,6 +78,11 @@ GameScene::~GameScene() {
 	}
 	enemies_.clear();
 
+	delete modelFinalBossBody_;
+	for (auto* modelHand : modelFinalBossHands_) {
+		delete modelHand;
+	}
+
 	for (BaseEffect* effect : effects_) {
 		delete effect;
 	}
@@ -177,6 +182,15 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelBossHead_ = Model::CreateFromOBJ("bossEnemy_head", true);
 	modelBossLeft_ = Model::CreateFromOBJ("bossEnemy_left", true);
 	modelBossRight_ = Model::CreateFromOBJ("bossEnemy_right", true);
+
+	// ラスボス本体モデル
+	modelFinalBossBody_ = Model::CreateFromOBJ("finalBoss", true);
+
+	// ラスボス7本の手のモデル
+	for (int i = 0; i < 7; ++i) {
+		std::string modelName = "finalBossHand_" + std::to_string(i + 1);
+		modelFinalBossHands_[i] = Model::CreateFromOBJ(modelName, true);
+	}
 
 	modelHammer_ = Model::CreateFromOBJ("hummer", true);
 
@@ -384,6 +398,17 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 		}
 		break;
 	}
+	case 3: { // ★ E3 (ラスボス FinalBoss)
+		FinalBoss* finalBoss = new FinalBoss();
+		finalBoss->Initialize(modelFinalBossBody_, modelFinalBossHands_, &camera_, enemyPosition);
+		enemies_.push_back(finalBoss);
+
+		// ★ カメラコントローラーにラスボスを登録
+		if (cameraController_) {
+			cameraController_->SetFinalBoss(finalBoss);
+		}
+		break;
+	}
 	default:
 		break;
 	}
@@ -471,6 +496,26 @@ void GameScene::Update() {
 			ImGui::DragFloat3("Scale", goalScale, 0.01f);
 
 			ImGui::TreePop();
+		}
+	}
+
+	// ★ ラスボスの ImGui 調整用UI
+	for (BaseEnemy* enemy : enemies_) {
+		if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
+			if (ImGui::TreeNode("FinalBoss Transform")) {
+				float* pos = &(finalBoss->GetBasePosition().x);
+				float* offset = &(finalBoss->GetDrawOffset().x); // ★ 描画オフセットの調整項目
+				float* rot = &(finalBoss->GetWorldTransform().rotation_.x);
+				float* scale = &(finalBoss->GetWorldTransform().scale_.x);
+
+				ImGui::DragFloat3("Base Position", pos, 0.05f);
+				ImGui::DragFloat3("Draw Offset", offset, 0.1f); // ★ ここで描画位置だけ変更可能
+				ImGui::DragFloat3("Rotation", rot, 0.01f);
+				ImGui::DragFloat3("Scale", scale, 0.01f);
+
+				ImGui::TreePop();
+			}
+			break;
 		}
 	}
 

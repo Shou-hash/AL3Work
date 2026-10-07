@@ -69,11 +69,12 @@ struct CircleShadow {
 };
 
 cbuffer LightGroup : register(b3) {
-	float3 ambientColor;
-	DirLight dirLights[DIRLIGHT_NUM];
-	PointLight pointLights[POINTLIGHT_NUM];
-	SpotLight spotLights[SPOTLIGHT_NUM];
-	CircleShadow circleShadows[CIRCLESHADOW_NUM];
+    float3 ambientColor;
+    uint lightType; // ★ 追加 (0: Lambert, 1: Half Lambert)
+    DirLight dirLights[DIRLIGHT_NUM];
+    PointLight pointLights[POINTLIGHT_NUM];
+    SpotLight spotLights[SPOTLIGHT_NUM];
+    CircleShadow circleShadows[CIRCLESHADOW_NUM];
 }
 
 cbuffer ObjectColor : register(b4)

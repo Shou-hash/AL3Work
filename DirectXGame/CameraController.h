@@ -3,6 +3,7 @@
 
 class Player;
 class BossEnemy;
+class FinalBoss;
 
 struct Rect {
 	float left = 0.0f;
@@ -31,6 +32,9 @@ public:
 	// ボスの設定
 	void SetBoss(BossEnemy* boss) { boss_ = boss; }
 
+	// ★ 追加
+	void SetFinalBoss(FinalBoss* finalBoss) { finalBoss_ = finalBoss; }
+
 	void SetMovableArea(const Rect& area) { movableArea_ = area; }
 
 	// モード管理用のアクセッサ
@@ -51,6 +55,7 @@ private:
 	// モードごとの更新処理
 	void UpdateFollow();
 	void UpdateForcedScroll();
+	void UpdateFinalBossPerformance(); // ★ 追加: ラスボス用カメラ演出
 	void UpdateBossPerformance();
 	void UpdateGoalPerformance(); // ★追加：ゴール演出更新
 
@@ -61,6 +66,8 @@ private:
 	KamataEngine::Camera* camera_ = nullptr;
 	Player* target_ = nullptr;
 	BossEnemy* boss_ = nullptr;
+	FinalBoss* finalBoss_ = nullptr; // ★ 追加
+
 	KamataEngine::Vector3 targetOffset_ = {0.0f, 0.5f, -15.0f};
 
 	KamataEngine::Vector3 targetPosition_;
@@ -83,8 +90,9 @@ private:
 	KamataEngine::Vector3 bossEventStartPos_{}; // 演出開始時のカメラ位置
 
 	static inline const float kBossTriggerDistance = 12.0f; // ボス演出が発動する距離
+	static inline const float kFinalBossTriggerDistance = 10.0f; // ★ ラスボス接近検知距離
 	static inline const float kBossInTime = 1.0f;           // ボスへ移動・ズームインにかかる時間
-	static inline const float kBossHoldTime = 1.5f;         // ボスを映し続ける時間
+	static inline const float kBossHoldTime = 2.5f;         // ボスを映し続ける時間
 	static inline const float kBossOutTime = 1.0f;          // プレイヤーへ復帰・ズームアウトにかかる時間
 
 	// ★追加：ゴール演出用変数
@@ -97,4 +105,9 @@ private:
 	static inline const float kGoalInTime = 1.0f;   // ゴールへ移動・ズームインにかかる時間
 	static inline const float kGoalHoldTime = 1.5f; // ゴールを映し続ける時間
 	static inline const float kGoalOutTime = 1.0f;  // プレイヤーへ復帰にかかる時間
+
+	// ★追加：ラスボス発狂シェイク減衰用変数
+	float frenzyShakeTimer_ = 0.0f;
+	static inline const float kFrenzyShakeDuration = 2.5f;     // 振動が完全停止するまでの時間（秒）
+	static inline const float kFrenzyMaxShakeIntensity = 0.4f; // シェイク開始時の最大振動幅
 };
