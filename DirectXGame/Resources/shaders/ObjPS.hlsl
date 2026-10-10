@@ -30,6 +30,9 @@ float4 main(VSOutput input) : SV_TARGET
 	// 法線の正規化
     float3 N = normalize(input.normal);
 
+	// ★ シェーディング種別（LightManager が dirLights[2].color.x に 0:Lambert / 1:HalfLambert を格納している）
+    uint lightType = (dirLights[2].color.x > 0.5f) ? 1u : 0u;
+
 	// 光沢度
     const float shininess = 4.0f;
 	// 頂点から視点への方向ベクトル
@@ -94,7 +97,7 @@ float4 main(VSOutput input) : SV_TARGET
             direction = normalize(direction);
 
             float distanceFactor = pow(saturate(1.0f - distance / spotLights[i].radius), spotLights[i].decay);
-            float cosTheta = dot(direction, spotLights[i].direction);
+            float cosTheta = dot(-direction, spotLights[i].direction);
             float angleFactor = smoothstep(spotLights[i].cosAngle.y, spotLights[i].cosAngle.x, cosTheta);
             float factor = distanceFactor * angleFactor;
 

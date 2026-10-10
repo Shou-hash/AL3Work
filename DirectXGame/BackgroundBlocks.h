@@ -31,6 +31,11 @@ public:
 	/// </summary>
 	void Draw(const KamataEngine::Camera& camera);
 
+	/// <summary>
+	/// ライトグループの設定：中景と遠景で別々のライト（明るさ・彩度）を使う
+	/// </summary>
+	void SetLightGroups(const KamataEngine::LightGroup* midGroup, const KamataEngine::LightGroup* farGroup);
+
 private:
 	// 使用するモデルポインタ
 	KamataEngine::Model* modelBlock_ = nullptr;

@@ -179,6 +179,7 @@
     <ClCompile Include="Goal.cpp" />
     <ClCompile Include="HitEffect.cpp" />
     <ClCompile Include="Item.cpp" />
+    <ClCompile Include="LightManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapChipField.cpp" />
     <ClCompile Include="Matrix4x4.cpp" />
@@ -305,6 +306,7 @@
     <ClInclude Include="Goal.h" />
     <ClInclude Include="HitEffect.h" />
     <ClInclude Include="Item.h" />
+    <ClInclude Include="LightManager.h" />
     <ClInclude Include="MapChipField.h" />
     <ClInclude Include="Matrix4x4.h" />
     <ClInclude Include="Player.h" />

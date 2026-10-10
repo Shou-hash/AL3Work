@@ -127,3 +127,13 @@ void BackgroundBlocks::Draw(const KamataEngine::Camera& camera) {
 		KamataEngine::Model::PostDraw();
 	}
 }
+
+void BackgroundBlocks::SetLightGroups(const KamataEngine::LightGroup* midGroup, const KamataEngine::LightGroup* farGroup) {
+	// レイヤー 1（中景）は modelBlockAbove_、レイヤー 2（遠景）は modelBlock_ を使用している
+	if (modelBlockAbove_) {
+		modelBlockAbove_->SetLightGroup(midGroup);
+	}
+	if (modelBlock_) {
+		modelBlock_->SetLightGroup(farGroup);
+	}
+}

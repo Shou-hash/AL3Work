@@ -105,6 +105,9 @@ void CameraController::Update() {
 				isBossPerformance_ = true;
 				bossEventTimer_ = 0.0f;
 				bossEventStartPos_ = camera_->translation_;
+
+				// ★ プレイヤーが接近した瞬間にラスボスの出現アニメーションを開始！
+				finalBoss_->StartSpawn();
 			}
 		}
 	}
@@ -114,7 +117,7 @@ void CameraController::Update() {
 		UpdateGoalPerformance();
 	} else if (isBossPerformance_) {
 		if (finalBoss_) {
-			UpdateFinalBossPerformance(); // ★ ラスボス用カメラ移動
+			UpdateFinalBossPerformance();
 		} else {
 			UpdateBossPerformance();
 		}

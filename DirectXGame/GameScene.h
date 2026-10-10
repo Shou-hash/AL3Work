@@ -1,21 +1,22 @@
 #pragma once
+#include "BackgroundBlocks.h"
 #include "BaseEffect.h"
 #include "BaseEnemy.h"
 #include "BossEnemy.h"
 #include "CameraController.h"
 #include "Enemy.h"
 #include "Fade.h"
+#include "FinalBoss.h"
 #include "Goal.h" // ★追加：Goalクラスのインクルード
 #include "Item.h" // ★追加：Itemクラスのインクルード
 #include "Kamataengine.h"
+#include "LightManager.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "PlayerHp.h"
 #include "ShieldEnemy.h"
 #include "Skydome.h"
-#include "BackgroundBlocks.h"
-#include "FinalBoss.h"
 #include <list>
 #include <memory>
 #include <vector>
@@ -57,6 +58,9 @@ public:
 	void UpdateDeath();
 	void UpdateFadeOut();
 
+	// ★ 光の演出の更新（ラスボス接近で点灯、出現演出中に夜になる、追従スポットライトの配置）
+	void UpdateLightEffects();
+
 private:
 	Phase phase_ = Phase::kFadeIn;
 	bool finished_ = false;
@@ -79,7 +83,7 @@ private:
 	KamataEngine::Model* modelPlayerLeft_ = nullptr;
 	KamataEngine::Model* modelPlayerRight_ = nullptr;
 
-	//　ボス用モデルポインタ
+	// 　ボス用モデルポインタ
 	KamataEngine::Model* modelBossHead_ = nullptr;
 	KamataEngine::Model* modelBossBody_ = nullptr;
 	KamataEngine::Model* modelBossLeft_ = nullptr;
@@ -95,14 +99,14 @@ private:
 	KamataEngine::Model* modelExplanation_ = nullptr; // 解説ブロック用モデルポインタ
 
 	// ブロック用の各モデルポインタ
-	KamataEngine::Model* modelBlock_ = nullptr;      // 通常ブロック
-	KamataEngine::Model* modelBlockFall_ = nullptr;  // すり抜けブロックモデル
+	KamataEngine::Model* modelBlock_ = nullptr;          // 通常ブロック
+	KamataEngine::Model* modelBlockFall_ = nullptr;      // すり抜けブロックモデル
 	KamataEngine::Model* modelBlockFallLeft_ = nullptr;  // すり抜けブロック左端モデル
 	KamataEngine::Model* modelBlockFallRight_ = nullptr; // すり抜けブロック右端モデル
-	KamataEngine::Model* modelBlockLeft_ = nullptr;  // 右端用
-	KamataEngine::Model* modelBlockRight_ = nullptr; // 左端用
-	KamataEngine::Model* modelBlockAbove_ = nullptr; // 地面用
-	KamataEngine::Model* modelBlockBelow_ = nullptr; // 天井用
+	KamataEngine::Model* modelBlockLeft_ = nullptr;      // 右端用
+	KamataEngine::Model* modelBlockRight_ = nullptr;     // 左端用
+	KamataEngine::Model* modelBlockAbove_ = nullptr;     // 地面用
+	KamataEngine::Model* modelBlockBelow_ = nullptr;     // 天井用
 
 	// クラスメンバ変数にモデルポインタを追加(ラスボス)
 	KamataEngine::Model* modelFinalBossBody_ = nullptr;
@@ -124,6 +128,8 @@ private:
 	std::list<BaseEffect*> effects_;
 	std::list<Item*> items_; // ★追加：ドロップアイテムリスト
 
+	std::unique_ptr<LightManager> lightManager_ = nullptr; // ★ 追加
+
 	bool reloadRequested_ = false;
 
 	// ★ ステージマネージャ参照用のポインタ
@@ -137,6 +143,12 @@ private:
 
 	// ★ ボス撃破後のゴール演出開始フラグ
 	bool isBossDefeatedGoalPerfStarted_ = false;
+
+	// ★ ラスボスに近づいて光の演出が始まったかどうかのフラグ
+	bool isBossLightTriggered_ = false;
+
+	// ★ ラスボスにこの距離（X方向）まで近づいたら光の演出を開始する
+	float bossLightApproachDistance_ = 40.0f;
 
 	// 背景ブロック管理クラスのインスタンス
 	std::unique_ptr<BackgroundBlocks> backgroundBlocks_ = nullptr;

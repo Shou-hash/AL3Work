@@ -10,6 +10,7 @@
 #include "Player.h"
 #include "ShieldEnemy.h"
 #include "StageManager.h"
+#include <cmath>
 #include <numbers> // ★追加：π参照用
 #ifdef _DEBUG
 #include <imgui.h>
@@ -23,7 +24,7 @@ GameScene::~GameScene() {
 	// 各モデルの解放
 	delete modelBlock_;
 	delete modelBlockFall_;
-	delete modelBlockFallLeft_; 
+	delete modelBlockFallLeft_;
 	delete modelBlockFallRight_;
 	delete modelBlockLeft_;
 	delete modelBlockRight_;
@@ -101,11 +102,16 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 
 	stageManager_ = stageDataManager;
 
+	// ★ ライトマネージャの初期化
+	lightManager_ = std::make_unique<LightManager>();
+	lightManager_->Initialize();
+
 	phase_ = Phase::kFadeIn;
 	finished_ = false;
 	isBossSpawned_ = false;
 	isGoalReached_ = false;                 // ゴール到達フラグの初期化
 	isBossDefeatedGoalPerfStarted_ = false; // ボス撃破後ゴール演出フラグの初期化
+	isBossLightTriggered_ = false;          // ラスボス接近による光の演出フラグの初期化（接近するまでは全てのライトを消す）
 
 	// ステージ切り替え時に前回のデータを完全にクリアする
 	player_.reset();
@@ -161,8 +167,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	// ブロックモデルを種類別に読み込み
 	modelBlock_ = Model::CreateFromOBJ("block", true);
 	modelBlockFall_ = Model::CreateFromOBJ("blockFall", true);
-	modelBlockFallLeft_ = Model::CreateFromOBJ("blockFallLeft", true);   
-	modelBlockFallRight_ = Model::CreateFromOBJ("blockFallRight", true); 
+	modelBlockFallLeft_ = Model::CreateFromOBJ("blockFallLeft", true);
+	modelBlockFallRight_ = Model::CreateFromOBJ("blockFallRight", true);
 	modelBlockLeft_ = Model::CreateFromOBJ("blockLeft", true);
 	modelBlockRight_ = Model::CreateFromOBJ("blockRight", true);
 	modelBlockAbove_ = Model::CreateFromOBJ("blockAbove", true);
@@ -203,6 +209,30 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelItemHp_ = Model::CreateFromOBJ("itemHP", true);
 	modelGoal_ = Model::CreateFromOBJ("goal", true);               // ゴール用モデルの生成
 	modelExplanation_ = Model::CreateFromOBJ("Explanation", true); // 解説ブロック用モデルの生成
+
+	// ★ 全モデルに LightManager のライトグループを設定する
+	//   （Model::Draw は model->lightGroup_ をバインドするため、設定しないとデフォルトライトで描画される）
+	{
+		KamataEngine::Model* lightTargets[] = {
+		    modelEnemy_,    modelShieldEnemy_, modelSkydome_,        modelPlayerHead_,     modelPlayerBody_, modelPlayerLeft_, modelPlayerRight_, modelBossHead_,   modelBossBody_,
+		    modelBossLeft_, modelBossRight_,   modelDeathParticles_, modelHitEffect_,      modelHammer_,     modelPlayerHp_,   modelItemHp_,      modelGoal_,       modelExplanation_,
+		    modelBlock_,    modelBlockFall_,   modelBlockFallLeft_,  modelBlockFallRight_, modelBlockLeft_,  modelBlockRight_, modelBlockAbove_,  modelBlockBelow_,
+		};
+		for (KamataEngine::Model* model : lightTargets) {
+			lightManager_->ApplyToModel(model, LightManager::GroupType::kWorld);
+		}
+
+		// ラスボスは専用のライトグループ（専用スポットライト・暗転演出）
+		lightManager_->ApplyToModel(modelFinalBossBody_, LightManager::GroupType::kBoss);
+		for (KamataEngine::Model* model : modelFinalBossHands_) {
+			lightManager_->ApplyToModel(model, LightManager::GroupType::kBoss);
+		}
+
+		// 奥行き背景は中景と遠景で別々のライトグループ（遠景ほど暗く、彩度も低い）
+		if (backgroundBlocks_) {
+			backgroundBlocks_->SetLightGroups(lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundMid), lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundFar));
+		}
+	}
 
 	HitEffect::SetModel(modelHitEffect_);
 	HitEffect::SetCamera(&camera_);
@@ -423,6 +453,11 @@ void GameScene::Update() {
 	Player::ApplyGlobalVariables();
 	Enemy::ApplyGlobalVariables();
 
+	// ★ LightManager の更新
+	if (lightManager_) {
+		lightManager_->Update();
+	}
+
 #ifdef _DEBUG
 	ImGui::Begin("Debug");
 	if (ImGui::Button("Reload")) {
@@ -519,6 +554,12 @@ void GameScene::Update() {
 		}
 	}
 
+	// ★ LightManager 自身の ImGui 描画関数を呼ぶ
+	if (lightManager_) {
+		lightManager_->DrawImGui();
+		ImGui::DragFloat("Boss Light Approach Distance", &bossLightApproachDistance_, 0.5f, 0.0f, 500.0f);
+	}
+
 	ImGui::End();
 #endif
 
@@ -581,6 +622,98 @@ void GameScene::Update() {
 		worldTransformExplanation->matWorld_ = affineMatrix;
 		worldTransformExplanation->TransferMatrix();
 	}
+
+	// ★ 光の演出（点灯・夜・追従スポットライト）を更新してからライトを転送する
+	if (lightManager_) {
+		UpdateLightEffects();
+		lightManager_->TransferBuffer();
+	}
+}
+
+// ★ 光の演出の更新
+void GameScene::UpdateLightEffects() {
+	if (!lightManager_) {
+		return;
+	}
+
+	// ラスボスを探す
+	FinalBoss* finalBoss = nullptr;
+	for (BaseEnemy* enemy : enemies_) {
+		if (FinalBoss* boss = dynamic_cast<FinalBoss*>(enemy)) {
+			finalBoss = boss;
+			break;
+		}
+	}
+
+	const bool hasPlayer = (player_ != nullptr);
+	Vector3 playerPos = {0.0f, 0.0f, 0.0f};
+	if (hasPlayer) {
+		playerPos = player_->GetWorldTransform().translation_;
+	}
+
+	// ★ 変更：ラスボスが出現演出を開始（kStandby解除）した瞬間のみ光の演出を開始
+	if (finalBoss && !isBossLightTriggered_) {
+		if (finalBoss->GetState() != FinalBoss::State::kStandby) {
+			isBossLightTriggered_ = true;
+		}
+	}
+	// 出現演出が始まるまでは全てのライトを消して、光の描画なしにする
+	lightManager_->SetLightsEnabled(isBossLightTriggered_);
+
+	// ラスボスの出現演出に合わせて、周りの光を段々暗くして夜にする
+	float night = 0.0f;
+	bool isFrenzy = false;
+	if (finalBoss) {
+		night = finalBoss->GetSpawnProgress();
+		isFrenzy = (finalBoss->GetState() == FinalBoss::State::kFrenzyInit || finalBoss->GetState() == FinalBoss::State::kFrenzy);
+	}
+	lightManager_->SetNightFactor(night);
+	lightManager_->SetBossFrenzy(isFrenzy);
+
+	// プレイヤーのスポットライト
+	lightManager_->SetPlayerSpot(hasPlayer, playerPos);
+
+	// プレイヤーに一番近い普通敵・盾敵のスポットライト
+	constexpr float kEnemySpotRange = 40.0f;
+	bool hasEnemy = false;
+	bool hasShieldEnemy = false;
+	Vector3 enemyPos = {0.0f, 0.0f, 0.0f};
+	Vector3 shieldEnemyPos = {0.0f, 0.0f, 0.0f};
+	float nearEnemyDistance = kEnemySpotRange;
+	float nearShieldEnemyDistance = kEnemySpotRange;
+
+	if (hasPlayer) {
+		for (BaseEnemy* enemy : enemies_) {
+			if (!enemy || enemy->IsDead()) {
+				continue;
+			}
+			const Vector3& pos = enemy->GetWorldTransform().translation_;
+			float distanceX = std::fabs(pos.x - playerPos.x);
+
+			if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
+				if (!normalEnemy->IsItemState() && distanceX < nearEnemyDistance) {
+					nearEnemyDistance = distanceX;
+					enemyPos = pos;
+					hasEnemy = true;
+				}
+			} else if (ShieldEnemy* shieldEnemy = dynamic_cast<ShieldEnemy*>(enemy)) {
+				if (!shieldEnemy->IsItemState() && distanceX < nearShieldEnemyDistance) {
+					nearShieldEnemyDistance = distanceX;
+					shieldEnemyPos = pos;
+					hasShieldEnemy = true;
+				}
+			}
+		}
+	}
+	lightManager_->SetEnemySpot(hasEnemy, enemyPos);
+	lightManager_->SetShieldEnemySpot(hasShieldEnemy, shieldEnemyPos);
+
+	// ラスボスのスポットライト（出現演出が始まってから）
+	if (finalBoss && finalBoss->GetState() != FinalBoss::State::kStandby) {
+		lightManager_->SetBossSpot(true, finalBoss->GetWorldTransform().translation_);
+	} else {
+		lightManager_->SetBossSpot(false, Vector3{0.0f, 0.0f, 0.0f});
+	}
 }
 
 void GameScene::ChangePhase() {
@@ -641,10 +774,6 @@ void GameScene::UpdatePlay() {
 
 	if (player_) {
 		player_->Update();
-	}
-
-	if (playerHp_) {
-		playerHp_->Update(camera_.translation_);
 	}
 
 	// ボス撃破時のゴール出現およびカメラ演出処理
@@ -809,6 +938,10 @@ void GameScene::UpdatePlay() {
 		cameraController_->Update();
 	}
 
+	if (playerHp_) {
+		playerHp_->Update(camera_.translation_);
+	}
+
 	if (player_) {
 		player_->CheckEnemyCollision(enemies_);
 	}
@@ -867,6 +1000,7 @@ void GameScene::UpdateFadeOut() {
 
 void GameScene::Draw() {
 
+	// 背景ブロックの描画
 	if (backgroundBlocks_) {
 		backgroundBlocks_->Draw(camera_);
 	}
