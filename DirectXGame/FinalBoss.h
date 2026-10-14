@@ -11,6 +11,7 @@ class Player;
 class FinalBoss : public BaseEnemy {
 public:
 	static constexpr size_t kNumHands = 7;
+	static constexpr size_t kNumCrystals = 21; // ★ 21個のクリスタル定数を追加
 
 	// ★ ボスの状態定義
 	enum class State {
@@ -41,7 +42,9 @@ public:
 	/// <param name="modelHands">7本の手のモデル配列 (finalBossHand_1 ~ 7)</param>
 	/// <param name="camera">カメラ</param>
 	/// <param name="position">初期配置座標</param>
-	void Initialize(KamataEngine::Model* modelBody, const std::array<KamataEngine::Model*, kNumHands>& modelHands, KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
+	void Initialize(
+	    KamataEngine::Model* modelBody, const std::array<KamataEngine::Model*, kNumHands>& modelHands, const std::array<KamataEngine::Model*, kNumCrystals>& modelCrystals, // ★ 引数に追加
+	    KamataEngine::Camera* camera, const KamataEngine::Vector3& position);
 
 	void Update() override;
 	void Draw() override;
@@ -93,11 +96,13 @@ private:
 	// モデル参照
 	KamataEngine::Model* modelBody_ = nullptr;
 	std::array<KamataEngine::Model*, kNumHands> modelHands_{};
+	std::array<KamataEngine::Model*, kNumCrystals> modelCrystals_{}; // ★ クリスタルモデル配列
 
 	// ワールドトランスフォーム
 	// worldTransform_ (親 / ルート座標)
 	KamataEngine::WorldTransform worldTransformBody_;                         // 本体ローカル
 	std::array<KamataEngine::WorldTransform, kNumHands> worldTransformHands_; // 手のローカル＆合成用
+	std::array<KamataEngine::WorldTransform, kNumCrystals> worldTransformCrystals_; // ★ クリスタルのローカル＆合成用
 
 	// ★ 描画で使い回すパーティクル用の WorldTransform
 	KamataEngine::WorldTransform particleWorldTransform_;
@@ -127,4 +132,7 @@ private:
 
 	// 各手の初期ローカルオフセット位置
 	std::array<KamataEngine::Vector3, kNumHands> handLocalOffsets_;
+
+	// 各クリスタルの初期ローカルオフセット位置
+	std::array<KamataEngine::Vector3, kNumCrystals> crystalLocalOffsets_; // ★ クリスタルの初期オフセット
 };

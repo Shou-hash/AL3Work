@@ -4,6 +4,9 @@
 #include "Matrix4x4.h"
 #include <cmath>
 #include <numbers>
+#ifdef _DEBUG
+#include <imgui.h>
+#endif
 
 TitleScene::~TitleScene() {
 	delete fade_;
@@ -15,6 +18,10 @@ TitleScene::~TitleScene() {
 
 	delete mapChipField_;
 	delete model_;
+	delete modelBlockAbove_;
+	delete modelBlockBelow_;
+	delete modelBlockLeft_;
+	delete modelBlockRight_;
 	for (auto& worldTransformBlockLine : worldTransformBlocks_) {
 		for (auto* worldTransformBlock : worldTransformBlockLine) {
 			delete worldTransformBlock;
@@ -43,9 +50,24 @@ void TitleScene::Initialize() {
 	mapChipField_->LoadMapChipDataFromCSV("Resources/titleStageDatas.csv");
 	model_ = KamataEngine::Model::CreateFromOBJ("block", true);
 
+	// ★ ブロックの向き別モデルを読み込み
+	delete modelBlockAbove_;
+	delete modelBlockBelow_;
+	delete modelBlockLeft_;
+	delete modelBlockRight_;
+	modelBlockAbove_ = KamataEngine::Model::CreateFromOBJ("blockAbove", true);
+	modelBlockBelow_ = KamataEngine::Model::CreateFromOBJ("blockBelow", true);
+	modelBlockLeft_ = KamataEngine::Model::CreateFromOBJ("blockLeft", true);
+	modelBlockRight_ = KamataEngine::Model::CreateFromOBJ("blockRight", true);
+
+	// ★ 奥行き背景（Resources/titleBackgroundDatas.csv から配置）
+	backgroundBlocks_ = std::make_unique<BackgroundBlocks>();
+	backgroundBlocks_->Initialize(mapChipField_, "Resources/titleBackgroundDatas.csv");
+
 	uint32_t numBlockVertical = mapChipField_->GetNumBlockVertical();
 	uint32_t numBlockHorizontal = mapChipField_->GetNumBlockHorizontal();
 
+	blockModels_.assign(numBlockVertical, std::vector<KamataEngine::Model*>(numBlockHorizontal, nullptr));
 	worldTransformBlocks_.resize(numBlockVertical);
 	for (uint32_t i = 0; i < numBlockVertical; ++i) {
 		worldTransformBlocks_[i].resize(numBlockHorizontal, nullptr);
@@ -56,6 +78,25 @@ void TitleScene::Initialize() {
 				worldTransform->Initialize();
 				worldTransform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
 				worldTransformBlocks_[i][j] = worldTransform;
+
+				// ★ ブロックの向きの判定（GameScene と共通）。空白に一番近いブロックだけが向きを持つ
+				switch (mapChipField_->GetBlockFaceByIndex(j, i)) {
+				case BlockFace::kAbove:
+					blockModels_[i][j] = modelBlockAbove_; // 上が空白（地面）
+					break;
+				case BlockFace::kBelow:
+					blockModels_[i][j] = modelBlockBelow_; // 下が空白（天井）
+					break;
+				case BlockFace::kRight:
+					blockModels_[i][j] = modelBlockRight_; // 右が空白（左壁）
+					break;
+				case BlockFace::kLeft:
+					blockModels_[i][j] = modelBlockLeft_; // 左が空白（右壁）
+					break;
+				default:
+					blockModels_[i][j] = model_; // 通常のブロック
+					break;
+				}
 			}
 		}
 	}
@@ -79,6 +120,24 @@ void TitleScene::Initialize() {
 	worldTransformTitleName_.scale_ = {2.0f, 2.0f, 2.0f};             // ★ スケールを大きく変更 (画面サイズに合わせて数値を調整してください)
 	worldTransformTitleName_.rotation_.y = std::numbers::pi_v<float>; // ★ Y軸回転を180度(π rad)に設定
 	worldTransformTitleName_.translation_ = {10.0f, 8.0f, 0.0f};
+
+	// ★ 朝のライティングを設定（ラスボスの夜・赤いスポットライトは使わない）
+	lightManager_ = std::make_unique<LightManager>();
+	lightManager_->Initialize();
+	lightManager_->ApplyToModel(model_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelBlockAbove_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelBlockBelow_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelBlockLeft_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelBlockRight_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelPlayerHead_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelPlayerBody_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelPlayerLeft_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelPlayerRight_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelSkydome_, LightManager::GroupType::kWorld);
+	lightManager_->ApplyToModel(modelTitleName_, LightManager::GroupType::kWorld);
+	backgroundBlocks_->SetLightGroups(
+	    lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundNear), lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundMid),
+	    lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundFar));
 }
 
 void TitleScene::Update() {
@@ -136,7 +195,8 @@ void TitleScene::Update() {
 			currentVelocityY = 0.0f;
 		}
 
-		if (transformRoot.translation_.x > 40.0f) {
+		// ★ ステージの右端の手前まで進んだら、最初の位置に戻してループさせる（ステージの横幅に合わせる）
+		if (transformRoot.translation_.x > static_cast<float>(mapChipField_->GetUsedBlockHorizontal()) - 15.0f) {
 			transformRoot.translation_.x = 2.0f;
 			transformRoot.translation_.y = 10.0f;
 			currentVelocityY = 0.0f;
@@ -220,6 +280,10 @@ void TitleScene::Update() {
 
 	camera_.UpdateMatrix();
 
+	// ★ 奥行き背景の更新と、朝のライティングの更新
+	backgroundBlocks_->Update(camera_);
+	lightManager_->Update();
+
 	switch (phase_) {
 	case Phase::FadeIn:
 		if (fade_->IsFinished())
@@ -236,16 +300,29 @@ void TitleScene::Update() {
 			finished_ = true;
 		break;
 	}
+
+#ifdef _DEBUG
+	// ★ ライティング（光沢の強さなど）の調整用ウィンドウ
+	ImGui::Begin("Title Scene");
+	lightManager_->DrawImGui();
+	ImGui::End();
+#endif
 }
 
 void TitleScene::Draw() {
-	for (auto& worldTransformBlockLine : worldTransformBlocks_) {
-		for (auto* worldTransformBlock : worldTransformBlockLine) {
+	// ★ 奥行き背景を最初に描画
+	backgroundBlocks_->Draw(camera_);
+
+	// ★ ブロックは向きに応じたモデルで描画
+	for (size_t i = 0; i < worldTransformBlocks_.size(); ++i) {
+		for (size_t j = 0; j < worldTransformBlocks_[i].size(); ++j) {
+			KamataEngine::WorldTransform* worldTransformBlock = worldTransformBlocks_[i][j];
 			if (!worldTransformBlock) {
 				continue;
 			}
+			KamataEngine::Model* blockModel = blockModels_[i][j] ? blockModels_[i][j] : model_;
 			KamataEngine::Model::PreDraw();
-			model_->Draw(*worldTransformBlock, camera_);
+			blockModel->Draw(*worldTransformBlock, camera_);
 			KamataEngine::Model::PostDraw();
 		}
 	}

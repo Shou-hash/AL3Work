@@ -16,7 +16,7 @@ constexpr bool kSpotAngleInDegrees = true;
 constexpr float kDirLightSign = 1.0f;
 constexpr float kSpotLightSign = 1.0f;
 
-// 光の演出が全点灯するまでの時間（秒）
+// スポットライトが全点灯するまでの時間（秒）
 constexpr float kFadeDuration = 1.5f;
 // 夜の度合いが目標値に追従する速さ
 constexpr float kNightSmoothing = 0.08f;
@@ -37,8 +37,6 @@ Vector3 SafeDir(const Vector3& v, const Vector3& fallback, float sign) {
 
 Vector3 Lerp(const Vector3& a, const Vector3& b, float t) { return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t}; }
 
-Vector3 Mul(const Vector3& a, const Vector3& b) { return {a.x * b.x, a.y * b.y, a.z * b.z}; }
-
 Vector3 Scale(const Vector3& a, float s) { return {a.x * s, a.y * s, a.z * s}; }
 
 // 彩度と明るさを調整した色を返す
@@ -48,12 +46,11 @@ Vector3 AdjustColor(const Vector3& color, float brightness, float saturation) {
 	return Scale(Lerp(gray3, color, saturation), brightness);
 }
 
-void InitDirLight(LightManager::DirState& d, const Vector3& direction, const Vector3& color, bool active, float brightness, float saturation) {
-	d.direction = direction;
-	d.color = color;
-	d.active = active;
-	d.brightness = brightness;
-	d.saturation = saturation;
+void InitDirLook(LightManager::DirLook& look, const Vector3& direction, const Vector3& color, float brightness, float saturation) {
+	look.direction = direction;
+	look.color = color;
+	look.brightness = brightness;
+	look.saturation = saturation;
 }
 
 // 少し赤いスポットライトの初期設定
@@ -84,40 +81,71 @@ void LightManager::Initialize() {
 
 	// =========================================================
 	// 通常（ブロック・プレイヤー・敵など）
+	// 朝：低い位置の金色の太陽を横から当てて明暗をはっきり出し、手前からは紫がかった柔らかい空の光で影を起こす
+	// 夜：青白い月明かり
+	// ※ 朝の光を画面の手前（カメラ側）から当てると、のっぺりして朝らしさが見えなくなるため、横から当てる
 	// =========================================================
 	LightSet& worldLights = GetSet(GroupType::kWorld);
-	worldLights.ambientColor = {0.3f, 0.3f, 0.3f};
-	// メインの平行光源（光の進む向き。上から斜めに差し込む）
-	InitDirLight(worldLights.dirLights[0], {-0.5f, -1.0f, 0.5f}, {1.0f, 0.95f, 0.85f}, true, 1.0f, 1.0f);
-	InitDirLight(worldLights.dirLights[1], {0.0f, -1.0f, 0.3f}, {1.0f, 1.0f, 1.0f}, false, 1.0f, 1.0f);
+	worldLights.ambientMorning = {0.48f, 0.42f, 0.48f};
+	worldLights.ambientNight = {0.05f, 0.06f, 0.14f};
+	// メインの平行光源（朝の太陽：右の低い位置から、ほぼ真横に差し込む）
+	worldLights.dirLights[0].active = true;
+	InitDirLook(worldLights.dirLights[0].morning, {-0.9f, -0.3f, 0.05f}, {1.0f, 0.68f, 0.38f}, 1.5f, 1.0f);
+	InitDirLook(worldLights.dirLights[0].night, {0.4f, -0.7f, 0.6f}, {0.5f, 0.6f, 1.0f}, 0.3f, 0.8f);
+	// 補助光（朝の空の紫がかった反射光。手前から当てて影の側を柔らかく起こす）
+	worldLights.dirLights[1].active = true;
+	InitDirLook(worldLights.dirLights[1].morning, {0.5f, -0.2f, 0.8f}, {0.65f, 0.6f, 1.0f}, 0.55f, 0.7f);
+	InitDirLook(worldLights.dirLights[1].night, {0.6f, -0.3f, 0.7f}, {0.2f, 0.25f, 0.5f}, 0.1f, 0.6f);
 	InitRedSpot(worldLights.spotLights[0], 2.0f, 25.0f); // プレイヤー
 	InitRedSpot(worldLights.spotLights[1], 2.0f, 25.0f); // 普通敵
 	InitRedSpot(worldLights.spotLights[2], 2.0f, 25.0f); // 盾敵
 
 	// =========================================================
+	// 奥行きステージ構造（ステージのタイルと同じ大きさ）：通常より少し落ち着いた明るさ・彩度
+	// =========================================================
+	LightSet& nearLights = GetSet(GroupType::kBackgroundNear);
+	nearLights.ambientMorning = {0.46f, 0.42f, 0.46f};
+	nearLights.ambientNight = {0.045f, 0.055f, 0.13f};
+	nearLights.dirLights[0].active = true;
+	InitDirLook(nearLights.dirLights[0].morning, {-0.9f, -0.3f, 0.1f}, {1.0f, 0.7f, 0.42f}, 1.3f, 0.9f);
+	InitDirLook(nearLights.dirLights[0].night, {0.4f, -0.7f, 0.6f}, {0.5f, 0.6f, 1.0f}, 0.25f, 0.8f);
+
+	// =========================================================
 	// 奥行き背景（中景）：やや明るく、彩度はそこそこ
 	// =========================================================
 	LightSet& midLights = GetSet(GroupType::kBackgroundMid);
-	midLights.ambientColor = {0.25f, 0.25f, 0.27f};
-	InitDirLight(midLights.dirLights[0], {-0.3f, -0.8f, 0.8f}, {1.0f, 0.85f, 0.65f}, true, 0.8f, 0.7f);
-	InitDirLight(midLights.dirLights[1], {0.0f, -1.0f, 0.3f}, {1.0f, 1.0f, 1.0f}, false, 1.0f, 1.0f);
+	midLights.ambientMorning = {0.44f, 0.42f, 0.46f};
+	midLights.ambientNight = {0.04f, 0.05f, 0.12f};
+	midLights.dirLights[0].active = true;
+	InitDirLook(midLights.dirLights[0].morning, {-0.9f, -0.25f, 0.1f}, {1.0f, 0.72f, 0.45f}, 1.1f, 0.75f);
+	InitDirLook(midLights.dirLights[0].night, {0.3f, -0.6f, 0.7f}, {0.45f, 0.55f, 0.95f}, 0.2f, 0.6f);
 
 	// =========================================================
-	// 奥行き背景（遠景・一番奥）：一番暗く、彩度も一番低い
+	// 奥行き背景（遠景・一番奥）：一番暗く、彩度も一番低い（朝の霞）
 	// =========================================================
 	LightSet& farLights = GetSet(GroupType::kBackgroundFar);
-	farLights.ambientColor = {0.12f, 0.12f, 0.14f};
-	InitDirLight(farLights.dirLights[0], {-0.3f, -0.8f, 0.8f}, {0.7f, 0.75f, 0.9f}, true, 0.35f, 0.2f);
-	InitDirLight(farLights.dirLights[1], {0.0f, -1.0f, 0.3f}, {1.0f, 1.0f, 1.0f}, false, 1.0f, 1.0f);
+	farLights.ambientMorning = {0.36f, 0.35f, 0.40f};
+	farLights.ambientNight = {0.02f, 0.03f, 0.07f};
+	farLights.dirLights[0].active = true;
+	InitDirLook(farLights.dirLights[0].morning, {-0.9f, -0.25f, 0.1f}, {1.0f, 0.85f, 0.75f}, 0.65f, 0.3f);
+	InitDirLook(farLights.dirLights[0].night, {0.3f, -0.6f, 0.7f}, {0.5f, 0.55f, 0.8f}, 0.08f, 0.2f);
 
 	// =========================================================
-	// ラスボス
+	// ラスボス：朝は通常に近く、夜は不気味な赤紫の光
 	// =========================================================
 	LightSet& bossLights = GetSet(GroupType::kBoss);
-	bossLights.ambientColor = {0.2f, 0.2f, 0.22f};
-	InitDirLight(bossLights.dirLights[0], {0.0f, -0.6f, 1.0f}, {0.9f, 0.8f, 0.85f}, true, 0.7f, 0.6f);
-	InitDirLight(bossLights.dirLights[1], {0.0f, -1.0f, 0.3f}, {1.0f, 1.0f, 1.0f}, false, 1.0f, 1.0f);
-	InitRedSpot(bossLights.spotLights[0], 2.5f, 40.0f);
+	bossLights.ambientMorning = {0.55f, 0.50f, 0.58f}; // ★ 環境光（朝）
+	bossLights.ambientNight = {0.20f, 0.10f, 0.20f};   // ★ 環境光（夜）
+
+	// メイン平行光源
+	bossLights.dirLights[0].active = true;
+	InitDirLook(bossLights.dirLights[0].morning, {-0.9f, -0.3f, 0.05f}, {1.0f, 1.0f, 1.0f}, 1.6f, 1.0f); // ★ 光の色を白(1.0, 1.0, 1.0)に変更
+	InitDirLook(bossLights.dirLights[0].night, {0.0f, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, 1.33f, 1.0f);     // ★ 光の色を白(1.0, 1.0, 1.0)に変更
+
+	// ★ ラスボスのハイライト用補助光源（手前・斜め上から照らして鮮やかな光沢を出す）
+	bossLights.dirLights[1].active = true;
+	InitDirLook(bossLights.dirLights[1].morning, {0.4f, -0.6f, -0.8f}, {1.0f, 1.0f, 1.0f}, 1.2f, 1.0f); // ★ 光の色を白(1.0, 1.0, 1.0)に変更
+	InitDirLook(bossLights.dirLights[1].night, {0.3f, -0.5f, -0.8f}, {1.0f, 1.0f, 1.0f}, 0.063f, 1.0f);   // ★ 光の色を白(1.0, 1.0, 1.0)に変更
 
 	TransferBuffer();
 }
@@ -129,7 +157,7 @@ void LightManager::Update() {
 	bool enabled = manualOverride_ ? manualEnabled_ : lightsEnabled_;
 	float nightGoal = manualOverride_ ? manualNight_ : nightTarget_;
 
-	// 点灯・消灯をなめらかに行う
+	// スポットライトの点灯・消灯をなめらかに行う
 	float fadeStep = 1.0f / (kFadeDuration * 60.0f);
 	float diff = (enabled ? 1.0f : 0.0f) - lightFade_;
 	if (diff > fadeStep) {
@@ -139,18 +167,21 @@ void LightManager::Update() {
 	}
 	lightFade_ += diff;
 
-	// 夜の度合いを目標値へなめらかに近づける（出現演出の間に段々暗くなる）
+	// ラスボスの発光をなめらかに点灯・消灯させる
+	bossGlowFade_ += ((bossGlowActive_ ? 1.0f : 0.0f) - bossGlowFade_) * 0.03f;
+
+	// 夜の度合いを目標値へなめらかに近づける（出現演出の間に朝から夜へ段々暗くなる）
 	nightCurrent_ += (nightGoal - nightCurrent_) * kNightSmoothing;
 
-	// 演出: 太陽（メイン平行光源）をゆっくり回転させて光と影の表情を変化させる
+	// 演出: 朝の太陽（メイン平行光源）をゆっくり回転させて光と影の表情を変化させる
 	if (isSunRotating_) {
 		sunAngle_ += 0.005f;
 		if (sunAngle_ > std::numbers::pi_v<float> * 2.0f) {
 			sunAngle_ -= std::numbers::pi_v<float> * 2.0f;
 		}
 		LightSet& worldLights = GetSet(GroupType::kWorld);
-		worldLights.dirLights[0].direction.x = std::cos(sunAngle_);
-		worldLights.dirLights[0].direction.z = std::sin(sunAngle_);
+		worldLights.dirLights[0].morning.direction.x = std::cos(sunAngle_);
+		worldLights.dirLights[0].morning.direction.z = std::sin(sunAngle_);
 	}
 
 	TransferBuffer();
@@ -168,53 +199,68 @@ void LightManager::ApplyLightSet(LightSet& set, bool isBoss) {
 		return;
 	}
 
-	const float fade = lightFade_;
 	const float night = nightCurrent_;
-	// 光の演出が完全に消えている間は、全てのライトを無効にする
-	const bool isOn = fade > 0.0001f;
+	// スポットライトは、点灯の進行度が 0 の間は無効にする
+	const bool isSpotOn = lightFade_ > 0.0001f;
 
-	// 環境光：消灯中は一様な環境光のみ、点灯するにつれて昼の環境光へ、夜になるほど暗い青へ
-	Vector3 nightAmbient = Mul(set.ambientColor, nightAmbientMul_);
-	Vector3 litAmbient = Lerp(set.ambientColor, nightAmbient, night);
-	group->SetAmbientColor(Lerp(unlitAmbient_, litAmbient, fade));
+	// 環境光：朝の環境光から夜の環境光へ
+	group->SetAmbientColor(Lerp(set.ambientMorning, set.ambientNight, night));
 
-	// 平行光源 0,1
+	// 平行光源 0,1：朝の見た目から夜の見た目へ（向き・色・明るさ・彩度をまとめて補間）
 	for (int i = 0; i < kUsableDirLights; ++i) {
 		const DirState& d = set.dirLights[i];
-		Vector3 dayColor = AdjustColor(d.color, d.brightness, d.saturation);
-		Vector3 nightColor = Mul(dayColor, nightDirMul_);
-		group->SetDirLightActive(i, isOn && d.active);
-		group->SetDirLightDir(i, SafeDir(d.direction, {0.0f, -1.0f, 0.0f}, kDirLightSign));
-		group->SetDirLightColor(i, Scale(Lerp(dayColor, nightColor, night), fade));
+		Vector3 morningColor = AdjustColor(d.morning.color, d.morning.brightness, d.morning.saturation);
+		Vector3 nightColor = AdjustColor(d.night.color, d.night.brightness, d.night.saturation);
+		Vector3 direction = Lerp(d.morning.direction, d.night.direction, night);
+		group->SetDirLightActive(i, d.active);
+		group->SetDirLightDir(i, SafeDir(direction, {0.0f, -1.0f, 0.0f}, kDirLightSign));
+		group->SetDirLightColor(i, Lerp(morningColor, nightColor, night));
 	}
 
-	// 平行光源 2 は無効にしたまま、color.x に Lambert(0) / HalfLambert(1) の切替値を格納する
-	// （ObjPS.hlsl 側で dirLights[2].color.x を読んで切り替える）
+	// 平行光源 2 は無効にしたまま、シェーダーへ渡す設定値を color に格納する
+	// （ObjPS.hlsl 側で dirLights[2].color を読む）
+	//   x: Lambert(0) / HalfLambert(1)   y: 光沢の強さ   z: 光沢の鋭さ
+	float currentGlossStrength = isBoss ? bossGlossStrength_ : glossStrength_;    // ★ ラスボス専用のハイライト強度を適用
+	float currentGlossShininess = isBoss ? bossGlossShininess_ : glossShininess_; // ★ ラスボス専用のハイライト鋭さを適用
+
 	group->SetDirLightActive(2, false);
 	group->SetDirLightDir(2, {0.0f, -1.0f, 0.0f});
-	group->SetDirLightColor(2, {static_cast<float>(lightType_), 0.0f, 0.0f});
+	group->SetDirLightColor(2, {static_cast<float>(lightType_), currentGlossStrength, currentGlossShininess});
 
 	// 点光源
 	for (int i = 0; i < static_cast<int>(set.pointLights.size()); ++i) {
 		const PointState& p = set.pointLights[i];
-		group->SetPointLightActive(i, isOn && p.active);
-		group->SetPointLightColor(i, Scale(p.color, fade));
+		group->SetPointLightActive(i, p.active);
+		group->SetPointLightColor(i, p.color);
 		group->SetPointLightIntensity(i, p.intensity);
 		group->SetPointLightPos(i, p.position);
 		group->SetPointLightRadius(i, p.radius);
 		group->SetPointLightDecay(i, p.decay);
 	}
 
+	// ★ ラスボスの自己発光：点光源 2 番の intensity をシェーダーへの受け渡しに使う（この点光源は常に無効のまま）
+	// 夜になるほど強く光り、発狂中は脈打つように明滅する。ラスボス以外のグループは 0 を渡す
+	{
+		float glow = 0.0f;
+		if (isBoss) {
+			float pulseSpeed = isBossFrenzy_ ? 8.0f : 2.0f;
+			float pulseAmp = isBossFrenzy_ ? 0.25f : 0.1f;
+			glow = bossGlowStrength_ * bossGlowFade_ * (1.0f + 0.5f * night) * (1.0f + pulseAmp * std::sin(time_ * pulseSpeed));
+		}
+		group->SetPointLightActive(2, false);
+		group->SetPointLightIntensity(2, glow);
+	}
+
 	// スポットライト：ゆらぎ（明滅）を加える。ラスボスの発狂中は激しく明滅、夜になるほど少し強くなる
 	const bool isFrenzy = isBoss && isBossFrenzy_;
-	const float pulseAmp = isFrenzy ? 0.35f : 0.08f;
+	const float pulseAmp = isFrenzy ? 0.2f : 0.08f;
 	const float pulseSpeed = isFrenzy ? 10.0f : 2.5f;
-	const float nightBoost = 1.0f + 0.5f * night;
+	const float nightBoost = 1.0f + 0.3f * night;
 	for (int i = 0; i < static_cast<int>(set.spotLights.size()); ++i) {
 		const SpotState& s = set.spotLights[i];
 		float pulse = 1.0f + pulseAmp * std::sin(time_ * pulseSpeed + static_cast<float>(i) * 1.7f);
-		group->SetSpotLightActive(i, isOn && s.active);
-		group->SetSpotLightColor(i, Scale(s.color, fade));
+		group->SetSpotLightActive(i, isSpotOn && s.active);
+		group->SetSpotLightColor(i, Scale(s.color, lightFade_));
 		group->SetSpotLightIntensity(i, s.intensity * pulse * nightBoost);
 		group->SetSpotLightPos(i, s.position);
 		group->SetSpotLightRadius(i, s.radius);
@@ -251,8 +297,6 @@ void LightManager::SetEnemySpot(bool active, const Vector3& targetPos) { FollowS
 
 void LightManager::SetShieldEnemySpot(bool active, const Vector3& targetPos) { FollowSpot(GetSet(GroupType::kWorld).spotLights[2], active, targetPos, spotOffset_); }
 
-void LightManager::SetBossSpot(bool active, const Vector3& targetPos) { FollowSpot(GetSet(GroupType::kBoss).spotLights[0], active, targetPos, bossSpotOffset_); }
-
 // ImGui描画処理（ライトグループ 1 つ分）
 void LightManager::DrawLightSetImGui(const char* name, LightSet& set, bool isWorld, int spotCount, const char* const* spotNames) {
 #ifdef _DEBUG
@@ -261,23 +305,32 @@ void LightManager::DrawLightSetImGui(const char* name, LightSet& set, bool isWor
 	}
 
 	// 影の暗さ調整（環境光の色・明るさ）
-	ImGui::ColorEdit3("Shadow Darkness (Ambient Color)", &set.ambientColor.x);
+	ImGui::ColorEdit3("Ambient Color (Morning)", &set.ambientMorning.x);
+	ImGui::ColorEdit3("Ambient Color (Night)", &set.ambientNight.x);
 
-	// 平行光源 0, 1 の設定
+	// 平行光源 0, 1 の設定（朝用・夜用）
 	for (int i = 0; i < kUsableDirLights; ++i) {
 		std::string label = "Directional Light " + std::to_string(i);
 		if (ImGui::TreeNode(label.c_str())) {
 			DirState& d = set.dirLights[i];
 			ImGui::Checkbox("Active", &d.active);
-			ImGui::ColorEdit3("Light Color", &d.color.x);
-			ImGui::SliderFloat("Brightness", &d.brightness, 0.0f, 2.0f);
-			ImGui::SliderFloat("Saturation", &d.saturation, 0.0f, 1.0f);
-			// 光の進む向き (0,-1,0 = 真上から真下へ照らす)
-			if (ImGui::DragFloat3("Direction (light ray)", &d.direction.x, 0.01f)) {
-				if (isWorld && i == 0) {
-					isSunRotating_ = false; // 手動調整したら自動回転を止める
+
+			for (int look = 0; look < 2; ++look) {
+				DirLook& l = (look == 0) ? d.morning : d.night;
+				if (ImGui::TreeNode((look == 0) ? "Morning (Before Boss)" : "Night (After Boss)")) {
+					ImGui::ColorEdit3("Light Color", &l.color.x);
+					ImGui::SliderFloat("Brightness", &l.brightness, 0.0f, 2.0f);
+					ImGui::SliderFloat("Saturation", &l.saturation, 0.0f, 1.0f);
+					// 光の進む向き (0,-1,0 = 真上から真下へ照らす)
+					if (ImGui::DragFloat3("Direction (light ray)", &l.direction.x, 0.01f)) {
+						if (isWorld && i == 0 && look == 0) {
+							isSunRotating_ = false; // 手動調整したら自動回転を止める
+						}
+					}
+					ImGui::TreePop();
 				}
 			}
+
 			if (isWorld && i == 0) {
 				ImGui::Checkbox("Sun Rotation", &isSunRotating_);
 			}
@@ -334,29 +387,35 @@ void LightManager::DrawImGui() {
 			lightType_ = LightingType::kHalfLambert;
 		}
 
+		// 光沢（全モデル共通）
+		ImGui::SliderFloat("Gloss Strength", &glossStrength_, 0.0f, 2.0f);
+		ImGui::SliderFloat("Gloss Shininess", &glossShininess_, 4.0f, 256.0f);
+
 		// 光の演出の設定
 		if (ImGui::TreeNode("Light Effect")) {
 			ImGui::Checkbox("Manual Override", &manualOverride_);
 			if (manualOverride_) {
-				ImGui::Checkbox("Lights Enabled", &manualEnabled_);
-				ImGui::SliderFloat("Night Factor", &manualNight_, 0.0f, 1.0f);
+				ImGui::Checkbox("Spot Lights Enabled", &manualEnabled_);
+				ImGui::SliderFloat("Night Factor (0:Morning 1:Night)", &manualNight_, 0.0f, 1.0f);
 			}
-			ImGui::Text("Light Fade: %.2f  Night: %.2f", lightFade_, nightCurrent_);
-			ImGui::ColorEdit3("Unlit Ambient (Lights Off)", &unlitAmbient_.x);
-			ImGui::ColorEdit3("Night Ambient Mul", &nightAmbientMul_.x);
-			ImGui::ColorEdit3("Night Light Mul", &nightDirMul_.x);
+			ImGui::Text("Spot Fade: %.2f  Night: %.2f", lightFade_, nightCurrent_);
 			ImGui::DragFloat3("Spot Offset", &spotOffset_.x, 0.1f);
-			ImGui::DragFloat3("Boss Spot Offset", &bossSpotOffset_.x, 0.1f);
+			ImGui::SliderFloat("Boss Glow Strength", &bossGlowStrength_, 0.0f, 5.0f);
+
+			// ★ ラスボス専用ハイライトの ImGui 調整項目
+			ImGui::SliderFloat("Boss Gloss Strength", &bossGlossStrength_, 0.0f, 3.0f);
+			ImGui::SliderFloat("Boss Gloss Shininess", &bossGlossShininess_, 2.0f, 128.0f);
+
 			ImGui::TreePop();
 		}
 
 		static const char* const kWorldSpotNames[3] = {"Player Spot Light", "Enemy Spot Light", "ShieldEnemy Spot Light"};
-		static const char* const kBossSpotNames[1] = {"Boss Spot Light"};
 
 		DrawLightSetImGui("World Lights", GetSet(GroupType::kWorld), true, 3, kWorldSpotNames);
+		DrawLightSetImGui("Background Near Lights", GetSet(GroupType::kBackgroundNear), false, 0, nullptr);
 		DrawLightSetImGui("Background Mid Lights", GetSet(GroupType::kBackgroundMid), false, 0, nullptr);
 		DrawLightSetImGui("Background Far Lights", GetSet(GroupType::kBackgroundFar), false, 0, nullptr);
-		DrawLightSetImGui("Boss Lights", GetSet(GroupType::kBoss), false, 1, kBossSpotNames);
+		DrawLightSetImGui("Boss Lights", GetSet(GroupType::kBoss), false, 0, nullptr);
 
 		ImGui::TreePop();
 	}

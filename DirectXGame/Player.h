@@ -86,9 +86,7 @@ public:
 
 	bool IsDead() const { return isDead_; }
 	// ★攻撃判定の修正：ハンマー攻撃中も攻撃中として判定
-	bool IsAttacking() const { 
-		return (behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) ||
-			(behavior_ == Behavior::kHammerSkill); }
+	bool IsAttacking() const { return (behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill); }
 
 	LRDirection GetLRDirection() const { return lrDirection_; }
 
@@ -124,6 +122,23 @@ public:
 	// スキル用初期化 & 更新関数の宣言
 	void BehaviorHammerSkillInit();
 	void BehaviorHammerSkillUpdate();
+
+	// ★ 処刑演出（中ボス撃破後の連撃）用
+	// 処刑演出の開始：指定した位置・向きに固定する（通常の移動・攻撃・被ダメージは受け付けなくなる）
+	void BeginExecution(const KamataEngine::Vector3& position, LRDirection direction);
+	// 処刑演出の終了：通常の操作に戻る
+	void EndExecution();
+	bool IsExecuting() const { return isExecuting_; }
+	// ハンマーの連撃を 1 回開始する（comboIndex: 連撃の段 0 ~ 4）。スイング中は無視して false を返す
+	bool StartExecutionSwing(uint32_t comboIndex);
+	// ハンマーをスイング中かどうか
+	bool IsExecutionSwinging() const { return executionSwinging_; }
+	// スイングが当たるタイミングで 1 回だけ true を返す（カメラ演出・エフェクトのきっかけに使う）
+	bool ConsumeExecutionHit() {
+		bool hit = executionHitPending_;
+		executionHitPending_ = false;
+		return hit;
+	}
 
 	// 調整項目の登録・反映用の static 関数
 	static void RegisterGlobalVariables();
@@ -185,4 +200,11 @@ private:
 	// ★ ハンマー連撃用管理変数
 	uint32_t hammerComboIndex_ = 0;
 	bool comboInputRequested_ = false;
+
+	// ★ 処刑演出用
+	void UpdateExecution();
+	bool isExecuting_ = false;         // 処刑演出中
+	bool executionSwinging_ = false;   // ハンマーのスイング中
+	bool executionHitPending_ = false; // スイングが当たったタイミング（ConsumeExecutionHit で取得される）
+	bool executionHitDone_ = false;    // このスイングで当たりを通知済みか
 };

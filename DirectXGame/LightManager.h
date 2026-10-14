@@ -9,9 +9,11 @@
 /// エンジン標準の KamataEngine::LightGroup を使い、ImGui の調整値と光の演出を毎フレーム反映する。
 /// ※ Model::Draw は内部で model->lightGroup_ をバインドするため、
 ///    各モデルに ApplyToModel() で LightGroup を設定する必要がある。
-/// ※ モデルの種類ごとに別のライトグループを持つ（通常 / 奥行き背景(中景) / 奥行き背景(遠景) / ラスボス）。
-/// ※ 平行光源は 0,1 の 2 本が使用可能。3 本目(index 2)は
-///    Lambert / Half Lambert の切替フラグ置き場として予約している(シェーダー側で読み取る)。
+/// ※ モデルの種類ごとに別のライトグループを持つ（通常 / 奥行きステージ構造 / 奥行き背景(中景) / 奥行き背景(遠景) / ラスボス）。
+/// ※ ライティングは「朝（ラスボス出現演出前）」と「夜（ラスボス出現演出後）」を別々に設定し、
+///    夜の度合い（nightFactor）で朝から夜へなめらかに切り替わる。
+/// ※ 平行光源は 0,1 の 2 本が使用可能。3 本目(index 2)は無効のまま、
+///    シェーダーへ渡す設定値（color.x: Lambert / Half Lambert、color.y: 光沢の強さ、color.z: 光沢の鋭さ）の置き場として予約している。
 /// </summary>
 class LightManager {
 public:
@@ -22,18 +24,24 @@ public:
 
 	// ★ ライトグループの種類
 	enum class GroupType : uint32_t {
-		kWorld = 0,     // 通常（ブロック・プレイヤー・敵・ゴールなど）
-		kBackgroundMid, // 奥行き背景（中景）
-		kBackgroundFar, // 奥行き背景（遠景・一番奥）
-		kBoss,          // ラスボス
+		kWorld = 0,      // 通常（ブロック・プレイヤー・敵・ゴールなど）
+		kBackgroundNear, // 奥行きステージ構造（ステージのタイルと同じ大きさのタイル。中景より手前）
+		kBackgroundMid,  // 奥行き背景（中景）
+		kBackgroundFar,  // 奥行き背景（遠景・一番奥）
+		kBoss,           // ラスボス
 		kCount,
 	};
 
-	struct DirState {
-		KamataEngine::Vector3 direction = {0.0f, -1.0f, 0.0f};
+	// ★ 平行光源 1 つ分の「見た目」（朝用・夜用で別々に持つ）
+	struct DirLook {
+		KamataEngine::Vector3 direction = {0.0f, -1.0f, 0.0f}; // 光の進む向き
 		KamataEngine::Vector3 color = {1.0f, 1.0f, 1.0f};
 		float brightness = 1.0f; // 明るさ（色に掛ける倍率）
 		float saturation = 1.0f; // 彩度（0.0 = 白黒、1.0 = 元の色）
+	};
+	struct DirState {
+		DirLook morning; // 朝（ラスボス出現演出前）
+		DirLook night;   // 夜（ラスボス出現演出後）
 		bool active = false;
 	};
 	struct PointState {
@@ -71,10 +79,10 @@ public:
 	void EnableSunRotation(bool enable) { isSunRotating_ = enable; }
 
 	// ★ 光の演出の制御
-	// false の間は全てのライトを無効にし、一様な環境光のみで描画する（光の描画なし）
+	// 赤いスポットライトの点灯フラグ（false の間はスポットライトを全て消す。朝のライティングは常に有効）
 	void SetLightsEnabled(bool enabled) { lightsEnabled_ = enabled; }
 	bool IsLightsEnabled() const { return lightsEnabled_; }
-	// 夜の度合い（0.0 = 昼、1.0 = 夜）
+	// 夜の度合い（0.0 = 朝、1.0 = 夜）
 	void SetNightFactor(float factor) { nightTarget_ = factor; }
 	// ラスボスの発狂中はスポットライトを激しく明滅させる
 	void SetBossFrenzy(bool frenzy) { isBossFrenzy_ = frenzy; }
@@ -83,7 +91,9 @@ public:
 	void SetPlayerSpot(bool active, const KamataEngine::Vector3& targetPos);
 	void SetEnemySpot(bool active, const KamataEngine::Vector3& targetPos);
 	void SetShieldEnemySpot(bool active, const KamataEngine::Vector3& targetPos);
-	void SetBossSpot(bool active, const KamataEngine::Vector3& targetPos);
+
+	// ★ ラスボスの自己発光（スポットライトの代わり。モデル本来の色を保ったまま光らせる）。出現演出が始まったら true
+	void SetBossGlow(bool active) { bossGlowActive_ = active; }
 
 	// ImGui描画関数
 	void DrawImGui();
@@ -91,7 +101,8 @@ public:
 private:
 	struct LightSet {
 		std::unique_ptr<KamataEngine::LightGroup> group;
-		KamataEngine::Vector3 ambientColor = {0.3f, 0.3f, 0.3f};
+		KamataEngine::Vector3 ambientMorning = {0.4f, 0.4f, 0.45f}; // 朝の環境光
+		KamataEngine::Vector3 ambientNight = {0.05f, 0.06f, 0.14f}; // 夜の環境光
 		std::array<DirState, 2> dirLights;
 		std::array<PointState, 3> pointLights;
 		std::array<SpotState, 3> spotLights;
@@ -114,22 +125,28 @@ private:
 	LightingType lightType_ = LightingType::kHalfLambert;
 
 	// ★ 光の演出用パラメータ
-	bool lightsEnabled_ = false; // ゲーム側から指示される点灯フラグ
-	float lightFade_ = 0.0f;     // 点灯の進行度（0.0 = 消灯、1.0 = 全点灯）
+	bool lightsEnabled_ = false; // ゲーム側から指示されるスポットライトの点灯フラグ
+	float lightFade_ = 0.0f;     // スポットライトの点灯の進行度（0.0 = 消灯、1.0 = 全点灯）
 	float nightTarget_ = 0.0f;   // 夜の度合いの目標値
 	float nightCurrent_ = 0.0f;  // 夜の度合いの現在値（なめらかに追従）
 	bool isBossFrenzy_ = false;  // ラスボス発狂中フラグ
 	float time_ = 0.0f;          // 明滅用タイマー
 
-	// 光が消えている間の一様な環境光
-	KamataEngine::Vector3 unlitAmbient_ = {1.0f, 1.0f, 1.0f};
-	// 夜になったときの環境光・平行光源に掛ける色（青暗くなる）
-	KamataEngine::Vector3 nightAmbientMul_ = {0.15f, 0.18f, 0.40f};
-	KamataEngine::Vector3 nightDirMul_ = {0.12f, 0.16f, 0.38f};
+	// ★ ラスボスの自己発光（シェーダーの pointLights[2].intensity 経由で渡す）
+	bool bossGlowActive_ = false;   // 発光させるかどうか
+	float bossGlowFade_ = 0.0f;     // 発光の進行度（0.0 ~ 1.0。なめらかに点灯する）
+	float bossGlowStrength_ = 2.8f; // 発光の強さ（ImGui の Boss Glow Strength で調整）
+
+	// ★ 光沢（全モデル共通）。シェーダーの鏡面反射に使われる
+	float glossStrength_ = 0.25f;  // 光沢の強さ（0.0 = 光沢なし。ImGui の Gloss Strength で調整）
+	float glossShininess_ = 32.0f; // 光沢の鋭さ（大きいほどハイライトが小さく鋭い。ImGui の Gloss Shininess で調整）
+
+	// ★ ラスボス専用のハイライト（光沢・鏡面反射）パラメータ
+	float bossGlossStrength_ = 1.2f;   // ラスボスのハイライトの強さ（くっきりと光らせる）
+	float bossGlossShininess_ = 16.0f; // ラスボスのハイライトの広がり・鋭さ
 
 	// 追従スポットライトの配置オフセット（対象からの相対位置）
 	KamataEngine::Vector3 spotOffset_ = {0.0f, 5.0f, -8.0f};
-	KamataEngine::Vector3 bossSpotOffset_ = {0.0f, 6.0f, -12.0f};
 
 	// ImGui からの手動操作（ゲーム側の指示より優先）
 	bool manualOverride_ = false;

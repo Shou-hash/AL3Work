@@ -61,6 +61,10 @@ public:
 	// ★ 光の演出の更新（ラスボス接近で点灯、出現演出中に夜になる、追従スポットライトの配置）
 	void UpdateLightEffects();
 
+	// ★ 中ボスの処刑演出（撃破後にカメラがズームインし、Eキー連打で連撃 ➔ ハンマーでホームラン）
+	void StartExecution(BossEnemy* boss);
+	void UpdateExecution();
+
 private:
 	Phase phase_ = Phase::kFadeIn;
 	bool finished_ = false;
@@ -111,6 +115,7 @@ private:
 	// クラスメンバ変数にモデルポインタを追加(ラスボス)
 	KamataEngine::Model* modelFinalBossBody_ = nullptr;
 	std::array<KamataEngine::Model*, FinalBoss::kNumHands> modelFinalBossHands_{};
+	std::array<KamataEngine::Model*, FinalBoss::kNumCrystals> modelFinalBossCrystals_{}; // ★ 追加
 
 	// 2次元配列の型を BlockData* に変更
 	std::vector<std::vector<BlockData*>> blockDatas_;
@@ -149,6 +154,23 @@ private:
 
 	// ★ ラスボスにこの距離（X方向）まで近づいたら光の演出を開始する
 	float bossLightApproachDistance_ = 40.0f;
+
+	// ★ 処刑演出の進行
+	enum class ExecutionPhase {
+		kNone,         // 通常（演出なし）
+		kZoomIn,       // 中ボスへズームイン
+		kHammering,    // Eキー連打で連撃
+		kFinaleCharge, // 最後の一撃のため（カメラがさらに寄り、中ボスが震える）
+		kFinaleSwing,  // ハンマーを振りかぶって思い切り叩く
+		kLaunch,       // 中ボスがホームランで空へ飛んでいく
+	};
+	ExecutionPhase executionPhase_ = ExecutionPhase::kNone;
+	BossEnemy* executionBoss_ = nullptr;  // 処刑される中ボス
+	float executionTimer_ = 0.0f;         // 各段階の経過時間
+	float executionIdleTimer_ = 0.0f;     // Eキーが押されていない時間（放置しても進むようにする）
+	int32_t executionHitCount_ = 0;       // 連撃が当たった回数
+	bool executionInputBuffered_ = false; // 先行入力（スイング中に押された分を 1 回だけ保持）
+	float executionPushDirX_ = 1.0f;      // 中ボスが吹き飛ぶ向き（+1 右 / -1 左）
 
 	// 背景ブロック管理クラスのインスタンス
 	std::unique_ptr<BackgroundBlocks> backgroundBlocks_ = nullptr;

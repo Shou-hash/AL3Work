@@ -17,6 +17,7 @@ std::map<char, MapChipType> mapChipTypeTable = {
 } // namespace
 
 void MapChipField::ResetMapChipData() {
+	usedBlockHorizontal_ = 0;
 	mapChipData_.data.clear();
 	mapChipData_.data.resize(kNumBlockVertical);
 	for (auto& mapChipDataLine : mapChipData_.data) {
@@ -58,6 +59,11 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 
 			// マップチップのタイプを設定
 			mapChipData_.data[i][j].type = mapChipTypeTable[word[kChipType]];
+
+			// 実際に使われている横幅を更新
+			if (j + 1 > usedBlockHorizontal_) {
+				usedBlockHorizontal_ = j + 1;
+			}
 
 			if (word.size() <= kChipSubID) {
 				continue;
@@ -113,4 +119,33 @@ MapChipField::IndexSet MapChipField::GetMapChipIndexByPosition(const KamataEngin
 MapChipType MapChipField::GetMapChipTypeByPosition(const KamataEngine::Vector3& position) {
 	IndexSet index = GetMapChipIndexByPosition(position);
 	return GetMapChipTypeByIndex(index.x, index.y);
+}
+
+BlockFace MapChipField::GetBlockFaceByIndex(uint32_t xIndex, uint32_t yIndex) {
+	// その場所が「空白（ブロック以外）」かどうか。
+	// マップの外側（最大サイズの外、およびCSVで使われている横幅より右）はブロックがあるものとして扱い、外周に余計な向きを付けない
+	auto isBlank = [this](int32_t x, int32_t y) {
+		if (x < 0 || y < 0 || x >= static_cast<int32_t>(usedBlockHorizontal_) || y >= static_cast<int32_t>(kNumBlockVertical)) {
+			return false;
+		}
+		return GetMapChipTypeByIndex(static_cast<uint32_t>(x), static_cast<uint32_t>(y)) != MapChipType::kBlock;
+	};
+
+	const int32_t x = static_cast<int32_t>(xIndex);
+	const int32_t y = static_cast<int32_t>(yIndex);
+
+	// yIndex は上が 0（-1 が上、+1 が下）、xIndex は左が 0（-1 が左、+1 が右）
+	if (isBlank(x, y - 1)) {
+		return BlockFace::kAbove; // 上が空白 ➔ 地面のブロック
+	}
+	if (isBlank(x, y + 1)) {
+		return BlockFace::kBelow; // 下が空白 ➔ 天井のブロック
+	}
+	if (isBlank(x + 1, y)) {
+		return BlockFace::kRight; // 右が空白 ➔ 左壁のブロック（右に向いている）
+	}
+	if (isBlank(x - 1, y)) {
+		return BlockFace::kLeft; // 左が空白 ➔ 右壁のブロック（左に向いている）
+	}
+	return BlockFace::kNormal;
 }

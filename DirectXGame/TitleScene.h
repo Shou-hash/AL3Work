@@ -1,6 +1,8 @@
 #pragma once
+#include "BackgroundBlocks.h" // ★ 追加
 #include "Fade.h"
 #include "Kamataengine.h"
+#include "LightManager.h" // ★ 追加
 #include "MapChipField.h" // ★ 追加
 #include "Player.h"
 #include "Skydome.h"
@@ -36,8 +38,19 @@ private:
 
 	// ★ タイトルステージ描画用の変数群を追加
 	MapChipField* mapChipField_ = nullptr;
-	KamataEngine::Model* model_ = nullptr;
+	KamataEngine::Model* model_ = nullptr; // 通常ブロック
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
+
+	// ★ ブロックの向き別モデル（GameScene と同じ判定で使い分ける）
+	KamataEngine::Model* modelBlockAbove_ = nullptr;             // 地面用（上が空白）
+	KamataEngine::Model* modelBlockBelow_ = nullptr;             // 天井用（下が空白）
+	KamataEngine::Model* modelBlockLeft_ = nullptr;              // 右壁用（左が空白）
+	KamataEngine::Model* modelBlockRight_ = nullptr;             // 左壁用（右が空白）
+	std::vector<std::vector<KamataEngine::Model*>> blockModels_; // 各ブロックが使うモデル
+
+	// ★ 奥行き背景と朝のライティング
+	std::unique_ptr<BackgroundBlocks> backgroundBlocks_ = nullptr;
+	std::unique_ptr<LightManager> lightManager_ = nullptr;
 
 	// モデルポインタ
 	KamataEngine::Model* modelPlayerHead_ = nullptr;

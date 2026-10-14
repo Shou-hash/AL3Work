@@ -26,10 +26,13 @@ FinalBoss::~FinalBoss() {
 	delete spriteParticle_;
 }
 
-void FinalBoss::Initialize(KamataEngine::Model* modelBody, const std::array<KamataEngine::Model*, kNumHands>& modelHands, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
-
+void FinalBoss::Initialize(
+    KamataEngine::Model* modelBody, const std::array<KamataEngine::Model*, kNumHands>& modelHands, const std::array<KamataEngine::Model*, kNumCrystals>& modelCrystals, // ★ 引数追加
+    KamataEngine::Camera* camera, const KamataEngine::Vector3& position) 
+{
 	modelBody_ = modelBody;
 	modelHands_ = modelHands;
+	modelCrystals_ = modelCrystals; // ★ 代入
 	camera_ = camera;
 
 	// 基準位置の設定 (マップ上の初期位置からのオフセット調整)
@@ -37,6 +40,10 @@ void FinalBoss::Initialize(KamataEngine::Model* modelBody, const std::array<Kama
 
 	// 背景の奥行きとしてZ軸のみ固定したい場合は下記のように設定します
 	basePosition_.z = 6.5f;
+
+	// ★ 描画オフセットX：ラスボスの手前（基準Xの 10 手前）で画面の右寄りに見えるよう、基準Xと視差係数から自動で決める
+	//   （E3 の配置列が変わっても、ラスボスが画面外に出ないようにする。基準X = 50 のときは従来の -33.0 になる）
+	drawOffset_.x = -(1.0f - parallaxFactor_) * basePosition_.x - 0.5f;
 
 	// ルート変換の初期化
 	worldTransform_.Initialize();
@@ -70,6 +77,36 @@ void FinalBoss::Initialize(KamataEngine::Model* modelBody, const std::array<Kama
 	for (size_t i = 0; i < kNumHands; ++i) {
 		worldTransformHands_[i].Initialize();
 		worldTransformHands_[i].translation_ = handLocalOffsets_[i];
+	}
+
+	// 21個のクリスタルの初期ローカルオフセットを設定（本体を中心にした扇状・不規則配置）
+	crystalLocalOffsets_ = {
+	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+        KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
+	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f}
+    };
+
+	for (size_t i = 0; i < kNumCrystals; ++i) {
+		worldTransformCrystals_[i].Initialize();
+		worldTransformCrystals_[i].translation_ = crystalLocalOffsets_[i];
 	}
 
 	animTimer_ = 0.0f;
@@ -275,6 +312,34 @@ void FinalBoss::Update() {
 		worldTransformHands_[i].matWorld_ = MultiplyMatrix(localMatHand, worldTransformBody_.matWorld_);
 		worldTransformHands_[i].TransferMatrix();
 	}
+
+	// =========================================================
+	// 4. 21個のクリスタルの不規則な上下移動アニメーション ＆ 親子関係行列合成
+	// =========================================================
+	float baseCrystalSpeed = (state_ == State::kFrenzy) ? 4.5f : ((state_ == State::kFrenzyInit) ? 7.0f : 2.0f);
+	float crystalAmp = (state_ == State::kFrenzy) ? 1.2f : 0.6f;
+
+	for (size_t i = 0; i < kNumCrystals; ++i) {
+		float phaseOffset = static_cast<float>(i) * 0.7f;
+
+		// 各クリスタルごとに異なる上下移動のスピード倍率（例: 0.6倍 〜 2.1倍）を設定
+		float speedMultiplier = 0.6f + static_cast<float>((i * 5 + 3) % 11) * 0.15f;
+		float currentSpeed = baseCrystalSpeed * speedMultiplier;
+
+		// 周期の異なるサイン波を組み合わせて不規則な上下移動（Y軸）を計算
+		float verticalOffset = std::sin(animTimer_ * currentSpeed + phaseOffset) * crystalAmp + std::sin(animTimer_ * (currentSpeed * 0.63f) + phaseOffset * 1.5f) * (crystalAmp * 0.35f);
+
+		// X/Z軸および回転のゆらぎは行わず、純粋に不規則な上下移動（Y軸）のみを適用
+		worldTransformCrystals_[i].translation_.x = crystalLocalOffsets_[i].x;
+		worldTransformCrystals_[i].translation_.y = crystalLocalOffsets_[i].y + verticalOffset;
+		worldTransformCrystals_[i].translation_.z = crystalLocalOffsets_[i].z;
+
+		worldTransformCrystals_[i].rotation_ = {0.0f, 0.0f, 0.0f};
+
+		KamataEngine::Matrix4x4 localMatCrystal = MakeAffineMatrix(worldTransformCrystals_[i].scale_, worldTransformCrystals_[i].rotation_, worldTransformCrystals_[i].translation_);
+		worldTransformCrystals_[i].matWorld_ = MultiplyMatrix(localMatCrystal, worldTransformBody_.matWorld_);
+		worldTransformCrystals_[i].TransferMatrix();
+	}
 }
 
 // ★ パーティクルの描画処理（white1x1.png スプライトを使用した正確な描画）
@@ -312,6 +377,12 @@ void FinalBoss::Draw() {
 		for (size_t i = 0; i < kNumHands; ++i) {
 			if (modelHands_[i]) {
 				modelHands_[i]->Draw(worldTransformHands_[i], *camera_);
+			}
+		}
+
+		for (size_t i = 0; i < kNumCrystals; ++i) {
+			if (modelCrystals_[i]) {
+				modelCrystals_[i]->Draw(worldTransformCrystals_[i], *camera_);
 			}
 		}
 	}

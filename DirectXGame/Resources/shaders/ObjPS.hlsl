@@ -19,6 +19,13 @@ float3 CalculateDiffuse(float NdotL, float3 materialDiffuse, uint type)
     }
 }
 
+// 鏡面反射光（Blinn-Phong）の計算関数
+// 光が当たっていない面（NdotL <= 0）にはハイライトを出さない
+float3 CalculateSpecular(float3 N, float3 halfVector, float NdotL, float shininess, float3 specColor)
+{
+    return pow(saturate(dot(N, halfVector)), shininess) * saturate(NdotL) * specColor;
+}
+
 float4 main(VSOutput input) : SV_TARGET
 {
 	// UV変換
@@ -33,8 +40,11 @@ float4 main(VSOutput input) : SV_TARGET
 	// ★ シェーディング種別（LightManager が dirLights[2].color.x に 0:Lambert / 1:HalfLambert を格納している）
     uint lightType = (dirLights[2].color.x > 0.5f) ? 1u : 0u;
 
-	// 光沢度
-    const float shininess = 4.0f;
+	// ★ 光沢の設定（LightManager が dirLights[2].color.y / z に格納している）
+    float glossStrength = dirLights[2].color.y; // 光沢の強さ
+    float shininess = max(dirLights[2].color.z, 1.0f); // 光沢の鋭さ（大きいほどハイライトが小さく鋭い）
+    // 全モデル共通の光沢。ImGui の Gloss Strength を直接反映させるため、マテリアルのスペキュラー係数は使わない
+    float3 specColor = float3(glossStrength, glossStrength, glossStrength);
 	// 頂点から視点への方向ベクトル
     float3 viewDir = normalize(cameraPos - input.worldpos.xyz);
 
@@ -43,6 +53,9 @@ float4 main(VSOutput input) : SV_TARGET
 
 	// シェーディングによる色初期値
     float4 shadecolor = float4(ambientColor * ambient, m_alpha);
+
+	// 鏡面反射光の合計（テクスチャの色を掛けずに、光の色のままハイライトとして加算する）
+    float3 specularSum = float3(0.0f, 0.0f, 0.0f);
 
 	// 平行光源
     for (int i = 0; i < DIRLIGHT_NUM; i++)
@@ -58,10 +71,11 @@ float4 main(VSOutput input) : SV_TARGET
 			// ★ Lambert / Half Lambert 拡散反射光
             float3 diffuse = CalculateDiffuse(NdotL, m_diffuse, lightType);
 			// 鏡面反射光 (Blinn-Phong)
-            float3 specular = pow(saturate(dot(N, halfVector)), shininess) * m_specular;
+            float3 specular = CalculateSpecular(N, halfVector, NdotL, shininess, specColor);
 
-			// 全て加算する
-            shadecolor.rgb += (diffuse + specular) * dirLights[i].color;
+			// 拡散反射光は通常通り、鏡面反射光は別に加算する
+            shadecolor.rgb += diffuse * dirLights[i].color;
+            specularSum += specular * dirLights[i].color;
         }
     }
 
@@ -81,9 +95,10 @@ float4 main(VSOutput input) : SV_TARGET
 
 			// ★ Lambert / Half Lambert 拡散反射光
             float3 diffuse = CalculateDiffuse(NdotL, m_diffuse, lightType);
-            float3 specular = pow(saturate(dot(N, halfVector)), shininess) * m_specular;
+            float3 specular = CalculateSpecular(N, halfVector, NdotL, shininess, specColor);
 
-            shadecolor.rgb += pointLights[i].color * pointLights[i].intensity * (diffuse + specular) * factor;
+            shadecolor.rgb += pointLights[i].color * pointLights[i].intensity * diffuse * factor;
+            specularSum += pointLights[i].color * pointLights[i].intensity * specular * factor;
         }
     }
 
@@ -106,9 +121,10 @@ float4 main(VSOutput input) : SV_TARGET
 
 			// ★ Lambert / Half Lambert 拡散反射光
             float3 diffuse = CalculateDiffuse(NdotL, m_diffuse, lightType);
-            float3 specular = pow(saturate(dot(N, halfVector)), shininess) * m_specular;
+            float3 specular = CalculateSpecular(N, halfVector, NdotL, shininess, specColor);
 
-            shadecolor.rgb += spotLights[i].color * spotLights[i].intensity * (diffuse + specular) * factor;
+            shadecolor.rgb += spotLights[i].color * spotLights[i].intensity * diffuse * factor;
+            specularSum += spotLights[i].color * spotLights[i].intensity * specular * factor;
         }
     }
 
@@ -136,6 +152,15 @@ float4 main(VSOutput input) : SV_TARGET
         }
     }
 
-	// シェーディングによる色で描画
-    return shadecolor * texcolor * color;
+	// シェーディングによる色で描画（鏡面反射光はテクスチャの色を掛けずに加算して、光沢感を出す）
+    float4 result = shadecolor * texcolor * color;
+    result.rgb += specularSum;
+
+	// ★ 自己発光（ラスボス専用。LightManager が pointLights[2].intensity に格納している。他のモデルは 0）
+	// スポットライトのように光の色でモデルを染めず、モデル本来の色を保ったまま明るく光らせる。輪郭ほど強く光る
+    float glow = pointLights[2].intensity;
+    float3 baseColor = texcolor.rgb * color.rgb;
+    float rim = pow(1.0f - saturate(dot(N, viewDir)), 2.0f);
+    result.rgb += baseColor * glow * (0.6f + 1.4f * rim);
+    return result;
 }

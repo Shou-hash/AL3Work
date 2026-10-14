@@ -47,7 +47,22 @@ public:
 	// ★ 行動状態の取得
 	BossState GetState() const { return state_; }
 
+	// ★ 撃破後の処刑演出用
+	// HP が 0 になった状態（処刑演出の待ち、または演出中）。この間はまだ削除されず、画面に表示され続ける
+	bool IsDefeated() const { return isDefeated_; }
+	// ホームランで打ち上げられている最中かどうか
+	bool IsLaunching() const { return isLaunching_; }
+	// 処刑演出の開始（ぐったりして動かなくなる）
+	void BeginExecution();
+	// 連撃を 1 回受けたときの反応（のけぞり・揺れ）。pushDirX: 吹き飛ばされる向き（+1 右 / -1 左 / 0 で揺れのみ）
+	void OnExecutionHit(float pushDirX);
+	// ホームラン：空へ打ち上げる。directionX: 打ち上げる横方向（+1 右 / -1 左）
+	void StartLaunch(float directionX);
+
 private:
+	// 撃破後（処刑待ち・処刑中・打ち上げ中）のポーズと動きの更新
+	void UpdateDefeatedPose();
+
 	KamataEngine::Matrix4x4 MultiplyMatrix(const KamataEngine::Matrix4x4& a, const KamataEngine::Matrix4x4& b);
 
 	KamataEngine::Camera* camera_ = nullptr;
@@ -76,6 +91,17 @@ private:
 	// 歩行移動および攻撃関連
 	BossEnemyLRDirection lrDirection_ = BossEnemyLRDirection::kLeft;
 	BossState state_ = BossState::kWalk; // ★ 現在の行動状態
+
+	// ★ 撃破後の処刑演出用
+	bool isDefeated_ = false;                         // HP が 0 になった状態
+	bool isLaunching_ = false;                        // 打ち上げ中
+	float defeatedTimer_ = 0.0f;                      // 撃破後の経過時間
+	float hitReactionTimer_ = 0.0f;                   // 連撃を受けたときの反応タイマー
+	float hitReactionDir_ = 0.0f;                     // のけぞる向き
+	float launchTimer_ = 0.0f;                        // 打ち上げ後の経過時間
+	float launchSpin_ = 0.0f;                         // 打ち上げ中の回転速度
+	KamataEngine::Vector3 launchVelocity_ = {};       // 打ち上げの速度
+	KamataEngine::Vector3 defeatedBasePosition_ = {}; // 撃破時の位置
 
 	float attackCooldown_ = 0.0f; // ★ 攻撃のクールタイム
 	float attackTimer_ = 0.0f;    // ★ 攻撃動作のタイマー

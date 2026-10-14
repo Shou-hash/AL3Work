@@ -309,6 +309,12 @@ void Player::Update() {
 		return;
 	}
 
+	// ★ 処刑演出中は、演出専用の更新だけを行う（移動・通常の攻撃・被ダメージは受け付けない）
+	if (isExecuting_) {
+		UpdateExecution();
+		return;
+	}
+
 	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_T)) {
 		CreateHitEffect(worldTransform_.translation_);
 	}
@@ -514,11 +520,9 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 			MapChipType chipRightBottom = mapChipField_->GetMapChipTypeByPosition(rightBottomPos);
 			bool isDownPressed = KamataEngine::Input::GetInstance()->PushKey(DIK_DOWN);
 
-			bool hitBlock = (chipLeftBottom == MapChipType::kBlock || 
-				chipRightBottom == MapChipType::kBlock);
+			bool hitBlock = (chipLeftBottom == MapChipType::kBlock || chipRightBottom == MapChipType::kBlock);
 
-			bool hitBlockFall = (!isDownPressed) && (chipLeftBottom == MapChipType::kBlockFall || 
-				chipRightBottom == MapChipType::kBlockFall);
+			bool hitBlockFall = (!isDownPressed) && (chipLeftBottom == MapChipType::kBlockFall || chipRightBottom == MapChipType::kBlockFall);
 
 			if (!hitBlock && !hitBlockFall) {
 				onGround_ = false;
@@ -797,4 +801,78 @@ Player::AABB Player::GetAABB() const {
 	aabb.max.z = center.z + halfDepth;
 
 	return aabb;
+}
+
+// ★ 処刑演出の開始：指定した位置・向きに固定する
+void Player::BeginExecution(const KamataEngine::Vector3& position, LRDirection direction) {
+	isExecuting_ = true;
+	executionSwinging_ = false;
+	executionHitPending_ = false;
+	executionHitDone_ = false;
+
+	behavior_ = Behavior::kRoot;
+	behaviorRequest_ = std::nullopt;
+	isKnockbackRequested_ = false;
+	velocity_ = {0.0f, 0.0f, 0.0f};
+
+	worldTransform_.translation_ = position;
+
+	// 向きが変わる場合は、通常の移動時と同じように振り向きアニメーションを開始する
+	if (lrDirection_ != direction) {
+		lrDirection_ = direction;
+		animation_.OnDirectionChanged(worldTransform_.rotation_.y);
+	}
+	animation_.BehaviorRootInit();
+}
+
+// ★ 処刑演出の終了：通常の操作に戻る
+void Player::EndExecution() {
+	isExecuting_ = false;
+	executionSwinging_ = false;
+	executionHitPending_ = false;
+	velocity_ = {0.0f, 0.0f, 0.0f};
+
+	// 次の更新で通常状態の初期化（ハンマーを消す等）が行われる
+	behavior_ = Behavior::kRoot;
+	behaviorRequest_ = Behavior::kRoot;
+}
+
+// ★ ハンマーの連撃を 1 回開始する
+bool Player::StartExecutionSwing(uint32_t comboIndex) {
+	if (!isExecuting_ || executionSwinging_) {
+		return false;
+	}
+	executionSwinging_ = true;
+	executionHitPending_ = false;
+	executionHitDone_ = false;
+	animation_.BehaviorHammerSkillInit(comboIndex);
+	return true;
+}
+
+// ★ 処刑演出中の更新（位置は固定のまま、ハンマーのスイングと待機ポーズだけを更新する）
+void Player::UpdateExecution() {
+	velocity_ = {0.0f, 0.0f, 0.0f};
+
+	if (executionSwinging_) {
+		bool isHitCheck = false;
+		bool isCanCombo = false;
+		bool isSkillFinished = false;
+		animation_.BehaviorHammerSkillUpdate(worldTransform_, lrDirection_, isHitCheck, isCanCombo, isSkillFinished);
+
+		// 当たりのタイミングを 1 スイングにつき 1 回だけ通知する（アニメーションの当たり判定、または動作の半分を過ぎた時点）
+		float duration = animation_.GetCurrentHammerSkillDuration();
+		float progress = (duration > 0.0f) ? (animation_.GetHammerSkillTimer() / duration) : 0.0f;
+		if (!executionHitDone_ && (isHitCheck || progress >= 0.5f)) {
+			executionHitPending_ = true;
+			executionHitDone_ = true;
+		}
+
+		if (isSkillFinished) {
+			executionSwinging_ = false;
+			animation_.BehaviorRootInit();
+		}
+	} else {
+		// 待機ポーズ（その場で立っている）
+		animation_.BehaviorRootUpdate(worldTransform_, lrDirection_, velocity_, true, kLimitRunSpeed, kTimeTurn);
+	}
 }

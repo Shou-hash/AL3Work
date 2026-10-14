@@ -25,6 +25,10 @@ void CameraController::Initialize(KamataEngine::Camera* camera) {
 	isGoalPerformanceFinished_ = false;
 	goalEventTimer_ = 0.0f;
 	frenzyShakeTimer_ = 0.0f;
+
+	isExecution_ = false;
+	isExecutionEnding_ = false;
+	executionHitTimer_ = 0.0f;
 }
 
 void CameraController::Reset() {
@@ -53,6 +57,10 @@ void CameraController::Reset() {
 	goalEventTimer_ = 0.0f;
 
 	frenzyShakeTimer_ = 0.0f;
+
+	isExecution_ = false;
+	isExecutionEnding_ = false;
+	executionHitTimer_ = 0.0f;
 }
 
 void CameraController::StartGoalPerformance(const KamataEngine::Vector3& goalPos) {
@@ -68,6 +76,12 @@ void CameraController::StartGoalPerformance(const KamataEngine::Vector3& goalPos
 
 void CameraController::Update() {
 	if (!target_ || !camera_) {
+		return;
+	}
+
+	// ★ 処刑演出中は、専用のカメラ更新だけを行う
+	if (isExecution_) {
+		UpdateExecution();
 		return;
 	}
 
@@ -370,8 +384,123 @@ float CameraController::GetCameraLeftX() const {
 		return 0.0f;
 	}
 	// カメラ演出中は押し出し判定をスキップするため、十分小さな値を返す
-	if (isBossPerformance_ || isGoalPerformance_) {
+	if (isBossPerformance_ || isGoalPerformance_ || isExecution_) {
 		return -9999.0f;
 	}
 	return camera_->translation_.x - kHalfScreenWidth;
+}
+
+// ★ 処刑演出の開始：中ボスへズームインする
+void CameraController::StartExecution(const KamataEngine::Vector3& focusPos) {
+	if (!camera_) {
+		return;
+	}
+	isExecution_ = true;
+	isExecutionEnding_ = false;
+	executionTimer_ = 0.0f;
+	executionFocus_ = focusPos;
+	executionStartPos_ = camera_->translation_;
+	executionOriginalRotation_ = camera_->rotation_;
+	executionZoomTarget_ = 9.0f;
+	executionHitTimer_ = 0.0f;
+	executionTiltSign_ = 1.0f;
+}
+
+// ★ 連撃 1 回ごとの演出：少しズームイン + シェイク + カメラの傾き
+void CameraController::ExecutionHit(float strength) {
+	executionHitTimer_ = kExecutionHitDuration;
+	executionHitStrength_ = strength;
+	executionTiltSign_ = -executionTiltSign_; // 1 回ごとに傾ける向きを左右交互にする
+}
+
+// ★ プレイヤー追従へ復帰する
+void CameraController::EndExecution() {
+	if (!isExecution_ || !camera_) {
+		return;
+	}
+	isExecutionEnding_ = true;
+	executionTimer_ = 0.0f;
+	executionEndStartPos_ = camera_->translation_;
+}
+
+// ★ 処刑演出のカメラ更新
+void CameraController::UpdateExecution() {
+	const float dt = 1.0f / 60.0f;
+
+	// ---------------------------------------------------------
+	// プレイヤー追従位置へ復帰（傾きもなめらかに元に戻す）
+	// ---------------------------------------------------------
+	if (isExecutionEnding_) {
+		executionTimer_ += dt;
+		float t = std::clamp(executionTimer_ / kExecutionReturnTime, 0.0f, 1.0f);
+		float easeVal = EaseInOutCubic(t);
+
+		const KamataEngine::WorldTransform& playerTransform = target_->GetWorldTransform();
+		KamataEngine::Vector3 playerTargetPos;
+		playerTargetPos.x = playerTransform.translation_.x + targetOffset_.x;
+		playerTargetPos.y = playerTransform.translation_.y + targetOffset_.y;
+		playerTargetPos.z = playerTransform.translation_.z + targetOffset_.z;
+
+		camera_->translation_.x = Lerp(executionEndStartPos_.x, playerTargetPos.x, easeVal);
+		camera_->translation_.y = Lerp(executionEndStartPos_.y, playerTargetPos.y, easeVal);
+		camera_->translation_.z = Lerp(executionEndStartPos_.z, playerTargetPos.z, easeVal);
+
+		camera_->rotation_.x = Lerp(camera_->rotation_.x, executionOriginalRotation_.x, 0.2f);
+		camera_->rotation_.z = Lerp(camera_->rotation_.z, executionOriginalRotation_.z, 0.2f);
+
+		if (t >= 1.0f) {
+			camera_->rotation_ = executionOriginalRotation_;
+			isExecution_ = false;
+			isExecutionEnding_ = false;
+		}
+		return;
+	}
+
+	// ---------------------------------------------------------
+	// 連撃 1 回分の演出（時間とともに二次曲線で減衰する）
+	// ---------------------------------------------------------
+	float decay = 0.0f;
+	if (executionHitTimer_ > 0.0f) {
+		executionHitTimer_ -= dt;
+		if (executionHitTimer_ < 0.0f) {
+			executionHitTimer_ = 0.0f;
+		}
+		float k = executionHitTimer_ / kExecutionHitDuration;
+		decay = k * k;
+	}
+	const float power = executionHitStrength_ * decay;
+
+	// ---------------------------------------------------------
+	// ズームイン（開始直後はイージング、その後は注目点へ追従）
+	// ---------------------------------------------------------
+	float distance = executionZoomTarget_ - kExecutionPunchDistance * power; // 1 発ごとに少し寄る
+	KamataEngine::Vector3 desired;
+	desired.x = executionFocus_.x;
+	desired.y = executionFocus_.y + 0.8f;
+	desired.z = executionFocus_.z - distance;
+
+	if (executionTimer_ < kExecutionZoomInTime) {
+		executionTimer_ += dt;
+		float t = std::clamp(executionTimer_ / kExecutionZoomInTime, 0.0f, 1.0f);
+		float easeVal = EaseInOutCubic(t);
+		camera_->translation_.x = Lerp(executionStartPos_.x, desired.x, easeVal);
+		camera_->translation_.y = Lerp(executionStartPos_.y, desired.y, easeVal);
+		camera_->translation_.z = Lerp(executionStartPos_.z, desired.z, easeVal);
+	} else {
+		camera_->translation_.x = Lerp(camera_->translation_.x, desired.x, 0.2f);
+		camera_->translation_.y = Lerp(camera_->translation_.y, desired.y, 0.2f);
+		camera_->translation_.z = Lerp(camera_->translation_.z, desired.z, 0.2f);
+	}
+
+	// シェイク
+	if (power > 0.001f) {
+		float shakeX = ((static_cast<float>(rand()) / RAND_MAX) * 2.0f - 1.0f) * kExecutionMaxShake * power;
+		float shakeY = ((static_cast<float>(rand()) / RAND_MAX) * 2.0f - 1.0f) * kExecutionMaxShake * power;
+		camera_->translation_.x += shakeX;
+		camera_->translation_.y += shakeY;
+	}
+
+	// カメラの傾き（斜めになり、時間とともに戻る）
+	camera_->rotation_.z = executionOriginalRotation_.z + kExecutionTiltRoll * power * executionTiltSign_;
+	camera_->rotation_.x = executionOriginalRotation_.x + kExecutionTiltPitch * power * executionTiltSign_;
 }

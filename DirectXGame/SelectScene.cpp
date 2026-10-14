@@ -69,6 +69,14 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 
 	// 初期選択ステージのタイマーを満了状態にしておく
 	animationTimers_[currentSelectIndex_] = 1.0f;
+
+	// ★ 朝のライティングを設定（ラスボスの夜・赤いスポットライトは使わない）
+	lightManager_ = std::make_unique<LightManager>();
+	lightManager_->Initialize();
+	lightManager_->ApplyToModel(modelSkydome_, LightManager::GroupType::kWorld);
+	for (int32_t i = 0; i < kNumStages; ++i) {
+		lightManager_->ApplyToModel(stageSprites_[i], LightManager::GroupType::kWorld);
+	}
 }
 
 void SelectScene::Update() {
@@ -76,6 +84,9 @@ void SelectScene::Update() {
 	skydome->Update();
 
 	camera_.UpdateMatrix();
+
+	// ★ 朝のライティングの更新
+	lightManager_->Update();
 
 	// 演出用の共通タイマーを進める
 	flashTimer_ += 0.08f;
@@ -185,6 +196,9 @@ void SelectScene::Update() {
 		}
 		ImGui::Text("Current Selection: %s", stageManager_->GetStageData(currentSelectIndex_).name.c_str());
 	}
+
+	// ★ ライティング（光沢の強さなど）の調整
+	lightManager_->DrawImGui();
 	ImGui::End();
 #endif
 }
