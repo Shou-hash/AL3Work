@@ -13,6 +13,7 @@ std::map<char, MapChipType> mapChipTypeTable = {
     {'E', MapChipType::kEnemy      },
     {'G', MapChipType::kGoal       },
     {'K', MapChipType::kExplanation}, // ★追加：解説ブロック
+    {'C', MapChipType::kCloud      }, // ★ 追加：'C' を雲マップチップとして読み込み
 };
 } // namespace
 
@@ -73,7 +74,7 @@ void MapChipField::LoadMapChipDataFromCSV(const std::string& filePath) {
 			uint8_t subID = static_cast<uint8_t>(word[kChipSubID] - '0');
 			mapChipData_.data[i][j].subID = subID;
 
-			// ★追加: B1 (Block 且つ subIDが1) の場合は kBlockFall として設定
+			// B1 (Block 且つ subIDが1) の場合は kBlockFall として設定
 			if (mapChipData_.data[i][j].type == MapChipType::kBlock && subID == 1) {
 				mapChipData_.data[i][j].type = MapChipType::kBlockFall;
 			}

@@ -186,6 +186,7 @@
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="PlayerAnimation.cpp" />
     <ClCompile Include="PlayerHp.cpp" />
+    <ClCompile Include="PlayerTutorial.cpp" />
     <ClCompile Include="SelectScene.cpp" />
     <ClCompile Include="ShieldEnemy.cpp" />
     <ClCompile Include="Skydome.cpp" />
@@ -312,6 +313,7 @@
     <ClInclude Include="Player.h" />
     <ClInclude Include="PlayerAnimation.h" />
     <ClInclude Include="PlayerHp.h" />
+    <ClInclude Include="PlayerTutorial.h" />
     <ClInclude Include="SelectScene.h" />
     <ClInclude Include="ShieldEnemy.h" />
     <ClInclude Include="Skydome.h" />

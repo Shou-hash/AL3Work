@@ -4,7 +4,8 @@
 #include "BaseEnemy.h"
 #include "BossEnemy.h"
 #include "CameraController.h"
-#include "Enemy.h" // ★追加：アイテム状態チェックのため
+#include "Enemy.h"     // ★追加：アイテム状態チェックのため
+#include "GameScene.h" // ★ 追加: BlockData 構造体の定義を参照するため
 #include "GlobalVariables.h"
 #include "LightManager.h" // ★ 追加：ライトグループ設定用
 #include "MapChipField.h"
@@ -87,7 +88,9 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	lrDirection_ = LRDirection::kRight;
 	animation_.OnDirectionChanged(worldTransform_.rotation_.y);
 	velocity_ = {0.0f, 0.0f, 0.0f};
+	prevVelocityY_ = 0.0f; // ★ 追加
 	onGround_ = true;
+	wasOnGround_ = true; // ★ 追加
 	isDead_ = false;
 
 	behavior_ = Behavior::kRoot;
@@ -168,6 +171,8 @@ void Player::Move() {
 	if (onGround_) {
 		if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_UP)) {
 			velocity_.y = kJumpAcceleration;
+			// ★ 追加: 雲の上でジャンプした時、足元の雲を蹴り下ろす衝撃を与える
+			ApplyCloudImpulse(-0.25f);
 		}
 	} else {
 		velocity_.y -= kGravityAcceleration;
@@ -310,6 +315,8 @@ void Player::Update() {
 		return;
 	}
 
+	prevVelocityY_ = velocity_.y; // ★ 追加: 移動前のY速度を保持
+
 	// ★ 処刑演出中は、演出専用の更新だけを行う（移動・通常の攻撃・被ダメージは受け付けない）
 	if (isExecuting_) {
 		UpdateExecution();
@@ -393,6 +400,13 @@ void Player::Update() {
 			++it;
 		}
 	}
+
+	// ★ 追加: 空中から接地した瞬間に着地衝撃を雲へ伝える
+	if (!wasOnGround_ && onGround_) {
+		float landingImpulse = -std::clamp(std::abs(prevVelocityY_) * 0.35f, 0.15f, 0.5f);
+		ApplyCloudImpulse(landingImpulse);
+	}
+	wasOnGround_ = onGround_; // ★ 追加: 前フレームの接地状態を更新
 }
 
 void Player::BehaviorDeathInit() {
@@ -475,7 +489,7 @@ void Player::BehaviorHammerSkillUpdate() {
 	// アニメーション更新（Hit判定・コンボ受付判定・動作終了判定を取得）
 	animation_.BehaviorHammerSkillUpdate(worldTransform_, lrDirection_, isHitCheck, isCanCombo, isSkillFinished);
 
-	// 連撃受付時間（isCanCombo）中にEキーが押されたら、先行入力としてフラグを保持
+	// 連撃受付時間（isCanCombo）中にEキーが押されたら、先行入力として保持
 	if (isCanCombo && KamataEngine::Input::GetInstance()->TriggerKey(DIK_E)) {
 		comboInputRequested_ = true;
 	}
@@ -502,6 +516,83 @@ void Player::BehaviorHammerSkillUpdate() {
 	}
 }
 
+// ★ 追加: 足元の雲を探して衝撃（上下揺れ）を加える関数
+void Player::ApplyCloudImpulse(float impulse) {
+	if (!cloudDatas_) {
+		return;
+	}
+
+	KamataEngine::Vector3 currentCenter = worldTransform_.translation_;
+	float playerLeftX = currentCenter.x - kPaddingLeft;
+	float playerRightX = currentCenter.x + kPaddingRight;
+	float playerBottomY = currentCenter.y - kPaddingBottom;
+
+	for (auto* cloudData : *cloudDatas_) {
+		if (!cloudData || !cloudData->transform) {
+			continue;
+		}
+
+		float cloudMinX = cloudData->basePosition.x - 2.0f;
+		float cloudMaxX = cloudData->basePosition.x + 2.0f;
+		float cloudTopY = cloudData->transform->translation_.y + 0.5f;
+
+		if (playerRightX >= cloudMinX && playerLeftX <= cloudMaxX) {
+			if (std::abs(playerBottomY - cloudTopY) <= 0.35f) {
+				cloudData->velocityY += impulse;
+			}
+		}
+	}
+}
+
+// ★ 周辺の雲マップチップ情報を取得する関数（X軸当たり判定は普通ブロックの4倍 = ±2.0f）
+std::vector<Player::CloudBlockInfo> Player::GetNearbyClouds(const KamataEngine::Vector3& pos) const {
+	std::vector<CloudBlockInfo> clouds;
+
+	// ★ 追加: GameScene から雲データ配列がセットされている場合、動的な座標を使用
+	if (cloudDatas_) {
+		for (auto* cloudData : *cloudDatas_) {
+			if (!cloudData || !cloudData->transform) {
+				continue;
+			}
+			const KamataEngine::Vector3& cloudPos = cloudData->transform->translation_;
+			if (std::abs(cloudPos.x - pos.x) <= 3.5f && std::abs(cloudPos.y - pos.y) <= 2.5f) {
+				CloudBlockInfo cloud;
+				cloud.position = cloudPos;
+				cloud.minX = cloudPos.x - 2.0f;
+				cloud.maxX = cloudPos.x + 2.0f;
+				cloud.minY = cloudPos.y - 0.5f;
+				cloud.maxY = cloudPos.y + 0.5f;
+				clouds.push_back(cloud);
+			}
+		}
+		return clouds;
+	}
+
+	if (!mapChipField_) {
+		return clouds;
+	}
+
+	MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(pos);
+	int32_t y = static_cast<int32_t>(index.y);
+	int32_t startX = std::max(0, static_cast<int32_t>(index.x) - 2);
+	int32_t endX = std::min(static_cast<int32_t>(mapChipField_->GetNumBlockHorizontal()) - 1, static_cast<int32_t>(index.x) + 2);
+
+	for (int32_t x = startX; x <= endX; ++x) {
+		if (mapChipField_->GetMapChipTypeByIndex(static_cast<uint32_t>(x), static_cast<uint32_t>(y)) == MapChipType::kCloud) {
+			KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+			CloudBlockInfo cloud;
+			cloud.position = blockPos;
+			// ★ X軸幅は普通ブロック(±0.5f)の4倍 (±2.0f)
+			cloud.minX = blockPos.x - 2.0f;
+			cloud.maxX = blockPos.x + 2.0f;
+			cloud.minY = blockPos.y - 0.5f;
+			cloud.maxY = blockPos.y + 0.5f;
+			clouds.push_back(cloud);
+		}
+	}
+	return clouds;
+}
+
 void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 	if (!mapChipField_) {
 		return;
@@ -525,7 +616,28 @@ void Player::ApplyGroundingStatus(const CollisionMapInfo& info) {
 
 			bool hitBlockFall = (!isDownPressed) && (chipLeftBottom == MapChipType::kBlockFall || chipRightBottom == MapChipType::kBlockFall);
 
-			if (!hitBlock && !hitBlockFall) {
+			// ★ 追加: 雲 (kCloud) の接地判定（X軸幅は普通ブロックの4倍 = ±2.0f）
+			bool hitCloud = false;
+			float playerLeftX = currentCenter.x - kPaddingLeft;
+			float playerRightX = currentCenter.x + kPaddingRight;
+			float playerBottomY = currentCenter.y - kPaddingBottom + offset.y;
+
+			std::vector<CloudBlockInfo> cloudsLeft = GetNearbyClouds(leftBottomPos);
+			std::vector<CloudBlockInfo> cloudsRight = GetNearbyClouds(rightBottomPos);
+			std::vector<CloudBlockInfo> clouds = cloudsLeft;
+			clouds.insert(clouds.end(), cloudsRight.begin(), cloudsRight.end());
+
+			for (const auto& cloud : clouds) {
+				if (playerRightX >= cloud.minX && playerLeftX <= cloud.maxX) {
+					if (std::abs(playerBottomY - cloud.maxY) <= 0.1f) {
+						hitCloud = true;
+						break;
+					}
+				}
+			}
+
+			// ★ 修正: hitCloudのチェックを追加して雲の上で接地状態が維持されるように修正
+			if (!hitBlock && !hitBlockFall && !hitCloud) {
 				onGround_ = false;
 			}
 		}
@@ -680,6 +792,27 @@ void Player::MapCollisionTop(CollisionMapInfo& info) {
 			return;
 		}
 	}
+
+	// ★ 追加: 雲 (kCloud) との上方向当たり判定（X軸幅は普通ブロックの4倍 = ±2.0f）
+	float playerLeftX = nextCenter.x - kPaddingLeft;
+	float playerRightX = nextCenter.x + kPaddingRight;
+	float previousTopY = worldTransform_.translation_.y + kPaddingTop;
+
+	std::vector<CloudBlockInfo> cloudsLeft = GetNearbyClouds(positionsNew[kLeftTop]);
+	std::vector<CloudBlockInfo> cloudsRight = GetNearbyClouds(positionsNew[kRightTop]);
+	std::vector<CloudBlockInfo> clouds = cloudsLeft;
+	clouds.insert(clouds.end(), cloudsRight.begin(), cloudsRight.end());
+
+	for (const auto& cloud : clouds) {
+		if (playerRightX >= cloud.minX && playerLeftX <= cloud.maxX) {
+			float cloudBottomY = cloud.minY;
+			if (previousTopY <= cloudBottomY + 0.05f) {
+				info.ceilingCollision = true;
+				info.moveAmount.y = cloudBottomY - previousTopY - 0.005f;
+				return;
+			}
+		}
+	}
 }
 
 void Player::MapCollisionBottom(CollisionMapInfo& info) {
@@ -724,6 +857,35 @@ void Player::MapCollisionBottom(CollisionMapInfo& info) {
 			return;
 		}
 	}
+
+	// ★ 追加: 雲 (kCloud) との下方向当たり判定（X軸幅は普通ブロックの4倍 = ±2.0f）
+	float playerLeftX = nextCenter.x - kPaddingLeft;
+	float playerRightX = nextCenter.x + kPaddingRight;
+	float previousBottomY = worldTransform_.translation_.y - kPaddingBottom;
+	float nextBottomY = nextCenter.y - kPaddingBottom;
+
+	std::vector<CloudBlockInfo> cloudsLeft = GetNearbyClouds(positionsNew[kLeftBottom]);
+	std::vector<CloudBlockInfo> cloudsRight = GetNearbyClouds(positionsNew[kRightBottom]);
+	std::vector<CloudBlockInfo> clouds = cloudsLeft;
+	clouds.insert(clouds.end(), cloudsRight.begin(), cloudsRight.end());
+
+	for (const auto& cloud : clouds) {
+		if (playerRightX >= cloud.minX && playerLeftX <= cloud.maxX) {
+			float cloudTopY = cloud.maxY;
+			if (previousBottomY >= cloudTopY - 0.2f && nextBottomY <= cloudTopY) {
+				info.onGround = true;
+				info.moveAmount.y = cloudTopY - previousBottomY;
+				return;
+			}
+
+			if (nextBottomY < cloudTopY && previousBottomY >= cloudTopY) {
+				info.onGround = true;
+				info.moveAmount.y = cloudTopY - previousBottomY;
+				return;
+			}
+		}
+	}
+
 	info.onGround = false;
 }
 
@@ -750,6 +912,26 @@ void Player::MapCollisionRight(CollisionMapInfo& info) {
 		float blockLeftX = blockPos.x - 0.5f;
 		info.moveAmount.x = blockLeftX - (worldTransform_.translation_.x + kPaddingRight) - 0.005f;
 	}
+
+	// ★ 追加: 雲 (kCloud) との右方向当たり判定（雲の左端 cloud.minX = pos.x - 2.0f）
+	float playerTopY = nextCenter.y + kPaddingTop;
+	float playerBottomY = nextCenter.y - kPaddingBottom;
+	float previousRightX = worldTransform_.translation_.x + kPaddingRight;
+
+	std::vector<CloudBlockInfo> cloudsTop = GetNearbyClouds(positionsNew[kRightTop]);
+	std::vector<CloudBlockInfo> cloudsBottom = GetNearbyClouds(positionsNew[kRightBottom]);
+	std::vector<CloudBlockInfo> clouds = cloudsTop;
+	clouds.insert(clouds.end(), cloudsBottom.begin(), cloudsBottom.end());
+
+	for (const auto& cloud : clouds) {
+		if (playerTopY >= cloud.minY && playerBottomY <= cloud.maxY) {
+			if (previousRightX <= cloud.minX + 0.05f) {
+				info.wallCollision = true;
+				info.moveAmount.x = cloud.minX - previousRightX - 0.005f;
+				return;
+			}
+		}
+	}
 }
 
 void Player::MapCollisionLeft(CollisionMapInfo& info) {
@@ -774,6 +956,27 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 		KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
 		float blockRightX = blockPos.x + 0.5f;
 		info.moveAmount.x = blockRightX - (worldTransform_.translation_.x - kPaddingLeft) + 0.005f;
+		return;
+	}
+
+	// ★ 追加: 雲 (kCloud) との左方向当たり判定（雲の右端 cloud.maxX = pos.x + 2.0f）
+	float playerTopY = nextCenter.y + kPaddingTop;
+	float playerBottomY = nextCenter.y - kPaddingBottom;
+	float previousLeftX = worldTransform_.translation_.x - kPaddingLeft;
+
+	std::vector<CloudBlockInfo> cloudsTop = GetNearbyClouds(positionsNew[kLeftTop]);
+	std::vector<CloudBlockInfo> cloudsBottom = GetNearbyClouds(positionsNew[kLeftBottom]);
+	std::vector<CloudBlockInfo> clouds = cloudsTop;
+	clouds.insert(clouds.end(), cloudsBottom.begin(), cloudsBottom.end());
+
+	for (const auto& cloud : clouds) {
+		if (playerTopY >= cloud.minY && playerBottomY <= cloud.maxY) {
+			if (previousLeftX >= cloud.maxX - 0.05f) {
+				info.wallCollision = true;
+				info.moveAmount.x = cloud.maxX - previousLeftX + 0.005f;
+				return;
+			}
+		}
 	}
 }
 

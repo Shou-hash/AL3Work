@@ -6,11 +6,12 @@
 enum class MapChipType {
 	kBlank,       // 空白
 	kBlock,       // ブロック
-	kBlockFall,   // ★追加：すり抜けブロック (B1)
+	kBlockFall,   // すり抜けブロック (B1)
 	kPlayer,      // プレイヤー
 	kEnemy,       // 敵
 	kGoal,        // ゴール
 	kExplanation, // 解説ブロック
+	kCloud,       // ★ 追加：雲マップチップ (C0)
 };
 
 // ★ ブロックの向き（周囲の空白の位置から決まる見た目の種類）
@@ -51,11 +52,10 @@ public:
 	uint32_t GetNumBlockVertical() const { return kNumBlockVertical; }
 	uint32_t GetNumBlockHorizontal() const { return kNumBlockHorizontal; }
 
-	// ★ CSVで実際に使われている横幅（何かが置かれている一番右の列 + 1）。ステージごとに横幅が違うため、カメラ範囲などはこちらを使う
+	// ★ CSVで実際に使われている横幅
 	uint32_t GetUsedBlockHorizontal() const { return usedBlockHorizontal_; }
 
-	// ★ ブロックの向きを判定する（空白に一番近いブロックだけが向きを持ち、それ以外は通常のブロックになる）
-	//   優先順位: 上が空白 ➔ 下が空白 ➔ 右が空白 ➔ 左が空白。マップの外側（CSVで使われている横幅より右も含む）はブロックがあるものとして扱う
+	// ★ ブロックの向きを判定する
 	BlockFace GetBlockFaceByIndex(uint32_t xIndex, uint32_t yIndex);
 	KamataEngine::Vector3 GetMapChipPositionByIndex(uint32_t xIndex, uint32_t yIndex);
 
@@ -73,7 +73,7 @@ private:
 	static inline const float kBlockWidth = 1.0f;
 	static inline const float kBlockHeight = 1.0f;
 
-	// ★ ステージの最大サイズ（縦 30 × 横 200）。CSVはこの範囲内で自由な大きさにできる
+	// ★ ステージの最大サイズ（縦 30 × 横 200）
 	static inline const uint32_t kNumBlockVertical = 30;
 	static inline const uint32_t kNumBlockHorizontal = 200;
 

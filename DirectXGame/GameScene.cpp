@@ -11,7 +11,7 @@
 #include "ShieldEnemy.h"
 #include "StageManager.h"
 #include <cmath>
-#include <numbers> // ★追加：π参照用
+#include <numbers>
 #ifdef _DEBUG
 #include <imgui.h>
 #endif
@@ -30,6 +30,7 @@ GameScene::~GameScene() {
 	delete modelBlockRight_;
 	delete modelBlockAbove_;
 	delete modelBlockBelow_;
+	delete modelCloud_; // ★ 追加: 雲モデルの解放
 
 	// ブロックデータの解放
 	for (auto& line : blockDatas_) {
@@ -41,6 +42,15 @@ GameScene::~GameScene() {
 		}
 	}
 	blockDatas_.clear();
+
+	// ★ 追加: ステージ上の雲データの解放
+	for (auto* cloudData : cloudDatas_) {
+		if (cloudData) {
+			delete cloudData->transform;
+			delete cloudData;
+		}
+	}
+	cloudDatas_.clear();
 
 	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
 		delete worldTransformExplanation;
@@ -115,7 +125,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	isBossSpawned_ = false;
 	isGoalReached_ = false;                 // ゴール到達フラグの初期化
 	isBossDefeatedGoalPerfStarted_ = false; // ボス撃破後ゴール演出フラグの初期化
-	isBossLightTriggered_ = false;          // ラスボス出現演出による光の演出フラグの初期化（出現演出が始まるまでは赤いスポットライトを消す）
+	isBossLightTriggered_ = false;          // ラスボス出現演出による光の演出フラグの初期化
 
 	// ステージ切り替え時に前回のデータを完全にクリアする
 	player_.reset();
@@ -164,11 +174,9 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	std::string stageFileName = "Resources/stageDatas" + std::to_string(currentStageIdx) + ".csv";
 	mapChipField_->LoadMapChipDataFromCSV(stageFileName);
 
-	// 背景ブロックの生成（多層視差レイヤーの初期化）
+	// 背景ブロックの生成（自動生成による多層視差レイヤーの初期化）
 	backgroundBlocks_ = std::make_unique<BackgroundBlocks>();
-	// ★ 背景CSV（Resources/backgroundDatas0.csv など）から奥行き背景を配置する
-	std::string backgroundFileName = "Resources/backgroundDatas" + std::to_string(currentStageIdx) + ".csv";
-	backgroundBlocks_->Initialize(mapChipField_, backgroundFileName);
+	backgroundBlocks_->Initialize(mapChipField_);
 
 	// ブロックモデルを種類別に読み込み
 	modelBlock_ = Model::CreateFromOBJ("block", true);
@@ -179,6 +187,9 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelBlockRight_ = Model::CreateFromOBJ("blockRight", true);
 	modelBlockAbove_ = Model::CreateFromOBJ("blockAbove", true);
 	modelBlockBelow_ = Model::CreateFromOBJ("blockBelow", true);
+
+	// ★ 追加: 雲モデル (cloud3) の読み込み
+	modelCloud_ = Model::CreateFromOBJ("cloud3", true);
 
 	worldTransform_.Initialize();
 	camera_.Initialize();
@@ -224,29 +235,40 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	modelGoal_ = Model::CreateFromOBJ("goal", true);               // ゴール用モデルの生成
 	modelExplanation_ = Model::CreateFromOBJ("Explanation", true); // 解説ブロック用モデルの生成
 
+	GenerateFieldObjects();
+
+	// ★ 操作解説用チュートリアルの初期化（ステージ0のみ有効化）
+	playerTutorial_ = std::make_unique<PlayerTutorial>();
+	Vector3 playerInitPos = player_ ? player_->GetWorldTransform().translation_ : Vector3{0.0f, 0.0f, 0.0f};
+	playerTutorial_->Initialize(currentStageIdx, playerInitPos);
+
 	// ★ 全モデルに LightManager のライトグループを設定する
-	//   （Model::Draw は model->lightGroup_ をバインドするため、設定しないとデフォルトライトで描画される）
 	{
 		KamataEngine::Model* lightTargets[] = {
 		    modelEnemy_,    modelShieldEnemy_, modelSkydome_,        modelPlayerHead_,     modelPlayerBody_, modelPlayerLeft_, modelPlayerRight_, modelBossHead_,   modelBossBody_,
 		    modelBossLeft_, modelBossRight_,   modelDeathParticles_, modelHitEffect_,      modelHammer_,     modelPlayerHp_,   modelItemHp_,      modelGoal_,       modelExplanation_,
-		    modelBlock_,    modelBlockFall_,   modelBlockFallLeft_,  modelBlockFallRight_, modelBlockLeft_,  modelBlockRight_, modelBlockAbove_,  modelBlockBelow_,
+		    modelBlock_,    modelBlockFall_,   modelBlockFallLeft_,  modelBlockFallRight_, modelBlockLeft_,  modelBlockRight_, modelBlockAbove_,  modelBlockBelow_, modelCloud_,
 		};
 		for (KamataEngine::Model* model : lightTargets) {
 			lightManager_->ApplyToModel(model, LightManager::GroupType::kWorld);
 		}
 
-		// ラスボスは専用のライトグループ（専用スポットライト・暗転演出）
+		if (playerTutorial_) {
+			playerTutorial_->ApplyLightManager(*lightManager_);
+		}
+
+		// ラスボスは専用のライトグループ
 		lightManager_->ApplyToModel(modelFinalBossBody_, LightManager::GroupType::kBoss);
 		for (KamataEngine::Model* model : modelFinalBossHands_) {
 			lightManager_->ApplyToModel(model, LightManager::GroupType::kBoss);
 		}
 
-		for (KamataEngine::Model* model : modelFinalBossCrystals_) { // ★ 追加
+		for (KamataEngine::Model* model : modelFinalBossCrystals_) {
 			lightManager_->ApplyToModel(model, LightManager::GroupType::kBoss);
 		}
 		lightManager_->ApplyToModel(modelFinalBossCrystal22_, LightManager::GroupType::kBoss);
-		// 奥行き背景は中景と遠景で別々のライトグループ（遠景ほど暗く、彩度も低い）
+
+		// 奥行き背景は中景と遠景で別々のライトグループ
 		if (backgroundBlocks_) {
 			backgroundBlocks_->SetLightGroups(
 			    lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundNear), lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundMid),
@@ -263,11 +285,14 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	cameraController_ = std::make_unique<CameraController>();
 	cameraController_->Initialize(&camera_);
 
-	GenerateFieldObjects();
-
-	// ★ プレイヤーのモデルにもマップタイルなどと同じライティング（平行光源）を設定する
+	// ★ プレイヤーのモデルにもマップタイルなどと同じライティングを設定する
 	if (player_ && lightManager_) {
 		player_->ApplyLightManager(*lightManager_);
+	}
+
+	// ★ 追加: プレイヤーに雲データを参照させる
+	if (player_) {
+		player_->SetCloudDatas(&cloudDatas_);
 	}
 
 	if (player_) {
@@ -290,7 +315,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 		player_->SetPlayerHp(playerHp_.get());
 	}
 
-	// ★ カメラの移動範囲：CSVで実際に使われている横幅に合わせる（ステージごとに横幅が違うため）
+	// ★ カメラの移動範囲：CSVで実際に使われている横幅に合わせる
 	Rect stageArea = {10.0f, static_cast<float>(mapChipField_->GetUsedBlockHorizontal()) - 10.0f, 5.0f, static_cast<float>(mapChipField_->GetNumBlockVertical()) + 80.0f};
 	cameraController_->SetMovableArea(stageArea);
 	cameraController_->Reset();
@@ -298,11 +323,9 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	// ステージごとのゴール表示・カメラ演出の制御
 	if (goal_) {
 		if (currentStageIdx == 0 || currentStageIdx == 1) {
-			// ステージ0, 1: ゴールを表示・判定有効にしてカメラ演出開始（中ボスを倒さなくてもたどり着ける）
 			goal_->SetIsActive(true);
 			cameraController_->StartGoalPerformance(goal_->GetWorldTransform().translation_);
 		} else if (currentStageIdx == 2) {
-			// ステージ2: 最初はゴールを非表示・判定無効にする
 			goal_->SetIsActive(false);
 		}
 	}
@@ -317,31 +340,25 @@ void GameScene::GenerateFieldObjects() {
 		blockDatas_[i].resize(numBlockHorizontal, nullptr);
 		for (uint32_t j = 0; j < numBlockHorizontal; ++j) {
 			MapChipType type = mapChipField_->GetMapChipTypeByIndex(j, i);
+			uint8_t subID = mapChipField_->GetMapChipSubIDByIndex(j, i);
 
-			// ★ すり抜けブロック (kBlockFall / B1) の生成処理を追加
 			if (type == MapChipType::kBlockFall) {
 				BlockData* blockData = new BlockData();
 				blockData->transform = new WorldTransform();
 				blockData->transform->Initialize();
 
-				// 描画用の座標を少し上げる（例: +0.2f）
-				// ※マップチップデータ(当たり判定用)は元の座標をそのまま利用しているため衝突判定は変わりません
 				Vector3 pos = mapChipField_->GetMapChipPositionByIndex(j, i);
 				pos.y += 0.2f;
 				blockData->transform->translation_ = pos;
 
-				// 左右に隣接するすり抜けブロックの判定
 				bool hasLeft = (j > 0) && (mapChipField_->GetMapChipTypeByIndex(j - 1, i) == MapChipType::kBlockFall);
 				bool hasRight = (j < numBlockHorizontal - 1) && (mapChipField_->GetMapChipTypeByIndex(j + 1, i) == MapChipType::kBlockFall);
 
 				if (!hasLeft && hasRight) {
-					// 左端
 					blockData->model = modelBlockFallLeft_;
 				} else if (hasLeft && !hasRight) {
-					// 右端
 					blockData->model = modelBlockFallRight_;
 				} else {
-					// 中央、または単独
 					blockData->model = modelBlockFall_;
 				}
 
@@ -354,32 +371,39 @@ void GameScene::GenerateFieldObjects() {
 				blockData->transform->Initialize();
 				blockData->transform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
 
-				// --- ブロックの向きの判定（MapChipField の共通判定を使用） ---
-				// 空白に一番近いブロックだけが向きを持ち、それ以外は通常のブロックになる
 				switch (mapChipField_->GetBlockFaceByIndex(j, i)) {
 				case BlockFace::kAbove:
-					// 上が空白（地面のブロック）
 					blockData->model = modelBlockAbove_;
 					break;
 				case BlockFace::kBelow:
-					// 下が空白（天井のブロック）
 					blockData->model = modelBlockBelow_;
 					break;
 				case BlockFace::kRight:
-					// 右が空白（左壁のブロック。右に向いている）
 					blockData->model = modelBlockRight_;
 					break;
 				case BlockFace::kLeft:
-					// 左が空白（右壁のブロック。左に向いている）
 					blockData->model = modelBlockLeft_;
 					break;
 				default:
-					// 空白に面していない通常のブロック
 					blockData->model = modelBlock_;
 					break;
 				}
 
 				blockDatas_[i][j] = blockData;
+			}
+
+			if (type == MapChipType::kCloud && subID == 0) {
+				BlockData* cloudData = new BlockData();
+				cloudData->transform = new WorldTransform();
+				cloudData->transform->Initialize();
+				Vector3 pos = mapChipField_->GetMapChipPositionByIndex(j, i);
+				cloudData->transform->translation_ = pos;
+				cloudData->basePosition = pos;
+				cloudData->offsetY = 0.0f;
+				cloudData->velocityY = 0.0f;
+				cloudData->transform->scale_ = {1.0f, 1.0f, 1.0f};
+				cloudData->model = modelCloud_;
+				cloudDatas_.push_back(cloudData);
 			}
 
 			switch (type) {
@@ -400,7 +424,7 @@ void GameScene::GenerateFieldObjects() {
 				GenerateEnemy(j, i);
 				break;
 			}
-			case MapChipType::kGoal: { // ゴールの生成処理
+			case MapChipType::kGoal: {
 				if (goal_ != nullptr) {
 					break;
 				}
@@ -409,11 +433,11 @@ void GameScene::GenerateFieldObjects() {
 				goal_->Initialize(modelGoal_, &camera_, goalPosition);
 				break;
 			}
-			case MapChipType::kExplanation: { // 解説ブロックの生成処理
+			case MapChipType::kExplanation: {
 				WorldTransform* worldTransform = new WorldTransform();
 				worldTransform->Initialize();
 				worldTransform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
-				worldTransform->rotation_.y = std::numbers::pi_v<float>; // ★ Y軸回転を180度（πラジアン）に設定
+				worldTransform->rotation_.y = std::numbers::pi_v<float>;
 				worldTransformExplanations_.push_back(worldTransform);
 				break;
 			}
@@ -447,19 +471,17 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 		enemies_.push_back(enemy);
 		isBossSpawned_ = true;
 
-		// カメラコントローラーにボスを登録
 		if (cameraController_) {
 			cameraController_->SetBoss(enemy);
 		}
 		break;
 	}
-	case 3: { // ★ E3 (ラスボス FinalBoss)
+	case 3: {
 		FinalBoss* finalBoss = new FinalBoss();
-		finalBoss->Initialize(modelFinalBossBody_, modelFinalBossHands_, modelFinalBossCrystals_, modelFinalBossCrystal22_, &camera_, enemyPosition); // ★ 引数追加
-		finalBoss->SetMapChipField(mapChipField_); // ★ 追加: 地形衝突判定用マップチップフィールドを設定
+		finalBoss->Initialize(modelFinalBossBody_, modelFinalBossHands_, modelFinalBossCrystals_, modelFinalBossCrystal22_, &camera_, enemyPosition);
+		finalBoss->SetMapChipField(mapChipField_);
 		enemies_.push_back(finalBoss);
 
-		// ★ カメラコントローラーにラスボスを登録
 		if (cameraController_) {
 			cameraController_->SetFinalBoss(finalBoss);
 		}
@@ -474,12 +496,59 @@ bool IsCollision(const Player::AABB& a, const BaseEnemy::AABB& b) {
 	return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
+void GameScene::UpdateClouds() {
+	if (!player_) {
+		return;
+	}
+
+	const Vector3& pPos = player_->GetWorldTransform().translation_;
+	float pLeftX = pPos.x - 0.4f;
+	float pRightX = pPos.x + 0.4f;
+	float pBottomY = pPos.y - 0.1f;
+	bool playerOnGround = player_->IsOnGround();
+
+	static float timer = 0.0f;
+	timer += 1.0f / 60.0f;
+
+	for (auto* cloudData : cloudDatas_) {
+		if (!cloudData || !cloudData->transform)
+			continue;
+
+		constexpr float kSpring = 0.08f;
+		constexpr float kDamping = 0.88f;
+
+		float sineWave = std::sin(timer * 3.0f + cloudData->basePosition.x) * 0.02f;
+
+		float force = -kSpring * (cloudData->offsetY - sineWave);
+		cloudData->velocityY += force;
+		cloudData->velocityY *= kDamping;
+
+		float prevOffsetY = cloudData->offsetY;
+		cloudData->offsetY += cloudData->velocityY;
+
+		cloudData->transform->translation_.y = cloudData->basePosition.y + cloudData->offsetY;
+
+		float deltaY = cloudData->offsetY - prevOffsetY;
+
+		float cloudMinX = cloudData->basePosition.x - 2.0f;
+		float cloudMaxX = cloudData->basePosition.x + 2.0f;
+		float cloudTopY = cloudData->transform->translation_.y + 0.5f;
+
+		if (pRightX >= cloudMinX && pLeftX <= cloudMaxX) {
+			if (std::abs(pBottomY - cloudTopY) <= 0.25f) {
+				if (playerOnGround && std::abs(deltaY) > 0.00001f) {
+					player_->AddPositionY(deltaY);
+				}
+			}
+		}
+	}
+}
+
 void GameScene::Update() {
 	GlobalVariables::GetInstance()->Update();
 	Player::ApplyGlobalVariables();
 	Enemy::ApplyGlobalVariables();
 
-	// ★ LightManager の更新
 	if (lightManager_) {
 		lightManager_->Update();
 	}
@@ -560,17 +629,16 @@ void GameScene::Update() {
 		}
 	}
 
-	// ★ ラスボスの ImGui 調整用UI
 	for (BaseEnemy* enemy : enemies_) {
 		if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
 			if (ImGui::TreeNode("FinalBoss Transform")) {
 				float* pos = &(finalBoss->GetBasePosition().x);
-				float* offset = &(finalBoss->GetDrawOffset().x); // ★ 描画オフセットの調整項目
+				float* offset = &(finalBoss->GetDrawOffset().x);
 				float* rot = &(finalBoss->GetWorldTransform().rotation_.x);
 				float* scale = &(finalBoss->GetWorldTransform().scale_.x);
 
 				ImGui::DragFloat3("Base Position", pos, 0.05f);
-				ImGui::DragFloat3("Draw Offset", offset, 0.1f); // ★ ここで描画位置だけ変更可能
+				ImGui::DragFloat3("Draw Offset", offset, 0.1f);
 				ImGui::DragFloat3("Rotation", rot, 0.01f);
 				ImGui::DragFloat3("Scale", scale, 0.01f);
 
@@ -580,7 +648,6 @@ void GameScene::Update() {
 		}
 	}
 
-	// ★ LightManager 自身の ImGui 描画関数を呼ぶ
 	if (lightManager_) {
 		lightManager_->DrawImGui();
 		ImGui::DragFloat("Boss Light Approach Distance", &bossLightApproachDistance_, 0.5f, 0.0f, 500.0f);
@@ -592,6 +659,11 @@ void GameScene::Update() {
 	// 背景ブロックの行列・視差計算更新
 	if (backgroundBlocks_) {
 		backgroundBlocks_->Update(camera_);
+	}
+
+	// ★ 操作解説用チュートリアルの更新
+	if (playerTutorial_ && player_) {
+		playerTutorial_->Update(player_->GetWorldTransform().translation_);
 	}
 
 	ChangePhase();
@@ -640,6 +712,16 @@ void GameScene::Update() {
 		}
 	}
 
+	// ステージタイルの雲のワールド行列更新
+	for (auto* cloudData : cloudDatas_) {
+		if (!cloudData || !cloudData->transform) {
+			continue;
+		}
+		Matrix4x4 affineMatrix = MakeAffineMatrix(cloudData->transform->scale_, cloudData->transform->rotation_, cloudData->transform->translation_);
+		cloudData->transform->matWorld_ = affineMatrix;
+		cloudData->transform->TransferMatrix();
+	}
+
 	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
 		if (!worldTransformExplanation) {
 			continue;
@@ -649,7 +731,6 @@ void GameScene::Update() {
 		worldTransformExplanation->TransferMatrix();
 	}
 
-	// ★ 光の演出（点灯・夜・追従スポットライト）を更新してからライトを転送する
 	if (lightManager_) {
 		UpdateLightEffects();
 		lightManager_->TransferBuffer();
@@ -662,7 +743,6 @@ void GameScene::UpdateLightEffects() {
 		return;
 	}
 
-	// ラスボスを探す
 	FinalBoss* finalBoss = nullptr;
 	for (BaseEnemy* enemy : enemies_) {
 		if (FinalBoss* boss = dynamic_cast<FinalBoss*>(enemy)) {
@@ -677,24 +757,18 @@ void GameScene::UpdateLightEffects() {
 		playerPos = player_->GetWorldTransform().translation_;
 	}
 
-	// ★ ラスボスを倒したかどうか（倒したら夜から朝のライティングへ戻し、スポットライトも消す）
 	const bool bossDefeated = (finalBoss && finalBoss->IsDefeated());
 
-	// ★ 変更：ラスボスが出現演出を開始（kStandby解除）した瞬間のみ光の演出を開始
 	if (finalBoss && !isBossLightTriggered_) {
 		if (finalBoss->GetState() != FinalBoss::State::kStandby) {
 			isBossLightTriggered_ = true;
 		}
 	}
-	// 出現演出が始まるまでは赤いスポットライトを消す（朝のライティングは常に有効）
-	// ★ ラスボスを倒したら、プレイヤーと雑魚敵たちの赤いスポットライトもなめらかに消す
 	lightManager_->SetLightsEnabled(isBossLightTriggered_ && !bossDefeated);
 
-	// ラスボスの出現演出に合わせて、朝のライティングから夜のライティングへ段々切り替える
 	float night = 0.0f;
 	bool isFrenzy = false;
 	if (finalBoss) {
-		// ★ 変更: ラスボスが倒された場合は夜から朝のライティングへ切り替える
 		if (finalBoss->IsDefeated()) {
 			night = 0.0f;
 		} else {
@@ -705,10 +779,8 @@ void GameScene::UpdateLightEffects() {
 	lightManager_->SetNightFactor(night);
 	lightManager_->SetBossFrenzy(isFrenzy);
 
-	// プレイヤーのスポットライト
 	lightManager_->SetPlayerSpot(hasPlayer, playerPos);
 
-	// プレイヤーに一番近い普通敵・盾敵のスポットライト
 	constexpr float kEnemySpotRange = 40.0f;
 	bool hasEnemy = false;
 	bool hasShieldEnemy = false;
@@ -743,19 +815,15 @@ void GameScene::UpdateLightEffects() {
 	lightManager_->SetEnemySpot(hasEnemy, enemyPos);
 	lightManager_->SetShieldEnemySpot(hasShieldEnemy, shieldEnemyPos);
 
-	// ラスボスの発光（スポットライトの代わりに、モデル本来の色を保ったまま本体を光らせる。出現演出が始まってから）
-	// ★ 撃破アニメーションが終わるまでは光らせたままにする（終わったらなめらかに消える）
 	lightManager_->SetBossGlow(finalBoss && !finalBoss->IsDefeatAnimationFinished() && finalBoss->GetState() != FinalBoss::State::kStandby);
 	if (finalBoss) {
 		lightManager_->SetCrystalPointLight(finalBoss->IsCrystal22LightActive(), finalBoss->GetCrystal22Position());
 
-		// ★ 流星群攻撃中に降下する finalBossCrystal_22 へ黄色のポイントライトを適用
 		std::vector<Vector3> meteorPositions = finalBoss->GetActiveMeteorPositions();
 		lightManager_->SetMeteorPointLights(finalBoss->IsMeteorShowerActive(), meteorPositions);
 	}
 }
 
-// ★ 処刑演出の開始
 void GameScene::StartExecution(BossEnemy* boss) {
 	executionBoss_ = boss;
 	executionPhase_ = ExecutionPhase::kZoomIn;
@@ -767,9 +835,8 @@ void GameScene::StartExecution(BossEnemy* boss) {
 	const Vector3 bossPos = boss->GetWorldTransform().translation_;
 	const Vector3 playerPos = player_->GetWorldTransform().translation_;
 
-	// プレイヤーがいた側に立ったまま、中ボスの横に固定する（中ボスはプレイヤーと反対側へ吹き飛ぶ）
 	executionPushDirX_ = (playerPos.x < bossPos.x) ? 1.0f : -1.0f;
-	const float kPlayerOffsetX = 3.2f; // 中ボスの横の立ち位置（ハンマーが届く距離）
+	const float kPlayerOffsetX = 3.2f;
 	Vector3 executionPos = {bossPos.x - executionPushDirX_ * kPlayerOffsetX, bossPos.y, bossPos.z};
 	player_->BeginExecution(executionPos, executionPushDirX_ > 0.0f ? LRDirection::kRight : LRDirection::kLeft);
 
@@ -777,19 +844,22 @@ void GameScene::StartExecution(BossEnemy* boss) {
 	cameraController_->StartExecution(bossPos);
 }
 
-// ★ 処刑演出の更新
 void GameScene::UpdateExecution() {
 	const float dt = 1.0f / 60.0f;
 	executionTimer_ += dt;
 
-	// 演出に関係するものだけを更新する（他の敵・アイテムなどは止まる）
 	skydome->Update();
+
 	if (player_) {
 		player_->Update();
 	}
+
+	UpdateClouds();
+
 	if (executionBoss_) {
 		executionBoss_->Update();
 	}
+
 	for (auto it = effects_.begin(); it != effects_.end();) {
 		if (*it) {
 			(*it)->Update();
@@ -804,7 +874,6 @@ void GameScene::UpdateExecution() {
 		}
 	}
 
-	// 連撃が当たった時の演出（エフェクト・SE・中ボスののけぞり・カメラのズームイン + シェイク + 傾き）
 	auto onHit = [&](float strength, float pushDirX) {
 		if (!executionBoss_) {
 			return;
@@ -817,15 +886,13 @@ void GameScene::UpdateExecution() {
 		cameraController_->ExecutionHit(strength);
 	};
 
-	// 定数：連撃の回数など
-	const int32_t kHitMax = 6;            // この回数だけ連撃が当たったら最後の一撃へ
-	const float kIdleLimit = 3.0f;        // Eキーが押されなくても、この時間が経つと自動で 1 発出す
-	const float kFinaleChargeTime = 1.0f; // 最後の一撃の「ため」の時間
-	const float kLaunchTime = 2.4f;       // 打ち上げの時間
+	const int32_t kHitMax = 6;
+	const float kIdleLimit = 3.0f;
+	const float kFinaleChargeTime = 1.0f;
+	const float kLaunchTime = 2.4f;
 
 	switch (executionPhase_) {
 	case ExecutionPhase::kZoomIn:
-		// 中ボスへズームイン
 		if (executionTimer_ >= 0.9f) {
 			executionPhase_ = ExecutionPhase::kHammering;
 			executionTimer_ = 0.0f;
@@ -834,7 +901,6 @@ void GameScene::UpdateExecution() {
 		break;
 
 	case ExecutionPhase::kHammering: {
-		// Eキー連打で連撃（スイング中に押された分は 1 回だけ先行入力として保持する）
 		if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_E)) {
 			executionInputBuffered_ = true;
 			executionIdleTimer_ = 0.0f;
@@ -845,7 +911,6 @@ void GameScene::UpdateExecution() {
 			executionIdleTimer_ = 0.0f;
 		}
 
-		// スイングが当たったタイミング
 		if (player_->ConsumeExecutionHit()) {
 			++executionHitCount_;
 			onHit(1.0f, executionPushDirX_ * 0.5f);
@@ -853,38 +918,34 @@ void GameScene::UpdateExecution() {
 
 		if (!player_->IsExecutionSwinging()) {
 			if (executionHitCount_ >= kHitMax) {
-				// 連撃は終わり。最後の一撃のため
 				executionPhase_ = ExecutionPhase::kFinaleCharge;
 				executionTimer_ = 0.0f;
 				executionInputBuffered_ = false;
-				cameraController_->SetExecutionZoom(5.5f); // さらに寄る
+				cameraController_->SetExecutionZoom(5.5f);
 			} else if (executionInputBuffered_) {
 				executionInputBuffered_ = false;
-				player_->StartExecutionSwing(static_cast<uint32_t>(executionHitCount_ % 4)); // 連撃の 1 ~ 4 段目を順番に使う
+				player_->StartExecutionSwing(static_cast<uint32_t>(executionHitCount_ % 4));
 			}
 		}
 		break;
 	}
 
 	case ExecutionPhase::kFinaleCharge: {
-		// 最後の一撃の「ため」：中ボスが小刻みに震える
 		if (static_cast<int>(executionTimer_ / 0.25f) != static_cast<int>((executionTimer_ - dt) / 0.25f)) {
 			executionBoss_->OnExecutionHit(0.0f);
 		}
 		if (executionTimer_ >= kFinaleChargeTime) {
 			executionPhase_ = ExecutionPhase::kFinaleSwing;
 			executionTimer_ = 0.0f;
-			player_->StartExecutionSwing(4); // 連撃の最終段（一番大きなハンマーの振り）で思い切り叩く
+			player_->StartExecutionSwing(4);
 		}
 		break;
 	}
 
 	case ExecutionPhase::kFinaleSwing: {
-		// 当たった瞬間に中ボスをホームランで打ち上げる（万一当たりが通知されなくても、一定時間で打ち上げる）
 		bool isHit = player_->ConsumeExecutionHit();
 		if (isHit || executionTimer_ >= 1.5f) {
 			onHit(2.5f, executionPushDirX_);
-			// 大きなヒットエフェクトを重ねる
 			for (int i = 0; i < 2; ++i) {
 				HitEffect* bigEffect = new HitEffect();
 				Vector3 effectPos = executionBoss_->GetWorldTransform().translation_;
@@ -901,14 +962,12 @@ void GameScene::UpdateExecution() {
 	}
 
 	case ExecutionPhase::kLaunch: {
-		// 飛んでいく中ボスをカメラが追いかけ、だんだん引いていく
 		if (executionBoss_) {
 			cameraController_->SetExecutionFocus(executionBoss_->GetWorldTransform().translation_);
 		}
 		cameraController_->SetExecutionZoom(5.5f + executionTimer_ * 4.0f);
 
 		if (executionTimer_ >= kLaunchTime) {
-			// 演出終了：中ボスを消して、プレイヤーの操作とカメラを元に戻す
 			if (executionBoss_) {
 				executionBoss_->OnDead();
 				executionBoss_ = nullptr;
@@ -924,7 +983,6 @@ void GameScene::UpdateExecution() {
 		break;
 	}
 
-	// カメラとHPの更新
 	if (!isDebugCameraActive_ && cameraController_) {
 		cameraController_->Update();
 	}
@@ -942,7 +1000,6 @@ void GameScene::ChangePhase() {
 		break;
 
 	case Phase::kPlay:
-		// ★ プレイヤーの散らばり演出が終了したら Phase::kDeath (または FadeOut) へ移行
 		if (player_ && player_->IsDeathAnimationFinished()) {
 			phase_ = Phase::kDeath;
 
@@ -987,7 +1044,6 @@ void GameScene::UpdateFadeIn() {
 }
 
 void GameScene::UpdatePlay() {
-	// ★ 処刑演出中は、時間が止まったように演出に関係するものだけを更新する
 	if (executionPhase_ != ExecutionPhase::kNone) {
 		UpdateExecution();
 		return;
@@ -999,7 +1055,8 @@ void GameScene::UpdatePlay() {
 		player_->Update();
 	}
 
-	// ゴールの更新と衝突判定
+	UpdateClouds();
+
 	if (goal_) {
 		goal_->Update();
 
@@ -1016,13 +1073,11 @@ void GameScene::UpdatePlay() {
 
 	for (BaseEnemy* enemy : enemies_) {
 		if (enemy) {
-			// ボスにプレイヤーポインタを設定
 			if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
 				boss->SetPlayer(player_.get());
 			}
 			if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
 				finalBoss->SetPlayer(player_.get());
-				// ★ ラスボス戦でのみ、中ボスのHPバーの可視性をラスボスの状態と連動させる
 				for (BaseEnemy* bossCandidate : enemies_) {
 					if (BossEnemy* bossEnemy = dynamic_cast<BossEnemy*>(bossCandidate)) {
 						bossEnemy->SetHpBarVisible(finalBoss->IsCrystal22Landed());
@@ -1089,7 +1144,6 @@ void GameScene::UpdatePlay() {
 				if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
 					const Vector3& crystalPos = finalBoss->GetCrystal22Position();
 					const auto& attack = attackAABB.value();
-					// ★ 変更: 当たり判定のマージンを1.2fに広げて攻撃が確実に当たるように調整
 					const bool crystalHit = crystalPos.x >= attack.min.x - 1.2f && crystalPos.x <= attack.max.x + 1.2f && crystalPos.y >= attack.min.y - 1.2f && crystalPos.y <= attack.max.y + 1.2f;
 					if (finalBoss->IsCrystal22Landed() && crystalHit && !crystal22AttackConsumed_) {
 						finalBoss->HitCrystal22();
@@ -1148,7 +1202,6 @@ void GameScene::UpdatePlay() {
 	for (auto it = enemies_.begin(); it != enemies_.end();) {
 		BaseEnemy* enemy = *it;
 		if (enemy && enemy->IsDead()) {
-			// 削除する敵がボスの場合は CameraController のポインタをクリア
 			if (dynamic_cast<BossEnemy*>(enemy)) {
 				if (cameraController_) {
 					cameraController_->SetBoss(nullptr);
@@ -1162,7 +1215,6 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// ★ 中ボスを倒したら処刑演出を開始する（カメラ更新より前に開始して、同じフレームからズームインさせる）
 	if (executionPhase_ == ExecutionPhase::kNone && player_ && !player_->IsDead() && cameraController_) {
 		for (BaseEnemy* enemy : enemies_) {
 			BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy);
@@ -1173,7 +1225,6 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	// ★ ラスボスの撃破アニメーションが終わったら、ゴールを表示してゴール追従カメラ演出を開始する
 	if (!isBossDefeatedGoalPerfStarted_) {
 		for (BaseEnemy* enemy : enemies_) {
 			if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
@@ -1255,12 +1306,16 @@ void GameScene::UpdateFadeOut() {
 
 void GameScene::Draw() {
 
-	// 背景ブロックの描画
+	if (skydome) {
+		skydome->Draw();
+	}
+
+	// 背景ブロックおよび奥行き雲の描画
 	if (backgroundBlocks_) {
 		backgroundBlocks_->Draw(camera_);
 	}
 
-	// ブロックの分別描画（描画前処理は 1 回だけ。ステージが大きいので、カメラから横に遠いブロックは描画しない）
+	// ブロックの分別描画
 	Model::PreDraw();
 	for (auto& line : blockDatas_) {
 		for (auto* blockData : line) {
@@ -1275,6 +1330,19 @@ void GameScene::Draw() {
 	}
 	Model::PostDraw();
 
+	// ステージ上に配置された C0 雲タイルの描画
+	Model::PreDraw();
+	for (auto* cloudData : cloudDatas_) {
+		if (!cloudData || !cloudData->transform || !cloudData->model) {
+			continue;
+		}
+		if (std::fabs(cloudData->transform->translation_.x - camera_.translation_.x) > 45.0f) {
+			continue;
+		}
+		cloudData->model->Draw(*cloudData->transform, camera_);
+	}
+	Model::PostDraw();
+
 	// 解説ブロックの描画
 	for (WorldTransform* worldTransformExplanation : worldTransformExplanations_) {
 		if (!worldTransformExplanation) {
@@ -1284,8 +1352,6 @@ void GameScene::Draw() {
 		modelExplanation_->Draw(*worldTransformExplanation, camera_);
 		Model::PostDraw();
 	}
-
-	skydome->Draw();
 
 	// ゴールの描画
 	if (goal_) {
@@ -1313,6 +1379,13 @@ void GameScene::Draw() {
 	if (player_) {
 		Model::PreDraw();
 		player_->Draw();
+		Model::PostDraw();
+	}
+
+	// ★ 操作解説用チュートリアル（矢印）の描画
+	if (playerTutorial_) {
+		Model::PreDraw();
+		playerTutorial_->Draw(camera_);
 		Model::PostDraw();
 	}
 

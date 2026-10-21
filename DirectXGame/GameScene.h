@@ -7,14 +7,15 @@
 #include "Enemy.h"
 #include "Fade.h"
 #include "FinalBoss.h"
-#include "Goal.h" // ★追加：Goalクラスのインクルード
-#include "Item.h" // ★追加：Itemクラスのインクルード
+#include "Goal.h"
+#include "Item.h"
 #include "Kamataengine.h"
 #include "LightManager.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "Player.h"
 #include "PlayerHp.h"
+#include "PlayerTutorial.h" // ★ 追加: チュートリアルクラスのインクルード
 #include "ShieldEnemy.h"
 #include "Skydome.h"
 #include <list>
@@ -34,6 +35,10 @@ enum class Phase {
 struct BlockData {
 	KamataEngine::WorldTransform* transform = nullptr;
 	KamataEngine::Model* model = nullptr;
+	// ★ 追加: 雲のふわふわ揺れアニメーション用パラメータ
+	KamataEngine::Vector3 basePosition = {0.0f, 0.0f, 0.0f}; // 揺れの基準位置
+	float offsetY = 0.0f;                                    // 現在のYオフセット
+	float velocityY = 0.0f;                                  // 揺れの速度
 };
 
 class GameScene {
@@ -61,6 +66,9 @@ public:
 	// ★ 光の演出の更新（ラスボス接近で点灯、出現演出中に夜になる、追従スポットライトの配置）
 	void UpdateLightEffects();
 
+	// ★ 追加: 雲のふわふわ揺れアニメーション更新関数
+	void UpdateClouds();
+
 	// ★ 中ボスの処刑演出（撃破後にカメラがズームインし、Eキー連打で連撃 ➔ ハンマーでホームラン）
 	void StartExecution(BossEnemy* boss);
 	void UpdateExecution();
@@ -87,7 +95,7 @@ private:
 	KamataEngine::Model* modelPlayerLeft_ = nullptr;
 	KamataEngine::Model* modelPlayerRight_ = nullptr;
 
-	//  ボス用モデルポインタ
+	// ボス用モデルポインタ
 	KamataEngine::Model* modelBossHead_ = nullptr;
 	KamataEngine::Model* modelBossBody_ = nullptr;
 	KamataEngine::Model* modelBossLeft_ = nullptr;
@@ -112,6 +120,9 @@ private:
 	KamataEngine::Model* modelBlockAbove_ = nullptr;     // 地面用
 	KamataEngine::Model* modelBlockBelow_ = nullptr;     // 天井用
 
+	// ステージタイルの雲用モデルポインタ (cloud3)
+	KamataEngine::Model* modelCloud_ = nullptr;
+
 	// クラスメンバ変数にモデルポインタを追加(ラスボス)
 	KamataEngine::Model* modelFinalBossBody_ = nullptr;
 	std::array<KamataEngine::Model*, FinalBoss::kNumHands> modelFinalBossHands_{};
@@ -121,6 +132,9 @@ private:
 
 	// 2次元配列の型を BlockData* に変更
 	std::vector<std::vector<BlockData*>> blockDatas_;
+
+	// C0から生成されるステージ配置用雲配列（通常サイズ）
+	std::vector<BlockData*> cloudDatas_;
 
 	std::vector<KamataEngine::WorldTransform*> worldTransformExplanations_; // 解説ブロック用ワールドトランスフォーム配列
 
@@ -176,4 +190,7 @@ private:
 
 	// 背景ブロック管理クラスのインスタンス
 	std::unique_ptr<BackgroundBlocks> backgroundBlocks_ = nullptr;
+
+	// ★ 追加: 操作解説用チュートリアル管理クラス
+	std::unique_ptr<PlayerTutorial> playerTutorial_ = nullptr;
 };

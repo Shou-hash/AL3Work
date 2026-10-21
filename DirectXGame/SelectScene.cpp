@@ -2,6 +2,7 @@
 #include "AudioManager.h" // ★ BGM管理クラスのインクルード
 #include "Matrix4x4.h"
 #include "StageManager.h"
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #ifdef _DEBUG
@@ -11,6 +12,7 @@
 SelectScene::~SelectScene() {
 	delete fade_;
 	delete modelSkydome_;
+	delete modelArrow_; // ★ 矢印モデルの解放
 
 	// ★ モデルの解放
 	for (int32_t i = 0; i < kNumStages; ++i) {
@@ -46,6 +48,9 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 	stageSprites_[1] = KamataEngine::Model::CreateFromOBJ("Stage2", true);
 	stageSprites_[2] = KamataEngine::Model::CreateFromOBJ("Stage3", true);
 
+	// ★ 操作解説用矢印モデル（Arrow.obj）のロード
+	modelArrow_ = KamataEngine::Model::CreateFromOBJ("Arrow", true);
+
 	// 3つのステージモデルをカメラ前方（ワールド空間）に横並びで配置
 	float startX = 7.0f;
 	float spacing = 3.0f;
@@ -62,10 +67,30 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 		float ry = 0.03f + (static_cast<float>(rand()) / RAND_MAX) * 0.06f;
 		float rz = 0.01f + (static_cast<float>(rand()) / RAND_MAX) * 0.04f;
 
-		// Y軸（横回転）だけにしたい場合は {0.0f, ry, 0.0f} に変更してください
 		rotationSpeeds_[i] = {rx, ry, rz};
 	}
 	flashTimer_ = 0.0f;
+
+	// ★ 左右の操作解説矢印の配置初期化（0: 左端矢印, 1: 右端矢印）
+	for (int32_t i = 0; i < 2; ++i) {
+		arrowTransforms_[i].Initialize();
+		arrowAnimationTimers_[i] = 0.0f;
+		arrowTransforms_[i].scale_ = {1.0f, 1.0f, 1.0f};
+	}
+
+	float arrowPosY = posY - 2.0f;
+	arrowTransforms_[0].translation_ = {6.5f, arrowPosY, posZ};  // 左矢印
+	arrowTransforms_[1].translation_ = {13.5f, arrowPosY, posZ}; // 右矢印
+
+	// 矢印モデルの向き（0: 左向き Z=0, 1: 右向き Z=180度）
+	arrowTransforms_[0].rotation_ = {0.0f, 0.0f, 0.0f};
+	arrowTransforms_[1].rotation_ = {0.0f, 0.0f, std::numbers::pi_v<float>};
+
+	for (int32_t i = 0; i < 2; ++i) {
+		KamataEngine::Matrix4x4 arrowMatrix = MakeAffineMatrix(arrowTransforms_[i].scale_, arrowTransforms_[i].rotation_, arrowTransforms_[i].translation_);
+		arrowTransforms_[i].matWorld_ = arrowMatrix;
+		arrowTransforms_[i].TransferMatrix();
+	}
 
 	// 初期選択ステージのタイマーを満了状態にしておく
 	animationTimers_[currentSelectIndex_] = 1.0f;
@@ -76,6 +101,9 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 	lightManager_->ApplyToModel(modelSkydome_, LightManager::GroupType::kWorld);
 	for (int32_t i = 0; i < kNumStages; ++i) {
 		lightManager_->ApplyToModel(stageSprites_[i], LightManager::GroupType::kWorld);
+	}
+	if (modelArrow_) {
+		lightManager_->ApplyToModel(modelArrow_, LightManager::GroupType::kWorld);
 	}
 }
 
@@ -129,6 +157,24 @@ void SelectScene::Update() {
 		worldTransforms_[i].TransferMatrix();
 	}
 
+	// ★ 左右矢印のキー押下による Scale アニメーションの更新
+	for (int32_t i = 0; i < 2; ++i) {
+		if (arrowAnimationTimers_[i] > 0.0f) {
+			arrowAnimationTimers_[i] -= 0.12f;
+			if (arrowAnimationTimers_[i] < 0.0f) {
+				arrowAnimationTimers_[i] = 0.0f;
+			}
+		}
+
+		// 押した瞬間にポンッと拡大して滑らかに元の大きさに戻るアニメーション
+		float scaleFactor = 1.0f + std::sin(arrowAnimationTimers_[i] * std::numbers::pi_v<float>) * 0.45f;
+		arrowTransforms_[i].scale_ = {scaleFactor, scaleFactor, scaleFactor};
+
+		KamataEngine::Matrix4x4 arrowMatrix = MakeAffineMatrix(arrowTransforms_[i].scale_, arrowTransforms_[i].rotation_, arrowTransforms_[i].translation_);
+		arrowTransforms_[i].matWorld_ = arrowMatrix;
+		arrowTransforms_[i].TransferMatrix();
+	}
+
 	// シーンフェーズ管理
 	switch (phase_) {
 	case Phase::FadeIn:
@@ -146,6 +192,7 @@ void SelectScene::Update() {
 			}
 
 			animationTimers_[currentSelectIndex_] = 0.0f;
+			arrowAnimationTimers_[0] = 1.0f; // ★ 左矢印のアニメーション開始
 
 			// ★ ステージ選択SE再生
 			AudioManager::GetInstance()->PlaySE(SEType::kStage);
@@ -159,20 +206,56 @@ void SelectScene::Update() {
 			}
 
 			animationTimers_[currentSelectIndex_] = 0.0f;
+			arrowAnimationTimers_[1] = 1.0f; // ★ 右矢印のアニメーション開始
 
 			// ★ ステージ選択SE再生
 			AudioManager::GetInstance()->PlaySE(SEType::kStage);
 		}
 
-		// 決定キー（SPACE）でステージ確定＆フェードアウト開始
+		// ★ 決定キー（SPACE）でステージ確定 & カメラ演出開始
 		if (KamataEngine::Input::GetInstance()->PushKey(DIK_SPACE)) {
 			if (stageManager_) {
 				stageManager_->SetCurrentStageIndex(currentSelectIndex_);
 			}
-			fade_->Start(Fade::Status::FadeOut, 1.0f);
+
+			// カメラ演出の初期設定
+			phase_ = Phase::SelectPerformance;
+			cameraPerformanceTimer_ = 0.0f;
+			cameraStartPos_ = camera_.translation_;
+
+			// 選択されたステージモデルの位置に寄る目標座標を計算
+			const KamataEngine::Vector3& stagePos = worldTransforms_[currentSelectIndex_].translation_;
+			cameraTargetPos_ = {stagePos.x, stagePos.y, stagePos.z - 3.8f};
+
+			// ★ ステージ確定SE再生
+			AudioManager::GetInstance()->PlaySE(SEType::kStage);
+		}
+		break;
+
+	case Phase::SelectPerformance: {
+		// ★ 確定時のステージモデルへのカメラ接近演出
+		cameraPerformanceTimer_ += 1.0f / 60.0f;
+		constexpr float kPerformanceDuration = 0.8f;
+		float t = std::clamp(cameraPerformanceTimer_ / kPerformanceDuration, 0.0f, 1.0f);
+
+		// イージング (EaseOutCubic) で滑らかに接近
+		float easeVal = 1.0f - std::pow(1.0f - t, 3.0f);
+
+		camera_.translation_.x = cameraStartPos_.x + (cameraTargetPos_.x - cameraStartPos_.x) * easeVal;
+		camera_.translation_.y = cameraStartPos_.y + (cameraTargetPos_.y - cameraStartPos_.y) * easeVal;
+		camera_.translation_.z = cameraStartPos_.z + (cameraTargetPos_.z - cameraStartPos_.z) * easeVal;
+
+		// 選択されたステージモデルの回転速度を加速させてアピール演出
+		worldTransforms_[currentSelectIndex_].rotation_.y += 0.12f;
+
+		// カメラ演出が完了したらフェードアウト開始
+		if (t >= 1.0f) {
+			fade_->Start(Fade::Status::FadeOut, 0.8f);
 			phase_ = Phase::FadeOut;
 		}
 		break;
+	}
+
 	case Phase::FadeOut:
 		if (fade_->IsFinished())
 			finished_ = true;
@@ -211,6 +294,13 @@ void SelectScene::Draw() {
 	for (int32_t i = 0; i < kNumStages; ++i) {
 		if (stageSprites_[i]) {
 			stageSprites_[i]->Draw(worldTransforms_[i], camera_);
+		}
+	}
+
+	// ★ 左右端の操作解説矢印モデルの描画処理
+	if (modelArrow_) {
+		for (int32_t i = 0; i < 2; ++i) {
+			modelArrow_->Draw(arrowTransforms_[i], camera_);
 		}
 	}
 	KamataEngine::Model::PostDraw();

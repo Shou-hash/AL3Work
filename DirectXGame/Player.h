@@ -12,6 +12,7 @@ class MapChipField;
 class CameraController;
 class PlayerHp;     // ★ 追加
 class LightManager; // ★ 追加：ライティング設定用
+struct BlockData;   // ★ 追加: 前方宣言
 
 enum class LRDirection {
 	kLeft,
@@ -52,6 +53,15 @@ public:
 		KamataEngine::Vector3 max;
 	};
 
+	// ★ 追加: 雲マップチップ判定用データ構造体
+	struct CloudBlockInfo {
+		KamataEngine::Vector3 position;
+		float minX;
+		float maxX;
+		float minY;
+		float maxY;
+	};
+
 	AABB GetAABB() const;
 	std::optional<AABB> GetAttackAABB() const;
 
@@ -66,6 +76,18 @@ public:
 	void SetMapChipField(MapChipField* mapChipField) { mapChipField_ = mapChipField; }
 	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; }
 	void SetPlayerHp(PlayerHp* playerHp) { playerHp_ = playerHp; }
+
+	// ★ 追加: 雲データ参照の設定関数
+	void SetCloudDatas(std::vector<BlockData*>* cloudDatas) { cloudDatas_ = cloudDatas; }
+
+	// ★ 追加: 接地状態の取得関数
+	bool IsOnGround() const { return onGround_; }
+
+	// ★ 追加: Y座標の加算関数（雲の揺れ追従用）
+	void AddPositionY(float deltaY) { worldTransform_.translation_.y += deltaY; }
+
+	// ★ 追加: 足元の雲に衝撃を与える関数
+	void ApplyCloudImpulse(float impulse);
 
 	// ★ プレイヤーのモデルにも、マップタイルなどと同じライトグループ（平行光源・太陽の回転など）を設定する
 	void ApplyLightManager(const LightManager& lightManager);
@@ -115,6 +137,9 @@ public:
 	void CheckScreenEdgeCollision();
 	KamataEngine::Vector3 CornerPosition(const KamataEngine::Vector3& center, Corner corner);
 
+	// ★ 追加: 周辺の雲マップチップ情報を取得する関数
+	std::vector<CloudBlockInfo> GetNearbyClouds(const KamataEngine::Vector3& pos) const;
+
 	void CreateHitEffect(const KamataEngine::Vector3& position);
 	void RequestKnockback() { isKnockbackRequested_ = true; }
 	void BehaviorKnockbackInitialize();
@@ -128,16 +153,11 @@ public:
 	void BehaviorHammerSkillUpdate();
 
 	// ★ 処刑演出（中ボス撃破後の連撃）用
-	// 処刑演出の開始：指定した位置・向きに固定する（通常の移動・攻撃・被ダメージは受け付けなくなる）
 	void BeginExecution(const KamataEngine::Vector3& position, LRDirection direction);
-	// 処刑演出の終了：通常の操作に戻る
 	void EndExecution();
 	bool IsExecuting() const { return isExecuting_; }
-	// ハンマーの連撃を 1 回開始する（comboIndex: 連撃の段 0 ~ 4）。スイング中は無視して false を返す
 	bool StartExecutionSwing(uint32_t comboIndex);
-	// ハンマーをスイング中かどうか
 	bool IsExecutionSwinging() const { return executionSwinging_; }
-	// スイングが当たるタイミングで 1 回だけ true を返す（カメラ演出・エフェクトのきっかけに使う）
 	bool ConsumeExecutionHit() {
 		bool hit = executionHitPending_;
 		executionHitPending_ = false;
@@ -211,4 +231,8 @@ private:
 	bool executionSwinging_ = false;   // ハンマーのスイング中
 	bool executionHitPending_ = false; // スイングが当たったタイミング（ConsumeExecutionHit で取得される）
 	bool executionHitDone_ = false;    // このスイングで当たりを通知済みか
+
+	std::vector<BlockData*>* cloudDatas_ = nullptr; // ★ 追加: 雲データ参照ポインタ
+	float prevVelocityY_ = 0.0f;                    // ★ 追加: 前フレームのY速度（着地衝撃計算用）
+	bool wasOnGround_ = false;                      // ★ 追加: 前フレームの接地フラグ
 };

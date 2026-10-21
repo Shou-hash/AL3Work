@@ -12,9 +12,10 @@ class SelectScene {
 
 public:
 	enum class Phase {
-		FadeIn,  // フェードイン中
-		Normal,  // 通常（キー入力待ち）
-		FadeOut, // フェードアウト中
+		FadeIn,            // フェードイン中
+		Normal,            // 通常（キー入力待ち）
+		SelectPerformance, // ★ 追加: 確定時のカメラ演出中
+		FadeOut,           // フェードアウト中
 	};
 
 	~SelectScene();
@@ -37,6 +38,9 @@ private:
 	KamataEngine::Model* modelSkydome_ = nullptr;
 	std::unique_ptr<Skydome> skydome = nullptr;
 
+	// ★ 操作解説用矢印モデルポインタ
+	KamataEngine::Model* modelArrow_ = nullptr;
+
 	// ★ 朝のライティング
 	std::unique_ptr<LightManager> lightManager_ = nullptr;
 
@@ -51,10 +55,19 @@ private:
 	KamataEngine::Model* stageSprites_[kNumStages] = {nullptr};
 	KamataEngine::WorldTransform worldTransforms_[kNumStages];
 
+	// ★ 左右矢印用 WorldTransform（0: 左矢印, 1: 右矢印）
+	KamataEngine::WorldTransform arrowTransforms_[2];
+	float arrowAnimationTimers_[2] = {0.0f, 0.0f}; // 矢印押下時のスケールアニメーションタイマー
+
 	// ★ 演出用変数
 	float animationTimers_[kNumStages] = {0.0f}; // 各ステージのスケール補間用タイマー
 	float flashTimer_ = 0.0f;                    // 選択中ステージの明滅用タイマー
 
 	// ★ 各ステージモデルのランダム回転速度（X, Y, Z軸）
 	KamataEngine::Vector3 rotationSpeeds_[kNumStages] = {};
+
+	// ★ 確定時のカメラ演出用変数
+	float cameraPerformanceTimer_ = 0.0f;
+	KamataEngine::Vector3 cameraStartPos_{};
+	KamataEngine::Vector3 cameraTargetPos_{};
 };
