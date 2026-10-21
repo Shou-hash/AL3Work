@@ -10,7 +10,8 @@
 
 class MapChipField;
 class CameraController;
-class PlayerHp; // ★ 追加
+class PlayerHp;     // ★ 追加
+class LightManager; // ★ 追加：ライティング設定用
 
 enum class LRDirection {
 	kLeft,
@@ -65,6 +66,9 @@ public:
 	void SetMapChipField(MapChipField* mapChipField) { mapChipField_ = mapChipField; }
 	void SetCameraController(CameraController* cameraController) { cameraController_ = cameraController; }
 	void SetPlayerHp(PlayerHp* playerHp) { playerHp_ = playerHp; }
+
+	// ★ プレイヤーのモデルにも、マップタイルなどと同じライトグループ（平行光源・太陽の回転など）を設定する
+	void ApplyLightManager(const LightManager& lightManager);
 
 	// ★ 死亡アニメーション演出が完了したか判定する関数
 	bool IsDeathAnimationFinished() const { return isDeathAnimationFinished_; }

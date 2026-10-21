@@ -86,6 +86,7 @@ GameScene::~GameScene() {
 	for (auto* modelCrystal : modelFinalBossCrystals_) { // ★ 追加
 		delete modelCrystal;
 	}
+	delete modelFinalBossCrystal22_; // ★ 攻撃専用クリスタルの解放
 
 	for (BaseEffect* effect : effects_) {
 		delete effect;
@@ -208,6 +209,8 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 		std::string modelName = "finalBossCrystal_" + std::to_string(i + 1);
 		modelFinalBossCrystals_[i] = Model::CreateFromOBJ(modelName, true);
 	}
+	// ★ 攻撃専用の finalBossCrystal_22 モデルを別に読み込む
+	modelFinalBossCrystal22_ = Model::CreateFromOBJ("finalBossCrystal_22", true);
 
 	modelHammer_ = Model::CreateFromOBJ("hummer", true);
 
@@ -242,6 +245,7 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 		for (KamataEngine::Model* model : modelFinalBossCrystals_) { // ★ 追加
 			lightManager_->ApplyToModel(model, LightManager::GroupType::kBoss);
 		}
+		lightManager_->ApplyToModel(modelFinalBossCrystal22_, LightManager::GroupType::kBoss);
 		// 奥行き背景は中景と遠景で別々のライトグループ（遠景ほど暗く、彩度も低い）
 		if (backgroundBlocks_) {
 			backgroundBlocks_->SetLightGroups(
@@ -260,6 +264,11 @@ void GameScene::Initialize(StageManager* stageDataManager) {
 	cameraController_->Initialize(&camera_);
 
 	GenerateFieldObjects();
+
+	// ★ プレイヤーのモデルにもマップタイルなどと同じライティング（平行光源）を設定する
+	if (player_ && lightManager_) {
+		player_->ApplyLightManager(*lightManager_);
+	}
 
 	if (player_) {
 		cameraController_->SetTarget(player_.get());
@@ -446,7 +455,8 @@ void GameScene::GenerateEnemy(uint32_t xIndex, uint32_t yIndex) {
 	}
 	case 3: { // ★ E3 (ラスボス FinalBoss)
 		FinalBoss* finalBoss = new FinalBoss();
-		finalBoss->Initialize(modelFinalBossBody_, modelFinalBossHands_, modelFinalBossCrystals_, &camera_, enemyPosition); // ★ 引数追加
+		finalBoss->Initialize(modelFinalBossBody_, modelFinalBossHands_, modelFinalBossCrystals_, modelFinalBossCrystal22_, &camera_, enemyPosition); // ★ 引数追加
+		finalBoss->SetMapChipField(mapChipField_); // ★ 追加: 地形衝突判定用マップチップフィールドを設定
 		enemies_.push_back(finalBoss);
 
 		// ★ カメラコントローラーにラスボスを登録
@@ -667,6 +677,9 @@ void GameScene::UpdateLightEffects() {
 		playerPos = player_->GetWorldTransform().translation_;
 	}
 
+	// ★ ラスボスを倒したかどうか（倒したら夜から朝のライティングへ戻し、スポットライトも消す）
+	const bool bossDefeated = (finalBoss && finalBoss->IsDefeated());
+
 	// ★ 変更：ラスボスが出現演出を開始（kStandby解除）した瞬間のみ光の演出を開始
 	if (finalBoss && !isBossLightTriggered_) {
 		if (finalBoss->GetState() != FinalBoss::State::kStandby) {
@@ -674,14 +687,20 @@ void GameScene::UpdateLightEffects() {
 		}
 	}
 	// 出現演出が始まるまでは赤いスポットライトを消す（朝のライティングは常に有効）
-	lightManager_->SetLightsEnabled(isBossLightTriggered_);
+	// ★ ラスボスを倒したら、プレイヤーと雑魚敵たちの赤いスポットライトもなめらかに消す
+	lightManager_->SetLightsEnabled(isBossLightTriggered_ && !bossDefeated);
 
 	// ラスボスの出現演出に合わせて、朝のライティングから夜のライティングへ段々切り替える
 	float night = 0.0f;
 	bool isFrenzy = false;
 	if (finalBoss) {
-		night = finalBoss->GetSpawnProgress();
-		isFrenzy = (finalBoss->GetState() == FinalBoss::State::kFrenzyInit || finalBoss->GetState() == FinalBoss::State::kFrenzy);
+		// ★ 変更: ラスボスが倒された場合は夜から朝のライティングへ切り替える
+		if (finalBoss->IsDefeated()) {
+			night = 0.0f;
+		} else {
+			night = finalBoss->GetSpawnProgress();
+			isFrenzy = (finalBoss->GetState() == FinalBoss::State::kFrenzyInit || finalBoss->GetState() == FinalBoss::State::kFrenzy);
+		}
 	}
 	lightManager_->SetNightFactor(night);
 	lightManager_->SetBossFrenzy(isFrenzy);
@@ -725,7 +744,15 @@ void GameScene::UpdateLightEffects() {
 	lightManager_->SetShieldEnemySpot(hasShieldEnemy, shieldEnemyPos);
 
 	// ラスボスの発光（スポットライトの代わりに、モデル本来の色を保ったまま本体を光らせる。出現演出が始まってから）
-	lightManager_->SetBossGlow(finalBoss && finalBoss->GetState() != FinalBoss::State::kStandby);
+	// ★ 撃破アニメーションが終わるまでは光らせたままにする（終わったらなめらかに消える）
+	lightManager_->SetBossGlow(finalBoss && !finalBoss->IsDefeatAnimationFinished() && finalBoss->GetState() != FinalBoss::State::kStandby);
+	if (finalBoss) {
+		lightManager_->SetCrystalPointLight(finalBoss->IsCrystal22LightActive(), finalBoss->GetCrystal22Position());
+
+		// ★ 流星群攻撃中に降下する finalBossCrystal_22 へ黄色のポイントライトを適用
+		std::vector<Vector3> meteorPositions = finalBoss->GetActiveMeteorPositions();
+		lightManager_->SetMeteorPointLights(finalBoss->IsMeteorShowerActive(), meteorPositions);
+	}
 }
 
 // ★ 処刑演出の開始
@@ -993,6 +1020,15 @@ void GameScene::UpdatePlay() {
 			if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
 				boss->SetPlayer(player_.get());
 			}
+			if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
+				finalBoss->SetPlayer(player_.get());
+				// ★ ラスボス戦でのみ、中ボスのHPバーの可視性をラスボスの状態と連動させる
+				for (BaseEnemy* bossCandidate : enemies_) {
+					if (BossEnemy* bossEnemy = dynamic_cast<BossEnemy*>(bossCandidate)) {
+						bossEnemy->SetHpBarVisible(finalBoss->IsCrystal22Landed());
+					}
+				}
+			}
 			enemy->Update();
 
 			if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
@@ -1045,8 +1081,22 @@ void GameScene::UpdatePlay() {
 
 	if (player_) {
 		auto attackAABB = player_->GetAttackAABB();
+		if (!attackAABB.has_value()) {
+			crystal22AttackConsumed_ = false;
+		}
 		if (attackAABB.has_value()) {
 			for (BaseEnemy* enemy : enemies_) {
+				if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
+					const Vector3& crystalPos = finalBoss->GetCrystal22Position();
+					const auto& attack = attackAABB.value();
+					// ★ 変更: 当たり判定のマージンを1.2fに広げて攻撃が確実に当たるように調整
+					const bool crystalHit = crystalPos.x >= attack.min.x - 1.2f && crystalPos.x <= attack.max.x + 1.2f && crystalPos.y >= attack.min.y - 1.2f && crystalPos.y <= attack.max.y + 1.2f;
+					if (finalBoss->IsCrystal22Landed() && crystalHit && !crystal22AttackConsumed_) {
+						finalBoss->HitCrystal22();
+						crystal22AttackConsumed_ = true;
+						AudioManager::GetInstance()->PlaySE(SEType::kHummer);
+					}
+				}
 				if (enemy && !enemy->IsDead() && IsCollision(attackAABB.value(), enemy->GetAABB())) {
 					BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy);
 					bool isHitSuccess = true;
@@ -1119,6 +1169,22 @@ void GameScene::UpdatePlay() {
 			if (boss && boss->IsDefeated() && !boss->IsDead()) {
 				StartExecution(boss);
 				break;
+			}
+		}
+	}
+
+	// ★ ラスボスの撃破アニメーションが終わったら、ゴールを表示してゴール追従カメラ演出を開始する
+	if (!isBossDefeatedGoalPerfStarted_) {
+		for (BaseEnemy* enemy : enemies_) {
+			if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
+				if (finalBoss->IsDefeatAnimationFinished() && goal_) {
+					goal_->SetIsActive(true);
+					if (cameraController_) {
+						cameraController_->StartGoalPerformance(goal_->GetWorldTransform().translation_);
+					}
+					isBossDefeatedGoalPerfStarted_ = true;
+					break;
+				}
 			}
 		}
 	}

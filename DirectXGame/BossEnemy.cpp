@@ -53,6 +53,7 @@ void BossEnemy::Initialize(
 	damageCooldown_ = 0.0f;
 	isDead_ = false;
 	isCollisionDisabled_ = false;
+	hpBarVisible_ = true;
 	lrDirection_ = BossEnemyLRDirection::kLeft;
 
 	// ★ 攻撃状態初期化
@@ -353,7 +354,7 @@ void BossEnemy::Update() {
 	worldTransformRight_.TransferMatrix();
 
 	// ★HPバーの表示座標設定（ワールド座標からスクリーン座標へ変換）
-	if (camera_ && spriteHpBG_ && spriteHpBar_) {
+	if (hpBarVisible_ && camera_ && spriteHpBG_ && spriteHpBar_) {
 		KamataEngine::Vector3 hpWorldPos = worldTransform_.translation_;
 		hpWorldPos.y += 3.2f; // ボスの頭上に配置
 
@@ -504,11 +505,15 @@ void BossEnemy::Draw() {
 	}
 
 	// HPバーの描画
-	if (spriteHpBG_ && spriteHpBar_ && hp_ > 0) {
+	if (hpBarVisible_ && spriteHpBG_ && spriteHpBar_ && hp_ > 0) {
+		KamataEngine::Model::PostDraw(); // ★ 一旦3Dモデル描画を締める
+
 		KamataEngine::Sprite::PreDraw();
 		spriteHpBG_->Draw();
 		spriteHpBar_->Draw();
 		KamataEngine::Sprite::PostDraw();
+
+		KamataEngine::Model::PreDraw(); // ★ 後続の処理のために3D描画に戻す
 	}
 }
 

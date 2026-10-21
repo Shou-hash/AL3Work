@@ -73,6 +73,9 @@ private:
 	void UpdateGoalPerformance(); // ★追加：ゴール演出更新
 	void UpdateExecution();       // ★ 処刑演出のカメラ更新
 
+	// ★ ラスボスの攻撃・撃破に合わせたカメラ演出（シェイクではなく、ズーム・移動・傾きで見せる）。この関数でカメラを更新したら true
+	bool UpdateFinalBossCinematic();
+
 	// プレイヤーを画面内に押し戻す処理
 	void ConstrainPlayerInScreen();
 
@@ -140,6 +143,32 @@ private:
 	static inline const float kExecutionTiltRoll = 0.06f;     // カメラの傾き（斜め：Z 軸まわり）
 	static inline const float kExecutionTiltPitch = 0.035f;   // カメラの傾き（X 軸まわり）
 	static inline const float kExecutionPunchDistance = 1.2f; // 1 発ごとに少しだけ寄る距離
+
+	// ★ ラスボスの攻撃・撃破のカメラ演出用変数
+	enum class BossCinematic {
+		kNone,        // 演出なし（通常の追従）
+		kAttackIntro, // 攻撃開始: ラスボスへ引いて、空へ飛び立つクリスタルを見上げる
+		kAttackOut,   // 攻撃開始の演出を終えて、プレイヤー追従へ戻る
+		kDefeat,      // 撃破: 崩れ落ちるラスボスへゆっくり寄っていく
+	};
+	BossCinematic bossCinematic_ = BossCinematic::kNone;
+	float cinematicTimer_ = 0.0f;                   // 各演出の経過時間
+	KamataEngine::Vector3 cinematicStartPos_{};     // 各演出の開始時のカメラ位置
+	KamataEngine::Vector3 cinematicStartRot_{};     // 各演出の開始時のカメラの角度
+	KamataEngine::Vector3 cinematicBaseRotation_{}; // 演出前のカメラの角度（傾きを元に戻すため）
+	KamataEngine::Vector3 cinematicOffset_{};       // 追従カメラの目標位置に足すオフセット（攻撃中に少し引くため）
+	bool isBossCinematicWide_ = false;              // ボスを映すために移動範囲の制限を外す演出中か
+	bool wasBossAttacking_ = false;                 // 前のフレームでラスボスが攻撃中だったか（攻撃開始の検出用）
+	float attackFollowBlend_ = 0.0f;                // 攻撃中の「少し引いて空を見上げる」追従の強さ（0.0 ~ 1.0）
+
+	static inline const float kAttackIntroInTime = 0.9f;    // 攻撃開始: ラスボスへ引くのにかかる時間
+	static inline const float kAttackIntroMinTime = 2.0f;   // 攻撃開始: 最低限ラスボスを映す時間
+	static inline const float kAttackIntroMaxTime = 3.4f;   // 攻撃開始: ラスボスを映す最大時間（流星群が降り始める前に戻る）
+	static inline const float kAttackOutTime = 1.0f;        // 攻撃開始: プレイヤーへ戻るのにかかる時間
+	static inline const float kAttackCameraStartZ = -24.0f; // 攻撃開始: ラスボスを映すカメラの Z 座標
+	static inline const float kDefeatCameraInTime = 0.9f;   // 撃破: ラスボスへ移動するのにかかる時間
+	static inline const float kDefeatCameraFarZ = -22.0f;   // 撃破: 最初のカメラの Z 座標（ラスボス全体）
+	static inline const float kDefeatCameraNearZ = -14.0f;  // 撃破: 最後のカメラの Z 座標（ゆっくり寄る）
 
 	// ★追加：ラスボス発狂シェイク減衰用変数
 	float frenzyShakeTimer_ = 0.0f;

@@ -1,6 +1,7 @@
 #pragma once
 #include "Fade.h"
 #include "Kamataengine.h"
+#include "LightManager.h" // ★ 追加
 #include "Skydome.h"
 #include <memory>
 #include <vector>
@@ -44,6 +45,9 @@ private:
 	// ★ モデルポインタ
 	KamataEngine::Model* modelSkydome_ = nullptr;
 	std::unique_ptr<Skydome> skydome = nullptr;
+
+	// ★ 朝のライティング（太陽がゆっくり回転する）
+	std::unique_ptr<LightManager> lightManager_ = nullptr;
 
 	// ステージマネージャ参照用のポインタ
 	StageManager* stageManager_ = nullptr;

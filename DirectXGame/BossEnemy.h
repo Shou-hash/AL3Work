@@ -37,6 +37,7 @@ public:
 	AABB GetAABB() const override;
 
 	int32_t GetHp() const { return hp_; }
+	void SetHpBarVisible(bool visible) { hpBarVisible_ = visible; }
 
 	// ★ プレイヤーポインタの設定
 	void SetPlayer(Player* player) { player_ = player; }
@@ -123,4 +124,5 @@ private:
 	uint32_t textureHandle_ = 0;
 	KamataEngine::Sprite* spriteHpBG_ = nullptr;
 	KamataEngine::Sprite* spriteHpBar_ = nullptr;
+	bool hpBarVisible_ = false;
 };

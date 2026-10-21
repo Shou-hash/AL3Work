@@ -94,6 +94,10 @@ public:
 
 	// ★ ラスボスの自己発光（スポットライトの代わり。モデル本来の色を保ったまま光らせる）。出現演出が始まったら true
 	void SetBossGlow(bool active) { bossGlowActive_ = active; }
+	void SetCrystalPointLight(bool active, const KamataEngine::Vector3& position);
+
+	// ★ 流星群攻撃中の finalBossCrystal_22 用ポイントライト（黄色）の設定
+	void SetMeteorPointLights(bool active, const std::vector<KamataEngine::Vector3>& positions);
 
 	// ImGui描画関数
 	void DrawImGui();
@@ -153,7 +157,12 @@ private:
 	bool manualEnabled_ = true;
 	float manualNight_ = 0.0f;
 
-	// 太陽の回転演出
-	bool isSunRotating_ = false; // ONだと毎フレーム方向が上書きされるのでデフォルトOFF
-	float sunAngle_ = 0.0f;
+	// 太陽の回転演出（朝の太陽が、左（日の出）➔ 上（昼）➔ 右（日の入り）➔ 下（地平線の下）と円を描いて一周する）
+	bool isSunRotating_ = true; // ONだと毎フレーム太陽の向きが上書きされる（ImGui で向きを手動調整すると OFF になる）
+	float sunAngle_ = 0.3f;     // 太陽の角度（0 = 左の地平線、π/2 = 真上、π = 右の地平線、3π/2 = 真下）
+
+	// ★ 太陽の上昇・下降による光の変化（朝の太陽の回転中に毎フレーム更新される）
+	float sunBrightnessRate_ = 1.0f; // 太陽光の明るさの倍率（地平線の下では暗くなる）
+	float sunWarmRate_ = 0.0f;       // 朝焼け・夕焼けの色味の強さ（太陽が低いほど強い）
+	float sunAmbientRate_ = 1.0f;    // 環境光の明るさの倍率（昼は明るく、地平線の下では少し暗くなる）
 };

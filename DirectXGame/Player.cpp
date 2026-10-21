@@ -6,6 +6,7 @@
 #include "CameraController.h"
 #include "Enemy.h" // ★追加：アイテム状態チェックのため
 #include "GlobalVariables.h"
+#include "LightManager.h" // ★ 追加：ライトグループ設定用
 #include "MapChipField.h"
 #include "Matrix4x4.h"
 #include "PlayerHp.h"    // ★追加：PlayerHpの関数を使用するため
@@ -774,6 +775,22 @@ void Player::MapCollisionLeft(CollisionMapInfo& info) {
 		float blockRightX = blockPos.x + 0.5f;
 		info.moveAmount.x = blockRightX - (worldTransform_.translation_.x - kPaddingLeft) + 0.005f;
 	}
+}
+
+// ★ プレイヤーのモデルにマップタイルなどと同じライトグループ（kWorld）を設定する
+void Player::ApplyLightManager(const LightManager& lightManager) {
+	// プレイヤー自身が持つモデル（本体・ハンマー・ヒットエフェクト）
+	lightManager.ApplyToModel(modelPlayer_, LightManager::GroupType::kWorld);
+	lightManager.ApplyToModel(modelHammer_, LightManager::GroupType::kWorld);
+	lightManager.ApplyToModel(modelHitEffect_, LightManager::GroupType::kWorld);
+
+	// 頭・体・左手・右手の各部位のモデルは PlayerAnimation が持っているため、
+	// PlayerAnimation に ApplyLightManager 関数があればそちらでも設定する（無い場合は何もしない）
+	[&lightManager](auto& animation) {
+		if constexpr (requires { animation.ApplyLightManager(lightManager); }) {
+			animation.ApplyLightManager(lightManager);
+		}
+	}(animation_);
 }
 
 void Player::Draw() {

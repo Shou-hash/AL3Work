@@ -61,6 +61,14 @@ void EndScene::Initialize(StageManager* stageDataManager) {
 
 	// 初期選択項目のタイマーを満了（最大サイズ）状態にする
 	animationTimers_[static_cast<int32_t>(currentSelect_)] = 1.0f;
+
+	// ★ 朝のライティングを設定（ラスボスの夜・赤いスポットライトは使わない）
+	lightManager_ = std::make_unique<LightManager>();
+	lightManager_->Initialize();
+	lightManager_->ApplyToModel(modelSkydome_, LightManager::GroupType::kWorld);
+	for (int32_t i = 0; i < kNumMenus; ++i) {
+		lightManager_->ApplyToModel(menuSprites_[i], LightManager::GroupType::kWorld);
+	}
 }
 
 void EndScene::Update() {
@@ -70,6 +78,9 @@ void EndScene::Update() {
 	skydome->Update();
 
 	camera_.UpdateMatrix();
+
+	// ★ 朝のライティングの更新（太陽の回転など）
+	lightManager_->Update();
 
 	// 演出用の共通タイマーを進める
 	flashTimer_ += 0.08f;
@@ -162,6 +173,9 @@ void EndScene::Update() {
 		}
 		ImGui::TreePop();
 	}
+
+	// ★ ライティング（光沢の強さ・太陽の回転など）の調整
+	lightManager_->DrawImGui();
 
 	ImGui::End();
 #endif

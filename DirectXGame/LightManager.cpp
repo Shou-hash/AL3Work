@@ -39,6 +39,18 @@ Vector3 Lerp(const Vector3& a, const Vector3& b, float t) { return {a.x + (b.x -
 
 Vector3 Scale(const Vector3& a, float s) { return {a.x * s, a.y * s, a.z * s}; }
 
+// スムーズステップ（edge0 以下で 0.0、edge1 以上で 1.0 になめらかに変化する）
+float SmoothStep(float edge0, float edge1, float x) {
+	float t = (x - edge0) / (edge1 - edge0);
+	t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+	return t * t * (3.0f - 2.0f * t);
+}
+
+// ★ 太陽の回転演出のパラメータ
+constexpr float kSunPeriodSeconds = 60.0f;         // 太陽が円を一周するのにかかる時間（秒）。大きいほどゆっくり回る
+constexpr float kSunDepth = 0.35f;                 // 光の奥行き成分（正面の面にも少し光を当てて、のっぺりしないようにする）
+const Vector3 kSunWarmColor = {1.0f, 0.5f, 0.25f}; // 朝焼け・夕焼けの色
+
 // 彩度と明るさを調整した色を返す
 Vector3 AdjustColor(const Vector3& color, float brightness, float saturation) {
 	float gray = color.x * 0.299f + color.y * 0.587f + color.z * 0.114f;
@@ -65,6 +77,18 @@ void InitRedSpot(LightManager::SpotState& s, float intensity, float radius) {
 
 } // namespace
 
+void LightManager::SetCrystalPointLight(bool active, const KamataEngine::Vector3& position) {
+	for (GroupType type : {GroupType::kWorld, GroupType::kBoss}) {
+		PointState& p = GetSet(type).pointLights[0];
+		p.active = active;
+		p.color = {0.25f, 0.85f, 1.0f};
+		p.intensity = active ? 8.0f : 0.0f;
+		p.position = position;
+		p.radius = 18.0f;
+		p.decay = 1.5f;
+	}
+}
+
 void LightManager::Initialize() {
 	// エンジン標準のライトグループを生成（種類ごとに 1 つ）
 	for (auto& set : lightSets_) {
@@ -72,6 +96,7 @@ void LightManager::Initialize() {
 	}
 
 	lightType_ = LightingType::kHalfLambert;
+	isSunRotating_ = true; // ★ 朝の太陽をゆっくり回転させる
 	lightsEnabled_ = false;
 	lightFade_ = 0.0f;
 	nightTarget_ = 0.0f;
@@ -140,12 +165,12 @@ void LightManager::Initialize() {
 	// メイン平行光源
 	bossLights.dirLights[0].active = true;
 	InitDirLook(bossLights.dirLights[0].morning, {-0.9f, -0.3f, 0.05f}, {1.0f, 1.0f, 1.0f}, 1.6f, 1.0f); // ★ 光の色を白(1.0, 1.0, 1.0)に変更
-	InitDirLook(bossLights.dirLights[0].night, {0.0f, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, 1.33f, 1.0f);     // ★ 光の色を白(1.0, 1.0, 1.0)に変更
+	InitDirLook(bossLights.dirLights[0].night, {0.0f, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f}, 1.33f, 1.0f);    // ★ 光の色を白(1.0, 1.0, 1.0)に変更
 
 	// ★ ラスボスのハイライト用補助光源（手前・斜め上から照らして鮮やかな光沢を出す）
 	bossLights.dirLights[1].active = true;
 	InitDirLook(bossLights.dirLights[1].morning, {0.4f, -0.6f, -0.8f}, {1.0f, 1.0f, 1.0f}, 1.2f, 1.0f); // ★ 光の色を白(1.0, 1.0, 1.0)に変更
-	InitDirLook(bossLights.dirLights[1].night, {0.3f, -0.5f, -0.8f}, {1.0f, 1.0f, 1.0f}, 0.063f, 1.0f);   // ★ 光の色を白(1.0, 1.0, 1.0)に変更
+	InitDirLook(bossLights.dirLights[1].night, {0.3f, -0.5f, -0.8f}, {1.0f, 1.0f, 1.0f}, 0.063f, 1.0f); // ★ 光の色を白(1.0, 1.0, 1.0)に変更
 
 	TransferBuffer();
 }
@@ -173,15 +198,35 @@ void LightManager::Update() {
 	// 夜の度合いを目標値へなめらかに近づける（出現演出の間に朝から夜へ段々暗くなる）
 	nightCurrent_ += (nightGoal - nightCurrent_) * kNightSmoothing;
 
-	// 演出: 朝の太陽（メイン平行光源）をゆっくり回転させて光と影の表情を変化させる
+	// 演出: 朝の太陽（メイン平行光源）をゆっくり円を描くように回転させて光と影の表情を変化させる
+	//   左（日の出）➔ 上（昼）➔ 右（日の入り）➔ 下（地平線の下）と一周する。
+	//   全てのライトグループの太陽の向きを同じにして、ゲーム内の全モデルのハイライト（光沢）の位置も太陽に合わせて動かす。
+	//   太陽が高いほど明るく白い光、低いほど朝焼け・夕焼けの暖かい光、地平線の下では暗くなる（上昇と下降）
 	if (isSunRotating_) {
-		sunAngle_ += 0.005f;
+		sunAngle_ += (std::numbers::pi_v<float> * 2.0f) / (kSunPeriodSeconds * 60.0f);
 		if (sunAngle_ > std::numbers::pi_v<float> * 2.0f) {
 			sunAngle_ -= std::numbers::pi_v<float> * 2.0f;
 		}
-		LightSet& worldLights = GetSet(GroupType::kWorld);
-		worldLights.dirLights[0].morning.direction.x = std::cos(sunAngle_);
-		worldLights.dirLights[0].morning.direction.z = std::sin(sunAngle_);
+
+		// 太陽の位置（画面上の円軌道）。sunY が太陽の高さ（1.0 = 真上、0.0 = 地平線、-1.0 = 真下）
+		const float sunX = -std::cos(sunAngle_);
+		const float sunY = std::sin(sunAngle_);
+
+		// 光の進む向き = 太陽から見た向き（太陽の位置の逆）
+		const Vector3 sunRay = {-sunX, -sunY, kSunDepth};
+		for (LightSet& set : lightSets_) {
+			set.dirLights[0].morning.direction = sunRay;
+		}
+
+		// 太陽の高さによる明るさ・色味・環境光の変化
+		const float daylight = SmoothStep(-0.2f, 0.4f, sunY);
+		sunBrightnessRate_ = 0.15f + 0.85f * daylight;
+		sunAmbientRate_ = 0.8f + 0.2f * daylight;
+		sunWarmRate_ = 1.0f - SmoothStep(0.05f, 0.55f, sunY);
+	} else {
+		sunBrightnessRate_ = 1.0f;
+		sunAmbientRate_ = 1.0f;
+		sunWarmRate_ = 0.0f;
 	}
 
 	TransferBuffer();
@@ -204,12 +249,18 @@ void LightManager::ApplyLightSet(LightSet& set, bool isBoss) {
 	const bool isSpotOn = lightFade_ > 0.0001f;
 
 	// 環境光：朝の環境光から夜の環境光へ
-	group->SetAmbientColor(Lerp(set.ambientMorning, set.ambientNight, night));
+	// ★ 太陽の高さによる環境光の変化は、朝のライティングの度合い（1.0 - night）に応じて反映する
+	const float ambientRate = 1.0f + (sunAmbientRate_ - 1.0f) * (1.0f - night);
+	group->SetAmbientColor(Scale(Lerp(set.ambientMorning, set.ambientNight, night), ambientRate));
 
 	// 平行光源 0,1：朝の見た目から夜の見た目へ（向き・色・明るさ・彩度をまとめて補間）
 	for (int i = 0; i < kUsableDirLights; ++i) {
 		const DirState& d = set.dirLights[i];
 		Vector3 morningColor = AdjustColor(d.morning.color, d.morning.brightness, d.morning.saturation);
+		if (i == 0 && isSunRotating_) {
+			// ★ メインの太陽: 低い位置では朝焼け・夕焼けの暖かい色に、地平線の下では暗くする
+			morningColor = Scale(Lerp(morningColor, kSunWarmColor, sunWarmRate_ * 0.5f), sunBrightnessRate_);
+		}
 		Vector3 nightColor = AdjustColor(d.night.color, d.night.brightness, d.night.saturation);
 		Vector3 direction = Lerp(d.morning.direction, d.night.direction, night);
 		group->SetDirLightActive(i, d.active);
@@ -273,6 +324,33 @@ void LightManager::ApplyLightSet(LightSet& set, bool isBoss) {
 	group->Update();
 }
 
+// ★ 流星群攻撃中の finalBossCrystal_22 用ポイントライト（黄色）の設定
+void LightManager::SetMeteorPointLights(bool active, const std::vector<KamataEngine::Vector3>& positions) {
+	for (GroupType type : {GroupType::kWorld, GroupType::kBoss}) {
+		PointState& p = GetSet(type).pointLights[1];
+		if (active && !positions.empty()) {
+			p.active = true;
+			p.color = {1.0f, 0.90f, 0.15f}; // ★ 鮮やかな黄色
+			p.intensity = 15.0f;            // ★ 強めの光で流星群を照らす
+			p.radius = 22.0f;
+			p.decay = 1.0f;
+
+			// アクティブな流星群（finalBossCrystal_22）の位置にポイントライトを配置
+			KamataEngine::Vector3 avgPos = {0.0f, 0.0f, 0.0f};
+			for (const auto& pos : positions) {
+				avgPos.x += pos.x;
+				avgPos.y += pos.y;
+				avgPos.z += pos.z;
+			}
+			float count = static_cast<float>(positions.size());
+			p.position = {avgPos.x / count, avgPos.y / count, avgPos.z / count};
+		} else {
+			p.active = false;
+			p.intensity = 0.0f;
+		}
+	}
+}
+
 void LightManager::ApplyToModel(Model* model, GroupType type) const {
 	if (model) {
 		model->SetLightGroup(GetSet(type).group.get());
@@ -333,6 +411,7 @@ void LightManager::DrawLightSetImGui(const char* name, LightSet& set, bool isWor
 
 			if (isWorld && i == 0) {
 				ImGui::Checkbox("Sun Rotation", &isSunRotating_);
+				ImGui::SliderAngle("Sun Angle (0:Left 90:Top 180:Right 270:Bottom)", &sunAngle_, 0.0f, 360.0f);
 			}
 			ImGui::TreePop();
 		}

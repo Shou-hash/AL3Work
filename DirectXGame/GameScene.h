@@ -87,7 +87,7 @@ private:
 	KamataEngine::Model* modelPlayerLeft_ = nullptr;
 	KamataEngine::Model* modelPlayerRight_ = nullptr;
 
-	// 　ボス用モデルポインタ
+	//  ボス用モデルポインタ
 	KamataEngine::Model* modelBossHead_ = nullptr;
 	KamataEngine::Model* modelBossBody_ = nullptr;
 	KamataEngine::Model* modelBossLeft_ = nullptr;
@@ -115,7 +115,9 @@ private:
 	// クラスメンバ変数にモデルポインタを追加(ラスボス)
 	KamataEngine::Model* modelFinalBossBody_ = nullptr;
 	std::array<KamataEngine::Model*, FinalBoss::kNumHands> modelFinalBossHands_{};
-	std::array<KamataEngine::Model*, FinalBoss::kNumCrystals> modelFinalBossCrystals_{}; // ★ 追加
+	std::array<KamataEngine::Model*, FinalBoss::kNumCrystals> modelFinalBossCrystals_{}; // ★ 追加 (22個)
+	KamataEngine::Model* modelFinalBossCrystal22_ = nullptr;                             // ★ 攻撃専用 finalBossCrystal_22
+	bool crystal22AttackConsumed_ = false;                                               // ★ 1回の攻撃判定で多重ヒットしないためのフラグ
 
 	// 2次元配列の型を BlockData* に変更
 	std::vector<std::vector<BlockData*>> blockDatas_;
