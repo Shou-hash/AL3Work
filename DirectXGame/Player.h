@@ -84,7 +84,10 @@ public:
 	bool IsOnGround() const { return onGround_; }
 
 	// ★ 追加: Y座標の加算関数（雲の揺れ追従用）
-	void AddPositionY(float deltaY) { worldTransform_.translation_.y += deltaY; }
+	void AddPositionY(float deltaY) {
+		worldTransform_.translation_.y += deltaY;
+		hammerFixedPosition_.y += deltaY; // ★ ハンマー連撃中の固定座標も一緒に動かす（雲の揺れに追従）
+	}
 
 	// ★ 追加: 足元の雲に衝撃を与える関数
 	void ApplyCloudImpulse(float impulse);
@@ -111,6 +114,13 @@ public:
 	KamataEngine::WorldTransform& GetWorldTransformRight() { return animation_.GetWorldTransformRight(); }
 
 	bool IsDead() const { return isDead_; }
+
+	// ★ 無敵時間（ノックバック中 ＋ ノックバック終了後の kInvincibleDuration 秒間）。この間はダメージを受けず、点滅する
+	bool IsInvincible() const { return behavior_ != Behavior::kDeath && (behavior_ == Behavior::kKnockback || invincibleTimer_ > 0.0f); }
+
+	// ★ ハンマー連撃用: スイング番号（1 回振るごとに増える）と、打撃が当たるタイミングかどうか
+	uint32_t GetHammerSwingId() const { return hammerSwingId_; }
+	bool IsHammerHitFrame() const { return behavior_ == Behavior::kHammerSkill && hammerHitFrame_; }
 	// ★攻撃判定の修正：ハンマー攻撃中も攻撃中として判定
 	bool IsAttacking() const { return (behavior_ == Behavior::kAttack && animation_.GetAttackPhase() == AttackPhase::kDash) || (behavior_ == Behavior::kHammerSkill); }
 
@@ -220,6 +230,16 @@ private:
 	KamataEngine::Model* modelHammer_ = nullptr;
 
 	bool isDeathAnimationFinished_ = false; // ★追加
+
+	// ★ ハンマー連撃中の座標固定・スイング管理用
+	KamataEngine::Vector3 hammerFixedPosition_ = {}; // 連撃中に固定する座標
+	uint32_t hammerSwingId_ = 0;                     // スイング番号（敵への多重ヒット防止に使う）
+	bool hammerHitFrame_ = false;                    // 打撃が当たるタイミングか
+
+	// ★ 無敵時間（ノックバック終了後）用
+	float invincibleTimer_ = 0.0f;                        // ノックバック終了後の無敵時間の残り（秒）
+	float invincibleVisualTimer_ = 0.0f;                  // 無敵中の点滅用タイマー
+	static inline const float kInvincibleDuration = 2.0f; // ノックバック終了後の無敵時間（秒）
 
 	// ★ ハンマー連撃用管理変数
 	uint32_t hammerComboIndex_ = 0;

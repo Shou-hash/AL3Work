@@ -46,6 +46,13 @@ void ShieldEnemy::Initialize(KamataEngine::Model* model, KamataEngine::Camera* c
 	deadTimer_ = 0.0f;
 	isItemSpawnRequested_ = false; // ★追加
 
+	// ★ ハンマー連撃用の初期化
+	comboHitCount_ = 0;
+	lastHammerSwingId_ = 0;
+	comboStunTimer_ = 0.0f;
+	hitReactionTimer_ = 0.0f;
+	hitPushDirX_ = 1.0f;
+
 	// ガード用モデル (ring) のロード
 	if (modelGuardEffect_ == nullptr) {
 		modelGuardEffect_ = KamataEngine::Model::CreateFromOBJ("ring", true);
@@ -190,6 +197,57 @@ void ShieldEnemy::BehaviorGuardUpdate() {
 	}
 }
 
+// ★ ハンマーの連撃を 1 回受ける（ハンマーは盾のガードを崩す）
+bool ShieldEnemy::ReceiveHammerHit(uint32_t swingId, float pushDirX) {
+	// 死亡中、または同じスイングでの多重ヒットは無視する
+	if (isDead_ || behavior_ == Behavior::kDead || swingId == lastHammerSwingId_) {
+		return false;
+	}
+	lastHammerSwingId_ = swingId;
+
+	// 連撃の 1 発目なら、その場で止まる状態へ移行する
+	if (behavior_ != Behavior::kComboHit) {
+		behavior_ = Behavior::kComboHit;
+		comboHitCount_ = 0;
+	}
+
+	++comboHitCount_;
+	comboStunTimer_ = 0.0f;
+	hitReactionTimer_ = 0.0f;
+	hitPushDirX_ = pushDirX;
+
+	// 規定回数に達したら、大きく吹き飛んで倒れる（フィニッシュ）
+	if (comboHitCount_ >= kHammerHitsToDefeat) {
+		OnDead();
+		velocity_ = {pushDirX * 0.06f, 0.30f, 0.0f};
+	}
+	return true;
+}
+
+// ★ 連撃を受けている間の更新（歩かずにその場で止まり、打撃のたびにのけぞって潰れる）
+void ShieldEnemy::BehaviorComboHitUpdate() {
+	comboStunTimer_ += 1.0f / 60.0f;
+	hitReactionTimer_ += 1.0f / 60.0f;
+
+	float t = std::clamp(hitReactionTimer_ / kHitReactionDuration, 0.0f, 1.0f);
+	float impact = (1.0f - t) * (1.0f - t);
+
+	// 向きは止めたまま、のけぞりと潰れで打撃を表現する
+	worldTransform_.rotation_.x = 0.0f;
+	worldTransform_.rotation_.y = ((lrDirection_ == ShieldEnemyLRDirection::kLeft) ? -90.0f : 90.0f) * (std::numbers::pi_v<float> / 180.0f);
+	worldTransform_.rotation_.z = -hitPushDirX_ * 0.35f * impact;
+	worldTransform_.scale_ = {1.0f + 0.25f * impact, 1.0f - 0.25f * impact, 1.0f + 0.25f * impact};
+	worldTransform_.translation_.x += hitPushDirX_ * 0.04f * impact; // 打撃の瞬間だけ少し押される
+
+	// 連撃が途切れたら、通常の歩行へ戻る
+	if (comboStunTimer_ >= kComboRecoverTime) {
+		behavior_ = Behavior::kRoot;
+		comboHitCount_ = 0;
+		worldTransform_.rotation_.z = 0.0f;
+		worldTransform_.scale_ = {1.0f, 1.0f, 1.0f};
+	}
+}
+
 void ShieldEnemy::BehaviorDeadUpdate() {
 	deadTimer_ += 1.0f / 60.0f;
 	float t = std::clamp(deadTimer_ / kDeadDuration, 0.0f, 1.0f);
@@ -225,6 +283,9 @@ void ShieldEnemy::Update() {
 		break;
 	case Behavior::kDead:
 		BehaviorDeadUpdate();
+		break;
+	case Behavior::kComboHit:
+		BehaviorComboHitUpdate();
 		break;
 	}
 

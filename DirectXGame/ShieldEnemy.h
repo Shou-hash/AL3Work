@@ -18,9 +18,10 @@ public:
 	~ShieldEnemy();
 
 	enum class Behavior {
-		kRoot,  // 通常（歩行）状態
-		kDead,  // デス演出
-		kGuard, // ガードリアクション（のけぞり）
+		kRoot,     // 通常（歩行）状態
+		kDead,     // デス演出
+		kGuard,    // ガードリアクション（のけぞり）
+		kComboHit, // ★ ハンマーの連撃を受けている状態（その場で止まり、打撃のたびにのけぞる）
 	};
 
 	// ガードエフェクト用構造体
@@ -43,6 +44,14 @@ public:
 	void BehaviorRootUpdate();
 	void BehaviorDeadUpdate();
 	void BehaviorGuardUpdate();
+	void BehaviorComboHitUpdate(); // ★ 追加: 連撃を受けている間の更新
+
+	// ★ ハンマーの連撃を 1 回受ける（ハンマーは盾のガードを崩して連撃になる。同じスイングでの多重ヒットは無視して false を返す）
+	bool ReceiveHammerHit(uint32_t swingId, float pushDirX);
+
+	// ★ 連撃を受けて止まっている状態かどうか（この間は触れてもプレイヤーはダメージを受けない）
+	bool IsComboHitState() const { return behavior_ == Behavior::kComboHit; }
+	int32_t GetComboHitCount() const { return comboHitCount_; }
 
 	// ガードエフェクト生成
 	void CreateGuardEffect();
@@ -90,4 +99,15 @@ private:
 	float baseRotationX_ = 0.0f;                     // 元のX軸回転量（基本は0）
 
 	bool isItemSpawnRequested_ = false; // ★追加：アイテムドロップ要求フラグ
+
+	// ★ ハンマー連撃用
+	int32_t comboHitCount_ = 0;      // 現在の連撃を受けた回数
+	uint32_t lastHammerSwingId_ = 0; // 最後に打撃を受けたスイング番号（同じスイングでの多重ヒット防止）
+	float comboStunTimer_ = 0.0f;    // 最後の打撃からの経過時間（連撃が途切れたら通常行動へ戻る）
+	float hitReactionTimer_ = 0.0f;  // 打撃 1 回分ののけぞりの経過時間
+	float hitPushDirX_ = 1.0f;       // 打撃で押される向き（+1 右 / -1 左）
+
+	static inline const int32_t kHammerHitsToDefeat = 4;    // 倒れるまでに必要な連撃の回数（盾の敵は頑丈）
+	static inline const float kHitReactionDuration = 0.25f; // 打撃 1 回分ののけぞりの長さ（秒）
+	static inline const float kComboRecoverTime = 1.2f;     // 連撃が途切れてから通常行動へ戻るまでの時間（秒）
 };

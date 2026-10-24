@@ -23,8 +23,9 @@ public:
 	~BackgroundBlocks();
 
 	/// <summary>
-	/// 初期化：モデル読み込み & 自動生成による背景オブジェクトの生成
-	/// CSVを使用せずプログラム制御で自然不規則に背景（中景・遠景・雲）を生成する
+	/// 初期化：モデル読み込み & 背景オブジェクトの生成
+	/// CSV（M = 中景、F = 遠景、S = ステージタイルと同じ大きさの奥行きステージ構造）から配置する。
+	/// CSVが無い場合は自動生成にフォールバックする
 	/// </summary>
 	void Initialize(MapChipField* mapChipField, const std::string& csvPath = "");
 
@@ -44,6 +45,12 @@ public:
 	void SetLightGroups(const KamataEngine::LightGroup* nearGroup, const KamataEngine::LightGroup* midGroup, const KamataEngine::LightGroup* farGroup);
 
 private:
+	// ★ 背景CSVからの配置（読み込めたら true）
+	bool LoadFromCSV(const std::string& csvPath);
+
+	// ★ 追加: 空の背景を右から左へ移動する無限アニメーション雲の生成処理
+	void GenerateClouds();
+
 	// 使用するモデルポインタ
 	KamataEngine::Model* modelBlock_ = nullptr;
 	KamataEngine::Model* modelBlockAbove_ = nullptr;

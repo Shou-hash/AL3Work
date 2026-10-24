@@ -71,6 +71,11 @@ void CameraController::Reset() {
 	wasBossAttacking_ = false;
 	attackFollowBlend_ = 0.0f;
 	cinematicBaseRotation_ = camera_->rotation_;
+
+	// ★ 敵への打撃演出のリセット
+	combatHitTimer_ = 0.0f;
+	combatHitAppliedOffset_ = {0.0f, 0.0f, 0.0f};
+	combatHitAppliedRotation_ = {0.0f, 0.0f, 0.0f};
 }
 
 void CameraController::StartGoalPerformance(const KamataEngine::Vector3& goalPos) {
@@ -88,6 +93,15 @@ void CameraController::Update() {
 	if (!target_ || !camera_) {
 		return;
 	}
+
+	// ★ 前フレームに足した敵への打撃演出のオフセットを元に戻す（追従の補間に影響させないため）
+	camera_->translation_.x -= combatHitAppliedOffset_.x;
+	camera_->translation_.y -= combatHitAppliedOffset_.y;
+	camera_->translation_.z -= combatHitAppliedOffset_.z;
+	camera_->rotation_.x -= combatHitAppliedRotation_.x;
+	camera_->rotation_.z -= combatHitAppliedRotation_.z;
+	combatHitAppliedOffset_ = {0.0f, 0.0f, 0.0f};
+	combatHitAppliedRotation_ = {0.0f, 0.0f, 0.0f};
 
 	// ★ 処刑演出中は、専用のカメラ更新だけを行う
 	if (isExecution_) {
@@ -199,6 +213,9 @@ void CameraController::Update() {
 			frenzyShakeTimer_ = 0.0f;
 		}
 	}
+
+	// ★ 敵への打撃のカメラ演出を反映
+	ApplyCombatHitEffect();
 }
 
 // ★ 追加: ラスボス全体を見せるカメラ演出処理
@@ -551,7 +568,7 @@ bool CameraController::UpdateFinalBossCinematic() {
 	playerTargetPos.z = playerTransform.translation_.z + targetOffset_.z;
 
 	// =========================================================
-	// ① 撃破演出: 崩れ落ちるラスボスへゆっくり寄っていく（終わったらゴール追従カメラ演出が始まる）
+	// ① 撃破演出: 崩れ落ちるラスボスからカメラを遠くにし（ズームアウト）、全体を映す（終わったらゴール追従カメラ演出が始まる）
 	// =========================================================
 	if (finalBoss_->IsDefeated() && !finalBoss_->IsDefeatAnimationFinished()) {
 		if (bossCinematic_ != BossCinematic::kDefeat) {
@@ -562,11 +579,16 @@ bool CameraController::UpdateFinalBossCinematic() {
 		cinematicTimer_ += dt;
 		isBossCinematicWide_ = true;
 
+		// ★ ズームアウト完了時にラスボスへ通知し、撃破演出（崩れ落ちアニメーション）を開始させる
+		if (cinematicTimer_ >= kDefeatCameraInTime) {
+			finalBoss_->SetDefeatZoomFinished(true);
+		}
+
 		const float progress = finalBoss_->GetDefeatProgress();
 		const float blendIn = EaseInOutCubic(std::clamp(cinematicTimer_ / kDefeatCameraInTime, 0.0f, 1.0f));
 		const float easeProgress = EaseInOutCubic(progress);
 
-		// 注目位置: ラスボス全体 ➔ 崩れ落ちるにつれて少し下へ。ゆっくりズームイン
+		// 注目位置: ラスボス全体 ➔ 崩れ落ちるにつれて少し下へ。カメラを遠く（ズームアウト）にして全貌を映す
 		KamataEngine::Vector3 desired;
 		desired.x = bossBasePos.x + std::sin(progress * pi) * 1.5f;
 		desired.y = bossBasePos.y + 1.0f - 1.5f * easeProgress;
@@ -582,10 +604,31 @@ bool CameraController::UpdateFinalBossCinematic() {
 		camera_->rotation_.x = cinematicBaseRotation_.x + 0.04f * tilt;
 		return true;
 	}
+
 	if (bossCinematic_ == BossCinematic::kDefeat) {
 		// 撃破演出が終わったら傾きを元に戻す
 		bossCinematic_ = BossCinematic::kNone;
 		camera_->rotation_ = cinematicBaseRotation_;
+	}
+
+	// =========================================================
+	// ★ ダウン（伏せ）演出: ステージ手前に伏せたラスボスとプレイヤーをカメラで映す
+	// （※攻撃処理の前に判定を行うように上部へ移動しました）
+	// =========================================================
+	if (bossState == FinalBoss::State::kDown) {
+		isBossCinematicWide_ = true;
+		KamataEngine::Vector3 desired;
+		desired.x = (playerTransform.translation_.x + bossBasePos.x) * 0.5f;
+		desired.y = playerTransform.translation_.y + 1.0f;
+		desired.z = -14.0f; // ★ 少しズームインして追撃しやすい構図にする
+
+		camera_->translation_.x = Lerp(camera_->translation_.x, desired.x, 0.1f);
+		camera_->translation_.y = Lerp(camera_->translation_.y, desired.y, 0.1f);
+		camera_->translation_.z = Lerp(camera_->translation_.z, desired.z, 0.1f);
+
+		camera_->rotation_.x = cinematicBaseRotation_.x - 0.03f;
+		camera_->rotation_.z = cinematicBaseRotation_.z;
+		return true;
 	}
 
 	// =========================================================
@@ -685,4 +728,38 @@ bool CameraController::UpdateFinalBossCinematic() {
 	camera_->rotation_.x = cinematicBaseRotation_.x - 0.06f * attackFollowBlend_;
 	camera_->rotation_.z = cinematicBaseRotation_.z;
 	return true;
+}
+
+// ★ 敵への打撃のカメラ演出を開始する
+void CameraController::CombatHit(const KamataEngine::Vector3& hitPos, float strength) {
+	combatHitTimer_ = kCombatHitDuration;
+	combatHitStrength_ = strength;
+	combatHitFocus_ = hitPos;
+	combatHitTiltSign_ = -combatHitTiltSign_; // 1 回ごとに傾ける向きを左右交互にする
+}
+
+// ★ 敵への打撃のカメラ演出を毎フレーム反映する（打撃の瞬間が一番強く、二次曲線で減衰する）
+void CameraController::ApplyCombatHitEffect() {
+	if (combatHitTimer_ <= 0.0f || !camera_) {
+		return;
+	}
+
+	combatHitTimer_ = std::max(0.0f, combatHitTimer_ - 1.0f / 60.0f);
+	const float k = combatHitTimer_ / kCombatHitDuration;
+	const float power = combatHitStrength_ * k * k;
+
+	// 打撃の瞬間にぐっと寄り、打撃を受けた敵の方へ少し振れる
+	combatHitAppliedOffset_.z = kCombatHitZoomDistance * power;
+	combatHitAppliedOffset_.x = (combatHitFocus_.x - camera_->translation_.x) * kCombatHitPanRate * power;
+	combatHitAppliedOffset_.y = (combatHitFocus_.y - camera_->translation_.y) * kCombatHitPanRate * power;
+
+	// カメラを斜めに傾ける（時間とともに戻る）
+	combatHitAppliedRotation_.z = kCombatHitTiltRoll * power * combatHitTiltSign_;
+	combatHitAppliedRotation_.x = kCombatHitTiltPitch * power * combatHitTiltSign_;
+
+	camera_->translation_.x += combatHitAppliedOffset_.x;
+	camera_->translation_.y += combatHitAppliedOffset_.y;
+	camera_->translation_.z += combatHitAppliedOffset_.z;
+	camera_->rotation_.x += combatHitAppliedRotation_.x;
+	camera_->rotation_.z += combatHitAppliedRotation_.z;
 }

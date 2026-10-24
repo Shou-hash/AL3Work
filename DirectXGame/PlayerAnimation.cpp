@@ -1,10 +1,11 @@
 #define NOMINMAX
 #include "PlayerAnimation.h"
+#include "LightManager.h" // ★ 追加：ライトグループ設定用
+#include "Matrix4x4.h"
 #include "Player.h"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include "Matrix4x4.h"
 #include <random>
 
 // 行列の掛け算ヘルパー関数 (main.cppのコードを参考)
@@ -76,7 +77,8 @@ void PlayerAnimation::BehaviorRootInit() {
 	isHammerVisible_ = false;
 }
 
-void PlayerAnimation::BehaviorRootUpdate(KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, const KamataEngine::Vector3& velocity, bool onGround, float limitRunSpeed, float timeTurn) {
+void PlayerAnimation::BehaviorRootUpdate(
+    KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, const KamataEngine::Vector3& velocity, bool onGround, float limitRunSpeed, float timeTurn) {
 	if (turnTimer_ < timeTurn) {
 		turnTimer_ += 1.0f / 60.0f;
 		if (turnTimer_ > timeTurn) {
@@ -191,7 +193,8 @@ void PlayerAnimation::BehaviorAttackInit() {
 	worldTransformRight_.rotation_ = {0.0f, 0.0f, 0.0f};
 }
 
-void PlayerAnimation::BehaviorAttackUpdate(KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, float attackVelocity, KamataEngine::Vector3& outVelocity, bool& outCreateHitEffect, bool& outFinished) {
+void PlayerAnimation::BehaviorAttackUpdate(
+    KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, float attackVelocity, KamataEngine::Vector3& outVelocity, bool& outCreateHitEffect, bool& outFinished) {
 	attackParameter_++;
 	outVelocity = {};
 	outCreateHitEffect = false;
@@ -447,7 +450,7 @@ void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& wo
 			float t = progress / 0.4f;
 			armRotR = {EaseOut(-3.5f, -4.5f, t), 0.0f, 0.0f};
 			armRotL = armRotR;
-			worldTransform.translation_.y += 0.03f;
+			// ★ 修正: ハンマー連撃中はプレイヤーの座標を動かさない（以前はここで毎フレーム Y 座標が上がり続けていた）
 			// 振りかぶり時に一気に超巨大化
 			hammerLocalScale = {EaseOut(1.5f, 2.0f, t), EaseOut(1.5f, 2.0f, t), EaseOut(1.5f, 2.0f, t)};
 		} else {
@@ -510,6 +513,14 @@ void PlayerAnimation::BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& wo
 	if (hammerSkillTimer_ >= duration) {
 		outFinished = true;
 	}
+}
+
+// ★ 各部位のモデルにマップタイルなどと同じライトグループ（kWorld）を設定する
+void PlayerAnimation::ApplyLightManager(const LightManager& lightManager) {
+	lightManager.ApplyToModel(modelPlayerHead_, LightManager::GroupType::kWorld);
+	lightManager.ApplyToModel(modelPlayerBody_, LightManager::GroupType::kWorld);
+	lightManager.ApplyToModel(modelPlayerLeft_, LightManager::GroupType::kWorld);
+	lightManager.ApplyToModel(modelPlayerRight_, LightManager::GroupType::kWorld);
 }
 
 void PlayerAnimation::Draw(KamataEngine::Camera* camera, KamataEngine::Model* modelHammer) {

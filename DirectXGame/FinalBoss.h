@@ -19,13 +19,15 @@ public:
 
 	// ★ ボスの状態定義
 	enum class State {
-		kStandby,    // 待機状態（プレイヤー接近前・完全非表示）
-		kSpawn,      // 出現アニメーション中
-		kNormal,     // 通常状態
-		kFrenzyInit, // 発狂初期演出中（振動・溜め）
-		kFrenzy,     // 発狂待機状態（攻撃インターバル待ち）
-		kAttack,     // ★ 流星群（クリスタル落下）攻撃状態
-		kDefeat      // ★ 撃破アニメーション中（痙攣 ➔ 崩れ落ちる ➔ 縮小して消える）
+		kStandby,     // 待機状態（プレイヤー接近前・完全非表示）
+		kSpawn,       // 出現アニメーション中
+		kNormal,      // 通常状態
+		kFrenzyInit,  // 発狂初期演出中（振動・溜め）
+		kFrenzy,      // 発狂待機状態（攻撃インターバル待ち）
+		kAttack,      // ★ 流星群（クリスタル落下）攻撃状態
+		kDownWarning, // ★ 追加: ダウン予告状態（苦しんでフラフラ・大揺れしてダウンを予兆）
+		kDown,        // ★ ダウン状態（衝撃後に伏せて本体攻撃受付中）
+		kDefeat       // ★ 撃破アニメーション中（痙攣 ➔ 崩れ落ちる ➔ 縮小して消える）
 	};
 
 	// ★ クリスタルの攻撃状態定義
@@ -124,10 +126,20 @@ public:
 	bool HitCrystal22();
 	bool IsDefeated() const { return isFinalBossDefeated_; }
 
+	// ★ 追加: 本体への多重ヒット防止フラグのリセット
+	void ResetBodyHitConsumed() { bodyHitConsumed_ = false; }
+
+	// ★ 追加: 本体への多重ヒット防止フラグの取得
+	bool IsBodyHitConsumed() const { return bodyHitConsumed_; }
+
 	// ★ 撃破アニメーションの進行度（0.0 ~ 1.0）と終了判定（終了したらゴールを表示してゴール追従カメラ演出を開始する）
 	float GetDefeatProgress() const { return state_ == State::kDefeat ? (std::min)(defeatTimer_ / kDefeatDuration, 1.0f) : (isDefeatAnimationFinished_ ? 1.0f : 0.0f); }
 
 	bool IsDefeatAnimationFinished() const { return isDefeatAnimationFinished_; }
+
+	// ★ 追加: カメラのズームアウト完了フラグのセット・取得
+	void SetDefeatZoomFinished(bool finished) { isDefeatZoomFinished_ = finished; }
+	bool IsDefeatZoomFinished() const { return isDefeatZoomFinished_; }
 
 	// ★ 流星群が降り始めたか（攻撃開始のカメラ演出を終えるタイミングに使う）
 	bool IsMeteorShowerStarted() const { return meteorShowerStarted_; }
@@ -213,15 +225,28 @@ private:
 
 	bool attackDamageDone_ = false; // ★ 追加: このターンの攻撃でラスボスがダメージを受けたか（攻撃の終了判定用）
 
+	// ★ 追加: ダウン予告演出用変数
+	float downWarningTimer_ = 0.0f;                     // ダウン予告経過時間タイマー
+	static constexpr float kDownWarningDuration = 1.2f; // ★ ダウン予告演出の時間（1.2秒）
+
+	// ★ 追加: ダウン（伏せる）演出用変数
+	bool pendingDown_ = false;                   // 衝撃後に伏せ状態へ移行するフラグ
+	float downTimer_ = 0.0f;                     // ダウン経過時間タイマー
+	float downDuration_ = 3.5f;                  // ★ 伏せている時間（3.5秒後に起きて元の位置へ戻る）
+	bool bodyHitConsumed_ = false;               // ★ 1回の攻撃で本体に多重ヒットしないためのフラグ
+	KamataEngine::Vector3 downStartPosition_{};  // 伏せ開始時の座標
+	KamataEngine::Vector3 downTargetPosition_{}; // 伏せる目標座標（ステージ手前）
+
 	// ★ 攻撃開始・攻撃中の本体アニメーション用
 	float attackTimer_ = 0.0f;                          // 攻撃開始からの経過時間
 	static constexpr float kAttackIntroDuration = 1.2f; // 攻撃開始の「溜め ➔ 咆哮」アニメーションの長さ（秒）
 
 	// ★ 撃破アニメーション用
-	float defeatTimer_ = 0.0f;                     // 撃破からの経過時間
-	bool isDefeatAnimationFinished_ = false;       // 撃破アニメーションが終わったか
-	static constexpr float kDefeatDuration = 4.0f; // 撃破アニメーションの長さ（秒）
-	bool meteorShowerStarted_ = false;             // ★ 追加: 周りのクリスタルが全部飛び立った後に流星群を開始するフラグ
+	float defeatTimer_ = 0.0f;                                         // 撃破からの経過時間
+	bool isDefeatAnimationFinished_ = false;                           // 撃破アニメーションが終わったか
+	bool isDefeatZoomFinished_ = false;                                // ★ 追加: カメラのズームアウトが完了したか
+	static constexpr float kDefeatDuration = 4.0f;                     // 撃破アニメーションの長さ（秒）
+	bool meteorShowerStarted_ = false;                                 // ★ 追加: 周りのクリスタルが全部飛び立った後に流星群を開始するフラグ
 
 	std::array<CrystalAttackInfo, kNumCrystals> crystalAttackInfos_{}; // 22個のクリスタル個別の攻撃データ
 	std::array<MeteorCrystal, kNumMeteorShower> meteorCrystals_{};     // ★ 流星群用 finalBossCrystal_22 配列

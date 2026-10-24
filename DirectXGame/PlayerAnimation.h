@@ -5,6 +5,7 @@
 #include <vector>
 
 enum class LRDirection;
+class LightManager; // ★ 追加：ライティング設定用
 
 enum class AttackPhase {
 	kCharge,
@@ -23,7 +24,7 @@ public:
 	void BehaviorAttackInit();
 	void BehaviorKnockbackInit();
 
-	void BehaviorHammerSkillInit(uint32_t comboIndex = 0);                      // ★コンボ段階を受け取れるように拡張
+	void BehaviorHammerSkillInit(uint32_t comboIndex = 0); // ★コンボ段階を受け取れるように拡張
 
 	void BehaviorDeathInit(const KamataEngine::WorldTransform& worldTransform); // ★追加
 
@@ -31,13 +32,16 @@ public:
 	void BehaviorAttackUpdate(
 	    KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, float attackVelocity, KamataEngine::Vector3& outVelocity, bool& outCreateHitEffect, bool& outFinished);
 	void BehaviorKnockbackUpdate(KamataEngine::WorldTransform& worldTransform);
-	
+
 	// ★ハンマー連撃用アップデート関数（Hit判定・コンボ受付・終了フラグを返却）
 	void BehaviorHammerSkillUpdate(KamataEngine::WorldTransform& worldTransform, LRDirection lrDirection, bool& outHitCheck, bool& outCanCombo, bool& outFinished);
-	
+
 	void BehaviorDeathUpdate(bool& outFinished); // ★追加
 
 	void Draw(KamataEngine::Camera* camera, KamataEngine::Model* modelHammer);
+
+	// ★ 頭・体・左手・右手のモデルに、マップタイルなどと同じライトグループ（平行光源・太陽の回転など）を設定する
+	void ApplyLightManager(const LightManager& lightManager);
 
 	// 各部位の個別WorldTransformを取得する関数
 	KamataEngine::WorldTransform& GetWorldTransformHead() { return worldTransformHead_; }
@@ -118,7 +122,7 @@ private:
 	uint32_t comboIndex_ = 0; // 0: 1段目(斜め切り), 1: 2段目(横払い), 2: 3段目(叩きつけ)
 	float hammerSkillTimer_ = 0.0f;
 	bool isHammerVisible_ = false;
-	//static inline float kHammerSkillDuration = 0.6f;
+	// static inline float kHammerSkillDuration = 0.6f;
 
 	// 各コンボ段階ごとのアニメーション再生時間（秒）
 	static inline float kHammerSkillDurationStep0 = 0.35f;

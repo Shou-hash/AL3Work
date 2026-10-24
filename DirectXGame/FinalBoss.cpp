@@ -22,6 +22,14 @@ KamataEngine::Matrix4x4 FinalBoss::MultiplyMatrix(const KamataEngine::Matrix4x4&
 	return r;
 }
 
+namespace {
+// スムーズステップ（edge0 以下で 0.0、edge1 以上で 1.0 になめらかに変化する）
+float SmoothStep(float edge0, float edge1, float x) {
+	float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+	return t * t * (3.0f - 2.0f * t);
+}
+} // namespace
+
 FinalBoss::~FinalBoss() {
 	// ★ スプライトリソースの解放
 	delete spriteParticle_;
@@ -32,48 +40,33 @@ FinalBoss::~FinalBoss() {
 
 void FinalBoss::Initialize(
     KamataEngine::Model* modelBody, const std::array<KamataEngine::Model*, kNumHands>& modelHands, const std::array<KamataEngine::Model*, kNumCrystals>& modelCrystals,
-    KamataEngine::Model* modelCrystal22, // ★ 引数変更 (modelCrystal22)
-    KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
+    KamataEngine::Model* modelCrystal22, KamataEngine::Camera* camera, const KamataEngine::Vector3& position) {
 	modelBody_ = modelBody;
 	modelHands_ = modelHands;
-	modelCrystals_ = modelCrystals;   // ★ 代入
-	modelCrystal22_ = modelCrystal22; // ★ 攻撃専用クリスタル
+	modelCrystals_ = modelCrystals;
+	modelCrystal22_ = modelCrystal22;
 	camera_ = camera;
 
-	// 基準位置の設定 (マップ上の初期位置からのオフセット調整)
 	basePosition_ = position;
-
-	// 背景の奥行きとしてZ軸のみ固定したい場合は下記のように設定します
 	basePosition_.z = 6.5f;
 
-	// ★ 描画オフセットX：ラスボスの手前（基準Xの 10 手前）で画面の右寄りに見えるよう、基準Xと視差係数から自動で決める
 	drawOffset_.x = -(1.0f - parallaxFactor_) * basePosition_.x - 0.5f;
 
-	// ルート変換の初期化
 	worldTransform_.Initialize();
 	worldTransform_.translation_ = basePosition_;
 	worldTransform_.rotation_.y = std::numbers::pi_v<float>;
+	worldTransform_.scale_ = {0.0f, 0.0f, 0.0f};
 
-	// スケールを小さく調整
-	worldTransform_.scale_ = {0.0f, 0.0f, 0.0f}; // ★ 最初はサイズ0
-
-	// ★ テクスチャの読み込みとパーティクル用スプライトの生成
 	whiteTextureHandle_ = KamataEngine::TextureManager::Load("./Resources/white1x1.png");
 	spriteParticle_ = KamataEngine::Sprite::Create(whiteTextureHandle_, {0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.5f, 0.5f});
-
-	// ★ 落下目標予告マーカー用スプライト生成
 	spriteTargetMarker_ = KamataEngine::Sprite::Create(whiteTextureHandle_, {0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.5f, 0.5f});
 	spriteHpBG_ = KamataEngine::Sprite::Create(whiteTextureHandle_, {500.0f, 28.0f}, {0.08f, 0.08f, 0.10f, 0.95f}, {0.0f, 0.0f});
 	spriteHpBar_ = KamataEngine::Sprite::Create(whiteTextureHandle_, {500.0f, 28.0f}, {1.0f, 0.12f, 0.18f, 1.0f}, {0.0f, 0.0f});
 
-	// ★ パーティクル描画用 WorldTransform の初期化
 	particleWorldTransform_.Initialize();
-
-	// 本体ローカルの初期化
 	worldTransformBody_.Initialize();
 	worldTransformCrystal22_.Initialize();
 
-	// 7本の手の初期ローカルオフセットを設定（本体を中心にした扇状・不規則配置）
 	handLocalOffsets_ = {
 	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
         KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
@@ -89,7 +82,6 @@ void FinalBoss::Initialize(
 		worldTransformHands_[i].translation_ = handLocalOffsets_[i];
 	}
 
-	// 22個のクリスタルの初期ローカルオフセットを設定（本体を中心にした扇状・不規則配置）
 	crystalLocalOffsets_ = {
 	    KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
         KamataEngine::Vector3{0.0f, 0.0f, 0.0f},
@@ -120,7 +112,6 @@ void FinalBoss::Initialize(
 		worldTransformCrystals_[i].translation_ = crystalLocalOffsets_[i];
 	}
 
-	// ★ 流星群用ワールドトランスフォーム初期化
 	for (size_t i = 0; i < kNumMeteorShower; ++i) {
 		meteorCrystals_[i].worldTransform.Initialize();
 	}
@@ -137,18 +128,22 @@ void FinalBoss::Initialize(
 	hitReactionTimer_ = 0.0f;
 	hitReactionRotation_ = 0.0f;
 	isDead_ = false;
-	isCollisionDisabled_ = true; // 奥行きにいるため直接の衝突判定は通常無効
+	isCollisionDisabled_ = true;
 
-	// ★ 接近前は待機状態にする（StartSpawnはまだ呼ばない）
+	pendingDown_ = false;
+	downWarningTimer_ = 0.0f;
+	downTimer_ = 0.0f;
+	bodyHitConsumed_ = false;
+
 	state_ = State::kStandby;
 	frenzyWaitTimer_ = 0.0f;
 	attackTimer_ = 0.0f;
 	defeatTimer_ = 0.0f;
 	isDefeatAnimationFinished_ = false;
+	isDefeatZoomFinished_ = false; // ★ ズームアウト完了フラグのリセット
 	particles_.clear();
 }
 
-// ★ 出現アニメーションのトリガー関数
 void FinalBoss::StartSpawn() {
 	if (state_ == State::kStandby) {
 		state_ = State::kSpawn;
@@ -158,7 +153,6 @@ void FinalBoss::StartSpawn() {
 	}
 }
 
-// ★ 発狂アニメーション開始関数
 void FinalBoss::StartFrenzy() {
 	if (state_ == State::kNormal || state_ == State::kSpawn) {
 		state_ = State::kFrenzyInit;
@@ -166,10 +160,9 @@ void FinalBoss::StartFrenzy() {
 	}
 }
 
-// ★ 流星群攻撃の開始関数
 void FinalBoss::StartAttack() {
 	state_ = State::kAttack;
-	attackTimer_ = 0.0f; // ★ 攻撃開始アニメーションのタイマーをリセット
+	attackTimer_ = 0.0f;
 	currentAttackIndex_ = 0;
 	spawnIntervalTimer_ = 0.0f;
 	crystal22Landed_ = false;
@@ -178,11 +171,12 @@ void FinalBoss::StartAttack() {
 	crystal22HitsRequired_ = 1 + (rand() % 3);
 	crystal22Timer_ = 0.0f;
 	crystal22LandedTimer_ = 0.0f;
-	meteorShowerStarted_ = false;                                  // ★ 追加: 流星群フラグ初期化
-	attackDamageDone_ = false;                                     // ★ 追加: ダメージ済みフラグ初期化
-	worldTransformCrystal22_.translation_ = {0.0f, -100.0f, 0.0f}; // 落下前は画面外に退避
+	meteorShowerStarted_ = false;
+	attackDamageDone_ = false;
+	pendingDown_ = false;
+	bodyHitConsumed_ = false;
+	worldTransformCrystal22_.translation_ = {0.0f, -100.0f, 0.0f};
 
-	// 1〜21番目のクリスタルを不規則な順番で空へ発射する準備
 	attackOrder_.clear();
 	for (size_t i = 0; i < kMeteorCrystals; ++i) {
 		attackOrder_.push_back(i);
@@ -197,15 +191,13 @@ void FinalBoss::StartAttack() {
 	crystalAttackInfos_[kMeteorCrystals].status = CrystalAttackStatus::kIdle;
 	crystalAttackInfos_[kMeteorCrystals].timer = 0.0f;
 
-	// 流星群パラメータ設定（※周りのクリスタルが飛ぶまで active = false にしておく）
 	for (size_t i = 0; i < kNumMeteorShower; ++i) {
 		auto& meteor = meteorCrystals_[i];
-		meteor.active = false; // ★ 最初は非アクティブに設定
+		meteor.active = false;
 		meteor.timer = 0.0f;
-		meteor.bounceCount = 0; // ★ 追加: バウンド回数リセット
-		meteor.maxBounces = 3;  // ★ 追加: 3回バウンドして消滅
+		meteor.bounceCount = 0;
+		meteor.maxBounces = 3;
 
-		// ★ 変更: 密度を減らすため発生遅延（delay）の間隔を広げる（パラパラと降るように調整）
 		meteor.delay = static_cast<float>(i) * 0.28f + (static_cast<float>(rand() % 100) / 500.0f);
 
 		float scaleVal = 0.25f + (static_cast<float>(rand() % 100) / 300.0f);
@@ -216,12 +208,10 @@ void FinalBoss::StartAttack() {
 			spawnX = player_->GetWorldTransform().translation_.x + (static_cast<float>(rand() % 400) / 10.0f - 20.0f);
 		}
 
-		// ★ 変更: 物理計算用の初期座標および速度設定（落下速度を緩やかに）
 		meteor.position = {spawnX, basePosition_.y + 22.0f + (static_cast<float>(rand() % 100) / 10.0f), basePosition_.z};
 		float targetX = spawnX + (static_cast<float>(rand() % 100) / 20.0f - 2.5f);
-		meteor.velocity = {(targetX - spawnX) * 0.02f, -0.10f, 0.0f}; // ゆっくり落下開始
+		meteor.velocity = {(targetX - spawnX) * 0.02f, -0.10f, 0.0f};
 
-		// ★ 追加: 流星群が着地する地表のY座標を算出（落下予測マーカー用）
 		float targetY = basePosition_.y - 3.0f;
 		if (mapChipField_) {
 			MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition({spawnX, player_ ? player_->GetWorldTransform().translation_.y + 5.0f : basePosition_.y, 0.0f});
@@ -234,7 +224,7 @@ void FinalBoss::StartAttack() {
 				}
 			}
 		}
-		meteor.targetPosition = {targetX, targetY, basePosition_.z}; // ★ 正確な着地予定位置を設定
+		meteor.targetPosition = {targetX, targetY, basePosition_.z};
 
 		meteor.worldTransform.translation_ = meteor.position;
 		meteor.worldTransform.scale_ = meteor.scale;
@@ -257,7 +247,6 @@ bool FinalBoss::HitCrystal22() {
 	return false;
 }
 
-// ★ 3Dワールド座標から2Dスクリーン座標への変換関数
 KamataEngine::Vector2 FinalBoss::WorldToScreen(const KamataEngine::Vector3& worldPos, const KamataEngine::Camera& camera) {
 	KamataEngine::Matrix4x4 matVP = MultiplyMatrix(camera.matView, camera.matProjection);
 
@@ -272,14 +261,12 @@ KamataEngine::Vector2 FinalBoss::WorldToScreen(const KamataEngine::Vector3& worl
 	float ndcX = x / w;
 	float ndcY = y / w;
 
-	// スクリーンサイズ (1280x720) に変換
 	float screenX = (ndcX + 1.0f) * 0.5f * 1280.0f;
 	float screenY = (1.0f - ndcY) * 0.5f * 720.0f;
 
 	return {screenX, screenY};
 }
 
-// ★ 出現パーティクルの発生関数
 void FinalBoss::EmitSpawnParticles() {
 	KamataEngine::Vector3 center = worldTransform_.translation_;
 
@@ -305,7 +292,6 @@ void FinalBoss::EmitSpawnParticles() {
 	}
 }
 
-// ★ 撃破アニメーション用パーティクルの発生（本体から外側へ飛び散る）
 void FinalBoss::EmitDefeatParticles() {
 	KamataEngine::Vector3 center = {worldTransformBody_.matWorld_.m[3][0], worldTransformBody_.matWorld_.m[3][1], worldTransformBody_.matWorld_.m[3][2]};
 
@@ -328,7 +314,6 @@ void FinalBoss::EmitDefeatParticles() {
 	}
 }
 
-// ★ パーティクルの更新処理
 void FinalBoss::UpdateParticles() {
 	for (auto it = particles_.begin(); it != particles_.end();) {
 		it->currentLife += 1.0f / 60.0f;
@@ -344,14 +329,6 @@ void FinalBoss::UpdateParticles() {
 	}
 }
 
-namespace {
-// スムーズステップ（edge0 以下で 0.0、edge1 以上で 1.0 になめらかに変化する）
-float SmoothStep(float edge0, float edge1, float x) {
-	float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
-	return t * t * (3.0f - 2.0f * t);
-}
-} // namespace
-
 void FinalBoss::Update() {
 	if (isDead_ || state_ == State::kStandby) {
 		return;
@@ -359,40 +336,31 @@ void FinalBoss::Update() {
 
 	animTimer_ += 1.0f / 60.0f;
 	if (state_ == State::kAttack) {
-		attackTimer_ += 1.0f / 60.0f; // ★ 攻撃開始からの経過時間
+		attackTimer_ += 1.0f / 60.0f;
 	}
 
-	// =========================================================
-	// 出現アニメーション (kSpawn) ロジック
-	// =========================================================
 	if (state_ == State::kSpawn) {
 		spawnTimer_ += 1.0f / 60.0f;
 		float progress = std::min(spawnTimer_ / spawnDuration_, 1.0f);
 
-		// パーティクル発生＆更新
 		EmitSpawnParticles();
 
-		// イージング（SmoothStep）でスケールを徐々に大きく拡大
 		float easeProgress = progress * progress * (3.0f - 2.0f * progress);
 		worldTransform_.scale_ = {targetScale_.x * easeProgress, targetScale_.y * easeProgress, targetScale_.z * easeProgress};
 
-		// 登場時の微小な振動効果
 		float shake = (1.0f - progress) * 0.15f;
 		worldTransformBody_.translation_.x = std::sin(animTimer_ * 40.0f) * shake;
 		worldTransformBody_.translation_.y = std::cos(animTimer_ * 35.0f) * shake;
 
-		// ★ 規定時間（出現完了）に達したら直接「発狂初期演出（kFrenzyInit）」へ切替！
 		if (spawnTimer_ >= spawnDuration_) {
 			worldTransform_.scale_ = targetScale_;
-			state_ = State::kFrenzyInit; // ★ 発狂初期演出に切り替え
+			state_ = State::kFrenzyInit;
 			frenzyTimer_ = 0.0f;
 		}
 	}
 
-	// パーティクルの移動更新
 	UpdateParticles();
 
-	// 発狂初期演出タイマー更新
 	if (state_ == State::kFrenzyInit) {
 		frenzyTimer_ += 1.0f / 60.0f;
 		if (frenzyTimer_ >= 2.0f) {
@@ -400,12 +368,8 @@ void FinalBoss::Update() {
 		}
 	}
 
-	// =========================================================
-	// 発狂後の待機状態 (kFrenzy) ＆ 攻撃状態 (kAttack) ロジック
-	// =========================================================
 	if (state_ == State::kFrenzy) {
 		frenzyWaitTimer_ += 1.0f / 60.0f;
-		// ★ ラストの星でダメージを与えてから待機状態（kFrenzy）で6秒以上経ったら流星群攻撃を再実行
 		if (frenzyWaitTimer_ >= frenzyWaitDuration_ && !isFinalBossDefeated_) {
 			StartAttack();
 		}
@@ -413,9 +377,6 @@ void FinalBoss::Update() {
 		const float dt = 1.0f / 60.0f;
 		spawnIntervalTimer_ += dt;
 
-		// -------------------------------------------------------------
-		// ① 最初の21個（kMeteorCrystals個）をランダムな順番で空へ飛び立たせる
-		// -------------------------------------------------------------
 		if (currentAttackIndex_ < attackOrder_.size() && spawnIntervalTimer_ >= spawnInterval_) {
 			spawnIntervalTimer_ = 0.0f;
 			size_t idx = attackOrder_[currentAttackIndex_++];
@@ -426,7 +387,6 @@ void FinalBoss::Update() {
 			info.currentWorldPos = info.startPosition;
 		}
 
-		// 飛び立ち中の上昇移動と消去処理
 		for (size_t i = 0; i < kMeteorCrystals; ++i) {
 			CrystalAttackInfo& info = crystalAttackInfos_[i];
 			if (info.status == CrystalAttackStatus::kLaunching) {
@@ -434,12 +394,11 @@ void FinalBoss::Update() {
 				info.currentWorldPos.y += 0.55f;
 				if (info.timer >= 0.55f) {
 					info.status = CrystalAttackStatus::kIdle;
-					crystalHidden_[i] = true; // 空へ飛び立ち完了して非表示化
+					crystalHidden_[i] = true;
 				}
 			}
 		}
 
-		// ★ 21個すべてのクリスタルが順番に発射され、かつ全員が完全に消えた（crystalHidden_ == true）か判定
 		bool allLaunched = (currentAttackIndex_ >= attackOrder_.size());
 		if (allLaunched) {
 			for (size_t i = 0; i < kMeteorCrystals; ++i) {
@@ -450,13 +409,10 @@ void FinalBoss::Update() {
 			}
 		}
 
-		// -------------------------------------------------------------
-		// ② 周りの21個がすべて飛び立ち終わったら、流星群の落下を開始する
-		// -------------------------------------------------------------
 		if (allLaunched && !meteorShowerStarted_) {
 			meteorShowerStarted_ = true;
 			for (size_t i = 0; i < kNumMeteorShower; ++i) {
-				meteorCrystals_[i].active = true; // ★ 流星群を一斉アクティブ化
+				meteorCrystals_[i].active = true;
 			}
 		}
 
@@ -468,7 +424,7 @@ void FinalBoss::Update() {
 					continue;
 				}
 
-				allMeteorsFinished = false; // まだ落下中の流星が存在する
+				allMeteorsFinished = false;
 
 				if (meteor.delay > 0.0f) {
 					meteor.delay -= dt;
@@ -477,11 +433,9 @@ void FinalBoss::Update() {
 
 				meteor.timer += dt;
 
-				// ★ 変更: 落ちる速度を減らす（重力加速度を小さめに設定してゆっくり落下）
 				const float gravity = 0.007f;
 				meteor.velocity.y -= gravity;
 
-				// ★ 変更: 座標の更新
 				meteor.position.x += meteor.velocity.x;
 				meteor.position.y += meteor.velocity.y;
 
@@ -492,22 +446,20 @@ void FinalBoss::Update() {
 				meteor.worldTransform.matWorld_ = MakeAffineMatrix(meteor.worldTransform.scale_, meteor.worldTransform.rotation_, meteor.worldTransform.translation_);
 				meteor.worldTransform.TransferMatrix();
 
-				// ★ 追加: プレイヤーとの当たり判定およびダメージ処理
 				if (meteor.bounceCount == 0 && player_ && !player_->IsDead()) {
 					Player::AABB playerAABB = player_->GetAABB();
-					float marginX = 0.8f; // 当たり判定のマージン
+					float marginX = 0.8f;
 					float marginY = 0.8f;
 
 					if (meteor.position.x >= playerAABB.min.x - marginX && meteor.position.x <= playerAABB.max.x + marginX && meteor.position.y >= playerAABB.min.y - marginY &&
 					    meteor.position.y <= playerAABB.max.y + marginY) {
 
-						player_->OnCollision(); // ★ プレイヤーにダメージを与える（HPが減少しノックバック/死亡演出へ）
-						meteor.active = false;  // ヒットした流星群は消滅
+						player_->OnCollision();
+						meteor.active = false;
 						continue;
 					}
 				}
 
-				// ★ 変更: 地形との衝突判定（弾力性あるボールのような段階的バウンド処理）
 				if (mapChipField_) {
 					MapChipField::IndexSet index = mapChipField_->GetMapChipIndexByPosition(meteor.position);
 					MapChipType type = mapChipField_->GetMapChipTypeByIndex(index.x, index.y);
@@ -515,17 +467,14 @@ void FinalBoss::Update() {
 					bool isFloatingTile = (type == MapChipType::kBlockFall);
 
 					if (isGroundBlock || isFloatingTile) {
-						// 落下中に着地した場合
 						if (meteor.velocity.y < 0.0f) {
 							if (meteor.bounceCount < meteor.maxBounces) {
-								// ★ 跳ね返り（Y速度反転＆減衰により小さめのジャンプを繰り返す）
 								meteor.velocity.y = -meteor.velocity.y * 0.5f;
-								meteor.velocity.x *= 0.7f; // 横移動速度も少し減衰
+								meteor.velocity.x *= 0.7f;
 								KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
-								meteor.position.y = blockPos.y + 0.5f; // 地面上に位置合わせ
+								meteor.position.y = blockPos.y + 0.5f;
 								meteor.bounceCount++;
 							} else {
-								// ★ 規定回数（3回）バウンドしたら消滅
 								meteor.active = false;
 								continue;
 							}
@@ -533,16 +482,12 @@ void FinalBoss::Update() {
 					}
 				}
 
-				// ★ 追加: 画面外（下方）へ落ちすぎた場合の消去
 				if (meteor.position.y < basePosition_.y - 12.0f) {
 					meteor.active = false;
 				}
 			}
 		}
 
-		// -------------------------------------------------------------
-		// ③ 流星群が全て降り終わったら、専用の finalBossCrystal_22 を落として地面に留まらせる
-		// -------------------------------------------------------------
 		if (allLaunched && allMeteorsFinished && !crystal22Landed_ && !crystal22Flying_ && !attackDamageDone_) {
 			if (crystal22Timer_ == 0.0f) {
 				KamataEngine::Vector3 playerPos = player_ ? player_->GetWorldTransform().translation_ : basePosition_;
@@ -580,7 +525,7 @@ void FinalBoss::Update() {
 				bool isGround = (type == MapChipType::kBlock && mapChipField_->GetBlockFaceByIndex(index.x, index.y) == BlockFace::kAbove) || (type == MapChipType::kBlockFall);
 				if (isGround) {
 					KamataEngine::Vector3 blockPos = mapChipField_->GetMapChipPositionByIndex(index.x, index.y);
-					worldTransformCrystal22_.translation_.y = blockPos.y + 0.5f; // 地面上にジャストで着地
+					worldTransformCrystal22_.translation_.y = blockPos.y + 0.5f;
 					crystal22Landed_ = true;
 					crystal22Timer_ = 0.0f;
 					crystal22LandedTimer_ = 0.0f;
@@ -588,19 +533,12 @@ void FinalBoss::Update() {
 			}
 
 			if (t >= 1.0f && !crystal22Landed_) {
-				crystal22Landed_ = true; // ★ 地面に到着してそのまま固定・待機
+				crystal22Landed_ = true;
 				crystal22Timer_ = 0.0f;
 				crystal22LandedTimer_ = 0.0f;
 			}
 		}
 
-		// -------------------------------------------------------------
-		// ④ 着地した finalBossCrystal_22 は、プレイヤーに打たれるまでステージにそのまま残る（タイムアウトなし）
-		// -------------------------------------------------------------
-
-		// -------------------------------------------------------------
-		// ⑤ プレイヤーに打たれた専用クリスタルがラスボスへ飛んでダメージを与える
-		// -------------------------------------------------------------
 		if (crystal22Flying_) {
 			crystal22Timer_ += dt;
 			float t = std::min(crystal22Timer_ / 0.55f, 1.0f);
@@ -613,13 +551,18 @@ void FinalBoss::Update() {
 			if (t >= 1.0f) {
 				crystal22Flying_ = false;
 				finalBossHitEvent_ = true;
-				attackDamageDone_ = true; // ★ 追加: ダメージを与えた（ここから全クリスタルの復帰を待って攻撃終了）
+				attackDamageDone_ = true;
 				finalBossHp_ = std::max(0, finalBossHp_ - 1);
 				hitReactionTimer_ = 0.0f;
 				hitReactionRotation_ = 0.35f;
 				crystal22HitCount_ = 0;
 				crystal22Timer_ = 0.0f;
-				worldTransformCrystal22_.translation_ = {0.0f, -100.0f, 0.0f}; // ヒット後は画面外退避
+				worldTransformCrystal22_.translation_ = {0.0f, -100.0f, 0.0f};
+
+				// ★ 追加: 撃破されていない場合、衝撃演出後にダウン予告へ移行するフラグをセット
+				if (finalBossHp_ > 0) {
+					pendingDown_ = true;
+				}
 
 				for (size_t i = 0; i < kMeteorCrystals; ++i) {
 					crystalHidden_[i] = false;
@@ -632,7 +575,6 @@ void FinalBoss::Update() {
 					crystalAttackInfos_[i].currentWorldPos = crystalAttackInfos_[i].startPosition;
 				}
 				if (finalBossHp_ <= 0) {
-					// ★ 撃破: 流星群とクリスタルの攻撃を全て止めて、撃破アニメーション（kDefeat）へ移行する
 					isFinalBossDefeated_ = true;
 					state_ = State::kDefeat;
 					defeatTimer_ = 0.0f;
@@ -648,7 +590,6 @@ void FinalBoss::Update() {
 			}
 		}
 
-		// 空から落ちた21個のクリスタルを元の位置へ戻す
 		bool allReturned = true;
 		for (size_t i = 0; i < kMeteorCrystals; ++i) {
 			CrystalAttackInfo& info = crystalAttackInfos_[i];
@@ -674,98 +615,180 @@ void FinalBoss::Update() {
 			}
 		}
 
-		// ★ ダメージを受けてクリスタルが全復帰したら、待機状態（kFrenzy）へ移行（ここから6秒タイマー開始）
-		// ★ 修正: ダメージを与える前に終了判定が成立すると、打ち上げ途中で攻撃が打ち切られ、空のクリスタルが固まったまま残るため attackDamageDone_ を必須にする
 		if (attackDamageDone_ && allReturned && !crystal22Landed_ && !crystal22Flying_ && currentAttackIndex_ >= attackOrder_.size()) {
-			state_ = isFinalBossDefeated_ ? State::kDefeat : State::kFrenzy; // ★ 撃破していたら撃破アニメーションを続ける
-			frenzyWaitTimer_ = 0.0f;
-			crystal22Timer_ = 0.0f;
+			if (!pendingDown_) {
+				state_ = isFinalBossDefeated_ ? State::kDefeat : State::kFrenzy;
+				frenzyWaitTimer_ = 0.0f;
+				crystal22Timer_ = 0.0f;
+			}
 		}
 	}
 
 	// =========================================================
-	// 撃破アニメーション (kDefeat) ロジック
-	//   0.0 ~ 0.3: 痙攣（大きく震えて膨らむ） / 0.25 ~ 0.85: 崩れ落ちる / 0.8 ~ 1.0: 縮小して消える
-	//   ※ 終了したら isDefeatAnimationFinished_ が true になり、GameScene 側でゴール追従カメラ演出が始まる
+	// ★ 追加: ダウン予告演出 (kDownWarning) ロジック（苦悶・フラフラ揺れてダウンを予兆）
 	// =========================================================
-	if (state_ == State::kDefeat) {
-		defeatTimer_ += 1.0f / 60.0f;
-		const float defeatProgress = std::min(defeatTimer_ / kDefeatDuration, 1.0f);
+	if (state_ == State::kDownWarning) {
+		const float dt = 1.0f / 60.0f;
+		downWarningTimer_ += dt;
 
-		// 痙攣中と消える直前はパーティクルが飛び散る
-		if (defeatProgress < 0.3f) {
-			if (rand() % 3 == 0) {
-				EmitDefeatParticles();
-			}
-		} else if (defeatProgress >= 0.8f) {
+		// 激しく苦しみ・頭を抱えるようにフラフラ揺れるアニメーション
+		float progress = downWarningTimer_ / kDownWarningDuration;
+		worldTransformBody_.translation_.x = std::sin(downWarningTimer_ * 35.0f) * 0.35f;
+		worldTransformBody_.translation_.y = std::cos(downWarningTimer_ * 28.0f) * 0.25f - 0.5f * progress;
+		worldTransformBody_.rotation_.z = std::sin(downWarningTimer_ * 20.0f) * 0.25f;
+		worldTransformBody_.rotation_.x = 0.4f * SmoothStep(0.0f, 1.0f, progress); // 徐々に前傾姿勢へ
+
+		// 予告パーティクル（衝撃・苦悶の光）を噴出
+		if (rand() % 2 == 0) {
 			EmitDefeatParticles();
 		}
 
-		// 最後に縮小して消える
-		const float shrink = SmoothStep(0.8f, 1.0f, defeatProgress);
-		const float scaleRate = 1.0f - shrink;
-		worldTransform_.scale_ = {targetScale_.x * scaleRate, targetScale_.y * scaleRate, targetScale_.z * scaleRate};
+		if (downWarningTimer_ >= kDownWarningDuration) {
+			// ダウン予告完了 ➔ ダウン状態 (kDown) へ移行
+			state_ = State::kDown;
+			downTimer_ = 0.0f;
+			downStartPosition_ = worldTransform_.translation_;
 
-		if (defeatTimer_ >= kDefeatDuration) {
-			worldTransform_.scale_ = {0.0f, 0.0f, 0.0f};
-			isDefeatAnimationFinished_ = true;
-			state_ = State::kNormal;
+			// 伏せる目標座標の設定（下半身はステージ外の奥に置き、上半身をステージ内へ倒し込む）
+			KamataEngine::Vector3 targetPos = basePosition_;
+			if (player_) {
+				targetPos.x = player_->GetWorldTransform().translation_.x;
+				targetPos.y = player_->GetWorldTransform().translation_.y - 1.2f;
+			} else {
+				targetPos.y -= 4.0f;
+			}
+			targetPos.z = basePosition_.z; // ★ 下半身はステージ外の奥（Z軸）にそのまま配置する
+			downTargetPosition_ = targetPos;
 		}
 	}
 
 	// =========================================================
-	// 1. 上下ゆらゆら移動 ＆ 視差（パララックス）計算
+	// ★ ダウン（伏せ）状態 (kDown) ロジック（伏せる ➔ 本体攻撃受付 ➔ 起き上がる）
 	// =========================================================
+	if (state_ == State::kDown) {
+		const float dt = 1.0f / 60.0f;
+		downTimer_ += dt;
 
-	// 発狂状態に応じてゆらゆら速度と振り幅を変更
+		const float fallInDuration = 0.6f;                                        // 倒れ込むのにかかる時間
+		const float riseDuration = 0.8f;                                          // 起き上がるのにかかる時間
+		const float stayDuration = downDuration_ - fallInDuration - riseDuration; // 伏せている時間
+
+		if (downTimer_ <= fallInDuration) {
+			// ① 倒れ込みアニメーション（うつ伏せでステージ手前に倒れ込む）
+			float t = std::min(downTimer_ / fallInDuration, 1.0f);
+			float easeT = SmoothStep(0.0f, 1.0f, t);
+
+			worldTransform_.translation_ = {
+			    downStartPosition_.x + (downTargetPosition_.x - downStartPosition_.x) * easeT, downStartPosition_.y + (downTargetPosition_.y - downStartPosition_.y) * easeT,
+			    downStartPosition_.z + (downTargetPosition_.z - downStartPosition_.z) * easeT};
+
+			// 本体をうつ伏せ姿勢（前傾）に傾けて上半身をステージ内へ倒し込む
+			worldTransformBody_.rotation_.x = 1.25f * easeT;
+			worldTransformBody_.rotation_.z = 0.15f * std::sin(downTimer_ * 10.0f);
+
+		} else if (downTimer_ <= fallInDuration + stayDuration) {
+			// ② 伏せ状態を維持（この時間帯のみプレイヤーが本体に攻撃可能）
+			worldTransform_.translation_ = downTargetPosition_;
+			worldTransformBody_.rotation_.x = 1.25f;
+			worldTransformBody_.rotation_.z = 0.05f * std::sin(animTimer_ * 6.0f); // 苦しそうな息遣いの揺れ
+
+		} else if (downTimer_ <= downDuration_) {
+			// ③ 起き上がりアニメーション（元の背景位置へ戻る）
+			float t = std::min((downTimer_ - fallInDuration - stayDuration) / riseDuration, 1.0f);
+			float easeT = SmoothStep(0.0f, 1.0f, t);
+
+			worldTransform_.translation_ = {
+			    downTargetPosition_.x + (basePosition_.x - downTargetPosition_.x) * easeT, downTargetPosition_.y + (basePosition_.y - downTargetPosition_.y) * easeT,
+			    downTargetPosition_.z + (basePosition_.z - downTargetPosition_.z) * easeT};
+
+			worldTransformBody_.rotation_.x = 1.25f * (1.0f - easeT);
+			worldTransformBody_.rotation_.z = 0.0f;
+
+		} else {
+			// ④ 起き上がり完了：元の位置に戻り、発狂待機状態へ復帰
+			worldTransform_.translation_ = basePosition_;
+			worldTransformBody_.rotation_ = {0.0f, 0.0f, 0.0f};
+			state_ = isFinalBossDefeated_ ? State::kDefeat : State::kFrenzy;
+			frenzyWaitTimer_ = 0.0f;
+			downTimer_ = 0.0f;
+		}
+	}
+
+	// 撃破タイマーおよびスケール更新部 (Update 内)
+	if (state_ == State::kDefeat) {
+		// ★ カメラのズームアウトが完了してから撃破演出（タイマー進行・スケール・パーティクル）を開始する
+		if (isDefeatZoomFinished_) {
+			defeatTimer_ += 1.0f / 60.0f;
+			const float defeatProgress = std::min(defeatTimer_ / kDefeatDuration, 1.0f);
+
+			if (defeatProgress < 0.3f) {
+				if (rand() % 3 == 0) {
+					EmitDefeatParticles();
+				}
+			} else if (defeatProgress >= 0.8f) {
+				EmitDefeatParticles();
+			}
+
+			const float shrink = SmoothStep(0.8f, 1.0f, defeatProgress);
+			const float scaleRate = 1.0f - shrink;
+			worldTransform_.scale_ = {targetScale_.x * scaleRate, targetScale_.y * scaleRate, targetScale_.z * scaleRate};
+
+			if (defeatTimer_ >= kDefeatDuration) {
+				worldTransform_.scale_ = {0.0f, 0.0f, 0.0f};
+				isDefeatAnimationFinished_ = true;
+				state_ = State::kNormal;
+			}
+		}
+	}
+
 	float floatSpeed = (state_ == State::kFrenzy) ? 3.0f : 1.2f;
 	float floatAmp = (state_ == State::kFrenzy) ? 0.8f : 0.4f;
 	float floatOffsetY = std::sin(animTimer_ * floatSpeed) * floatAmp;
 
-	// ★ 基準座標 (basePosition_) + 描画オフセット (drawOffset_) に対して視差と揺らぎを適応
-	if (camera_) {
+	// ★ 変更: 伏せ状態(kDown)・予告状態(kDownWarning)以外の時のみ通常通り背景でゆらゆら動く
+	if (state_ != State::kDown && state_ != State::kDownWarning && camera_) {
 		worldTransform_.translation_.x = (basePosition_.x + drawOffset_.x) + camera_->translation_.x * (1.0f - parallaxFactor_);
 		worldTransform_.translation_.y = (basePosition_.y + drawOffset_.y) + camera_->translation_.y * (1.0f - parallaxFactor_) + floatOffsetY;
 		worldTransform_.translation_.z = basePosition_.z + drawOffset_.z;
+		worldTransform_.translation_.y += std::sin(animTimer_ * 1.2f) * 0.4f;
 	}
 
-	// ラスボス全体の不気味な浮遊・揺らぎ運動
-	worldTransform_.translation_.y += std::sin(animTimer_ * 1.2f) * 0.4f;
-
-	// ルート（親）のワールド行列を生成
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
 
-	// =========================================================
-	// 2. 本体のローカル行列計算と合成
-	// =========================================================
-
-	worldTransformBody_.translation_ = {0.0f, 0.0f, 0.0f};
-	worldTransformBody_.rotation_ = {0.0f, 0.0f, 0.0f};
-	worldTransformBody_.scale_ = {1.0f, 1.0f, 1.0f};
+	if (state_ != State::kDown && state_ != State::kDownWarning) {
+		worldTransformBody_.translation_ = {0.0f, 0.0f, 0.0f};
+		worldTransformBody_.rotation_ = {0.0f, 0.0f, 0.0f};
+		worldTransformBody_.scale_ = {1.0f, 1.0f, 1.0f};
+	}
 
 	if (state_ == State::kFrenzyInit) {
-		// 発狂の初期演出：本体が激しく高速シェイク
 		float shakeAmount = 0.25f;
 		worldTransformBody_.translation_.x = std::sin(frenzyTimer_ * 50.0f) * shakeAmount;
 		worldTransformBody_.translation_.y = std::cos(frenzyTimer_ * 40.0f) * shakeAmount;
 		worldTransformBody_.rotation_.z = std::sin(frenzyTimer_ * 35.0f) * 0.1f;
 	}
 
-	// ラスボス被撃時に Z 回転を加え、時間とともに元の角度へ戻す
 	if (hitReactionTimer_ < 0.45f && hitReactionRotation_ != 0.0f) {
 		hitReactionTimer_ += 1.0f / 60.0f;
 		worldTransformBody_.rotation_.z = hitReactionRotation_ * (1.0f - std::min(hitReactionTimer_ / 0.45f, 1.0f));
 	} else {
 		worldTransformBody_.rotation_.z = 0.0f;
 		hitReactionRotation_ = 0.0f;
+
+		// ★ 追加: 衝撃アニメーション（のけぞり）終了後、まずダウン予告状態（kDownWarning）へ移行
+		if (pendingDown_ && state_ != State::kDefeat) {
+			pendingDown_ = false;
+			state_ = State::kDownWarning;
+			downWarningTimer_ = 0.0f;
+			bodyHitConsumed_ = false;
+		}
 	}
 
-	// ★ 攻撃開始（溜め ➔ 咆哮）＆ 攻撃中のラスボス本体アニメーション
 	if (state_ == State::kAttack) {
 		const float introT = std::clamp(attackTimer_ / kAttackIntroDuration, 0.0f, 1.0f);
-		float charge = 0.0f; // 溜め（息を吸い込んで膨らみ、背をそらす）
-		float roar = 0.0f;   // 咆哮（一気に前へ振り下ろして元に戻る）
+		float charge = 0.0f;
+		float roar = 0.0f;
 		if (introT < 0.7f) {
 			charge = std::sin((introT / 0.7f) * std::numbers::pi_v<float> * 0.5f);
 		} else {
@@ -779,7 +802,6 @@ void FinalBoss::Update() {
 		worldTransformBody_.rotation_.z += -0.20f * charge + 0.25f * roar;
 		worldTransformBody_.rotation_.x += -0.15f * charge + 0.20f * roar;
 
-		// 攻撃中: 怒りで脈動しながら左右にゆらぐ
 		if (attackTimer_ >= kAttackIntroDuration) {
 			bodyScale *= 1.0f + 0.04f * std::sin(animTimer_ * 3.0f);
 			worldTransformBody_.rotation_.z += 0.07f * std::sin(animTimer_ * 1.6f);
@@ -788,33 +810,29 @@ void FinalBoss::Update() {
 		worldTransformBody_.scale_ = {bodyScale, bodyScale, bodyScale};
 	}
 
-	// ★ 撃破アニメーション: 痙攣 ➔ 傾いて崩れ落ちる
-	if (state_ == State::kDefeat) {
+	// 崩れ落ち・痙攣アニメーション部 (Update 内)
+	if (state_ == State::kDefeat && isDefeatZoomFinished_) {
 		const float defeatProgress = std::min(defeatTimer_ / kDefeatDuration, 1.0f);
 		const float convulsion = 1.0f - SmoothStep(0.0f, 0.5f, defeatProgress);
 		const float fall = SmoothStep(0.25f, 0.85f, defeatProgress);
 
+		// ★ ズームアウト完了後に痙攣（sin/cos振動）と崩れ落ち（fall）のアニメーションが開始する
 		worldTransformBody_.translation_.x += std::sin(defeatTimer_ * 55.0f) * 0.45f * convulsion;
 		worldTransformBody_.translation_.y += std::cos(defeatTimer_ * 47.0f) * 0.35f * convulsion - 3.0f * fall * fall;
 		worldTransformBody_.rotation_.z += std::sin(defeatTimer_ * 38.0f) * 0.12f * convulsion + 0.9f * fall;
 
-		// 痙攣の間は大きく膨らむ
 		const float bulge = 1.0f + 0.15f * std::sin(std::min(defeatProgress / 0.3f, 1.0f) * std::numbers::pi_v<float>);
 		worldTransformBody_.scale_ = {bulge, bulge, bulge};
 	}
 
 	KamataEngine::Matrix4x4 localMatBody = MakeAffineMatrix(worldTransformBody_.scale_, worldTransformBody_.rotation_, worldTransformBody_.translation_);
-	// 本体ワールド行列 = 本体のローカル行列 × ルートワールド行列
 	worldTransformBody_.matWorld_ = MultiplyMatrix(localMatBody, worldTransform_.matWorld_);
 	worldTransformBody_.TransferMatrix();
 
-	// =========================================================
-	// 3. 7本の手のうごめきアニメーション ＆ 親子関係行列合成
-	// =========================================================
 	float handSpeed = (state_ == State::kAttack) ? 6.0f : ((state_ == State::kFrenzy) ? 4.5f : ((state_ == State::kFrenzyInit) ? 7.0f : 2.0f));
 	float handSpread = (state_ == State::kAttack) ? (std::min(attackTimer_ / kAttackIntroDuration, 1.0f) * 2.4f + std::sin(animTimer_ * 4.0f) * 0.2f)
 	                                              : ((state_ == State::kFrenzyInit) ? (std::min(frenzyTimer_ / 2.0f, 1.0f) * 1.8f) : ((state_ == State::kFrenzy) ? 1.5f : 0.0f));
-	// ★ 撃破アニメーション: 崩れ落ちるにつれて手の動きが弱まり、だらりと垂れ下がる
+
 	if (state_ == State::kDefeat) {
 		const float handFall = SmoothStep(0.25f, 0.85f, std::min(defeatTimer_ / kDefeatDuration, 1.0f));
 		handSpread = 1.5f * (1.0f - handFall);
@@ -824,7 +842,6 @@ void FinalBoss::Update() {
 	for (size_t i = 0; i < kNumHands; ++i) {
 		float phaseOffset = static_cast<float>(i) * 0.8f;
 
-		// 扇状に手が外側へ広がるオフセット値
 		float angle = (static_cast<float>(i) / static_cast<float>(kNumHands)) * std::numbers::pi_v<float> * 2.0f;
 		float spreadX = std::cos(angle) * handSpread;
 		float spreadY = std::sin(angle) * handSpread;
@@ -840,30 +857,23 @@ void FinalBoss::Update() {
 		worldTransformHands_[i].TransferMatrix();
 	}
 
-	// =========================================================
-	// 4. 22個のクリスタルの不規則な上下移動アニメーション ＆ 親子関係行列合成
-	// =========================================================
 	float baseCrystalSpeed = (state_ == State::kAttack) ? 6.0f : ((state_ == State::kFrenzy) ? 4.5f : ((state_ == State::kFrenzyInit) ? 7.0f : 2.0f));
 	float crystalAmp = (state_ == State::kAttack) ? 1.0f : ((state_ == State::kFrenzy) ? 1.2f : 0.6f);
 
 	for (size_t i = 0; i < kNumCrystals; ++i) {
 		float phaseOffset = static_cast<float>(i) * 0.7f;
 
-		// 各クリスタルごとに異なる上下移動のスピード倍率を設定
 		float speedMultiplier = 0.6f + static_cast<float>((i * 5 + 3) % 11) * 0.15f;
 		float currentSpeed = baseCrystalSpeed * speedMultiplier;
 
-		// 周期の異なるサイン波を組み合わせて不規則な上下移動（Y軸）を計算
 		float verticalOffset = std::sin(animTimer_ * currentSpeed + phaseOffset) * crystalAmp + std::sin(animTimer_ * (currentSpeed * 0.63f) + phaseOffset * 1.5f) * (crystalAmp * 0.35f);
 
-		// X/Z軸および回転のゆらぎは行わず、純粋に不規則な上下移動（Y軸）のみを適用
 		worldTransformCrystals_[i].translation_.x = crystalLocalOffsets_[i].x;
 		worldTransformCrystals_[i].translation_.y = crystalLocalOffsets_[i].y + verticalOffset;
 		worldTransformCrystals_[i].translation_.z = crystalLocalOffsets_[i].z;
 
 		worldTransformCrystals_[i].rotation_ = {0.0f, 0.0f, 0.0f};
 
-		// ★ 撃破アニメーション: クリスタルが本体から外側へ飛び散りながら落ちていく
 		if (state_ == State::kDefeat) {
 			const float scatter = SmoothStep(0.2f, 0.9f, std::min(defeatTimer_ / kDefeatDuration, 1.0f));
 			const float dirX = crystalLocalOffsets_[i].x;
@@ -885,28 +895,24 @@ void FinalBoss::Update() {
 		worldTransformCrystals_[i].TransferMatrix();
 	}
 
-	// ★ 攻撃専用クリスタルのワールド行列更新
 	worldTransformCrystal22_.scale_ = {1.0f, 1.0f, 1.0f};
 	worldTransformCrystal22_.rotation_ = {0.0f, 0.0f, animTimer_ * 2.0f};
 	worldTransformCrystal22_.matWorld_ = MakeAffineMatrix(worldTransformCrystal22_.scale_, worldTransformCrystal22_.rotation_, worldTransformCrystal22_.translation_);
 	worldTransformCrystal22_.TransferMatrix();
 }
 
-// ★ 現在降下・発射中の流星群（finalBossCrystal_22）のワールド座標リストを取得
 std::vector<KamataEngine::Vector3> FinalBoss::GetActiveMeteorPositions() const {
 	std::vector<KamataEngine::Vector3> positions;
 	if (state_ != State::kAttack) {
 		return positions;
 	}
 
-	// 流星群（meteorCrystals_）で現在アクティブかつ降下中の位置を追加
 	for (size_t i = 0; i < kNumMeteorShower; ++i) {
 		if (meteorCrystals_[i].active && meteorCrystals_[i].delay <= 0.0f) {
 			positions.push_back(meteorCrystals_[i].worldTransform.translation_);
 		}
 	}
 
-	// 専用クリスタルが落下中・着地中であればその位置も追加
 	if (!crystal22Flying_ && (crystal22Landed_ || crystal22Timer_ > 0.0f)) {
 		positions.push_back(worldTransformCrystal22_.translation_);
 	}
@@ -914,13 +920,11 @@ std::vector<KamataEngine::Vector3> FinalBoss::GetActiveMeteorPositions() const {
 	return positions;
 }
 
-// ★ 落下目標予告マーカーの描画（Sprite::PreDraw に Sprite::BlendMode::kAdd を渡して加算ブレンディング切り替え）
 void FinalBoss::DrawTargetMarkers() {
 	if (!spriteTargetMarker_ || !camera_ || state_ != State::kAttack) {
 		return;
 	}
 
-	// ★ 画像仕様に従い、コマンドリストとブレンドモードを指定して加算ブレンディングを設定
 	KamataEngine::DirectXCommon* dxCommon = KamataEngine::DirectXCommon::GetInstance();
 	if (dxCommon) {
 		KamataEngine::Sprite::PreDraw(dxCommon->GetCommandList(), KamataEngine::Sprite::BlendMode::kAdd);
@@ -928,11 +932,9 @@ void FinalBoss::DrawTargetMarkers() {
 		KamataEngine::Sprite::PreDraw();
 	}
 
-	// ★ 追加: 落下中の流星群の着地予定地点へ予告マーカーを描画
 	if (meteorShowerStarted_) {
 		for (size_t i = 0; i < kNumMeteorShower; ++i) {
 			const auto& meteor = meteorCrystals_[i];
-			// まだバウンドしていない（落下中かつアクティブな）流星群の予測地点に描画
 			if (meteor.active && meteor.bounceCount == 0 && meteor.delay <= 0.0f) {
 				KamataEngine::Vector2 screenPos = WorldToScreen(meteor.targetPosition, *camera_);
 				if (screenPos.x < -100.0f || screenPos.x > 1380.0f || screenPos.y < -100.0f || screenPos.y > 820.0f) {
@@ -964,7 +966,6 @@ void FinalBoss::DrawTargetMarkers() {
 		float pulse = (std::sin(info.timer * 25.0f) * 0.5f + 0.5f);
 		float alpha = 0.5f + pulse * 0.5f;
 
-		// ★ 最後の「finalBossCrystal_22」（インデックス kMeteorCrystals）はより大きく赤く光る強い予告マーカー
 		if (i == kMeteorCrystals) {
 			spriteTargetMarker_->SetPosition(screenPos);
 			spriteTargetMarker_->SetSize({120.0f + pulse * 20.0f, 40.0f + pulse * 10.0f});
@@ -981,7 +982,6 @@ void FinalBoss::DrawTargetMarkers() {
 	KamataEngine::Sprite::PostDraw();
 }
 
-// ★ パーティクルの描画処理（white1x1.png スプライトを使用した正確な描画）
 void FinalBoss::DrawParticles() {
 	if (!spriteParticle_ || particles_.empty() || !camera_) {
 		return;
@@ -1007,7 +1007,6 @@ void FinalBoss::Draw() {
 		return;
 	}
 
-	// ボス本体および手の描画（スケールが0より大きい場合のみ描画）
 	if (worldTransform_.scale_.x > 0.001f) {
 		if (modelBody_) {
 			modelBody_->Draw(worldTransformBody_, *camera_);
@@ -1025,7 +1024,6 @@ void FinalBoss::Draw() {
 			}
 		}
 
-		// ★ finalBossCrystal_22 を使用した流星群（不規則なスケールで多数描画）
 		if (modelCrystal22_ && state_ == State::kAttack) {
 			for (size_t i = 0; i < kNumMeteorShower; ++i) {
 				if (meteorCrystals_[i].active && meteorCrystals_[i].delay <= 0.0f) {
@@ -1034,16 +1032,13 @@ void FinalBoss::Draw() {
 			}
 		}
 
-		// ★ 最後にステージに落ちる finalBossCrystal_22（着地後はステージ上にそのまま残る）
 		if (modelCrystal22_ && (crystal22Landed_ || crystal22Flying_ || worldTransformCrystal22_.translation_.y > -50.0f)) {
 			modelCrystal22_->Draw(worldTransformCrystal22_, *camera_);
 		}
 	}
 
-	// ★ 落下目標予告マーカーの描画（加算合成）
 	DrawTargetMarkers();
 
-	// ★ ラスボスが出現中（待機中でなく撃破されていない状態）なら常にHPバーを表示する
 	if (state_ != State::kStandby && !isFinalBossDefeated_ && finalBossHp_ > 0 && spriteHpBG_ && spriteHpBar_) {
 		const float barWidth = 280.0f;
 		const float barHeight = 18.0f;
@@ -1058,16 +1053,51 @@ void FinalBoss::Draw() {
 		KamataEngine::Sprite::PostDraw();
 	}
 
-	// ★ 出現パーティクルの描画（スプライト描画パイプラインで描画）
 	DrawParticles();
 }
 
-void FinalBoss::OnCollision(Player* player) { (void)player; }
+void FinalBoss::OnCollision(Player* player) {
+	(void)player;
+	// ★ 追加: 伏せ状態(kDown)の時のみプレイヤーの本体攻撃を受理しダメージを与える（1回のダウンで1回のみ）
+	if (state_ == State::kDown && !bodyHitConsumed_ && !isFinalBossDefeated_) {
+		finalBossHp_ = std::max(0, finalBossHp_ - 1);
+		finalBossHitEvent_ = true;
+		bodyHitConsumed_ = true; // 多重ヒット防止
+		hitReactionTimer_ = 0.0f;
+		hitReactionRotation_ = 0.25f;
+
+		// ★ 追加: 被弾後はすぐに起き上がりアニメーションへ移行（1回のダウンで喰らえるダメージ量を1回分に制限）
+		const float fallInDuration = 0.6f;
+		const float riseDuration = 0.8f;
+		const float stayDuration = downDuration_ - fallInDuration - riseDuration;
+		if (downTimer_ < fallInDuration + stayDuration) {
+			downTimer_ = fallInDuration + stayDuration;
+		}
+
+		if (finalBossHp_ <= 0) {
+			isFinalBossDefeated_ = true;
+			state_ = State::kDefeat;
+			defeatTimer_ = 0.0f;
+		}
+	}
+}
 
 void FinalBoss::OnDead() { isDead_ = true; }
 
 BaseEnemy::AABB FinalBoss::GetAABB() const {
-	// 奥行きに配置されているため当たり判定は空を返す
+	// ★ 追加: 伏せ状態 (kDown) の時、プレイヤー攻撃用の拡張されたAABBを返す（Y/Z軸の判定を大幅に拡大）
+	if (state_ == State::kDown) {
+		KamataEngine::Vector3 pos = {worldTransformBody_.matWorld_.m[3][0], worldTransformBody_.matWorld_.m[3][1], worldTransformBody_.matWorld_.m[3][2]};
+		float sizeX = 5.0f;  // ★ X軸の判定範囲拡大
+		float sizeY = 3.0f;  // ★ Y軸の判定範囲を大幅に拡大
+		float sizeZ = 5.0f; // ★ Z軸の判定範囲を大幅に拡大（プレイヤーの位置とZ座標がずれていても確実にヒット）
+		return AABB{
+		    {pos.x - sizeX, pos.y - sizeY, pos.z - sizeZ},
+            {pos.x + sizeX, pos.y + sizeY, pos.z + sizeZ}
+        };
+	}
+
+	// 通常時は奥行き（背景）にいるため空の判定を返す
 	return AABB{
 	    {0.0f, 0.0f, 0.0f},
         {0.0f, 0.0f, 0.0f}

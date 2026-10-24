@@ -97,6 +97,10 @@ void Player::Initialize(KamataEngine::Model* model, KamataEngine::Camera* camera
 	behaviorRequest_ = std::nullopt;
 	isKnockbackRequested_ = false;
 	knockbackTimer_ = 0.0f;
+	invincibleTimer_ = 0.0f;
+	invincibleVisualTimer_ = 0.0f;
+	hammerSwingId_ = 0;
+	hammerHitFrame_ = false;
 
 	if (modelHitEffect_ == nullptr) {
 		modelHitEffect_ = KamataEngine::Model::CreateFromOBJ("hit_effect", true);
@@ -116,8 +120,8 @@ void Player::OnCollision() {
 		return;
 	}
 
-	// ★変更：すでにノックバック状態（クールタイム中）なら何もしない
-	if (behavior_ == Behavior::kKnockback) {
+	// ★ 変更：無敵時間中（ノックバック中・ノックバック終了後の数秒間）なら何もしない
+	if (IsInvincible()) {
 		return;
 	}
 
@@ -323,6 +327,16 @@ void Player::Update() {
 		return;
 	}
 
+	// ★ 無敵時間のカウントダウンと点滅用タイマーの更新（ノックバック中は減らさず、終わってから減り始める）
+	if (behavior_ != Behavior::kKnockback && invincibleTimer_ > 0.0f) {
+		invincibleTimer_ = std::max(0.0f, invincibleTimer_ - 1.0f / 60.0f);
+	}
+	if (IsInvincible()) {
+		invincibleVisualTimer_ += 1.0f / 60.0f;
+	} else {
+		invincibleVisualTimer_ = 0.0f;
+	}
+
 	if (KamataEngine::Input::GetInstance()->TriggerKey(DIK_T)) {
 		CreateHitEffect(worldTransform_.translation_);
 	}
@@ -469,6 +483,7 @@ void Player::BehaviorKnockbackUpdate() {
 
 	if (knockbackTimer_ >= kKnockbackTotalDuration) {
 		behaviorRequest_ = Behavior::kRoot;
+		invincibleTimer_ = kInvincibleDuration; // ★ ノックバック終了後の無敵時間を開始
 	}
 }
 
@@ -478,6 +493,11 @@ void Player::BehaviorHammerSkillInit() {
 	comboInputRequested_ = false;
 	animation_.BehaviorHammerSkillInit(hammerComboIndex_);
 	velocity_ = {0.0f, 0.0f, 0.0f};
+
+	// ★ 連撃中はプレイヤーの座標を固定する（勝手に動かないようにする）
+	hammerFixedPosition_ = worldTransform_.translation_;
+	++hammerSwingId_;
+	hammerHitFrame_ = false;
 }
 
 // ★ ハンマー連撃の更新ロジック
@@ -489,14 +509,17 @@ void Player::BehaviorHammerSkillUpdate() {
 	// アニメーション更新（Hit判定・コンボ受付判定・動作終了判定を取得）
 	animation_.BehaviorHammerSkillUpdate(worldTransform_, lrDirection_, isHitCheck, isCanCombo, isSkillFinished);
 
+	// ★ 連撃中は座標を固定したまま動かさない（アニメーションや雲の揺れで座標がずれても元に戻す）
+	worldTransform_.translation_ = hammerFixedPosition_;
+	velocity_ = {0.0f, 0.0f, 0.0f};
+
 	// 連撃受付時間（isCanCombo）中にEキーが押されたら、先行入力として保持
 	if (isCanCombo && KamataEngine::Input::GetInstance()->TriggerKey(DIK_E)) {
 		comboInputRequested_ = true;
 	}
 
-	if (isHitCheck) {
-		// 必要に応じて攻撃SEやヒットエフェクト
-	}
+	// ★ 打撃が当たるタイミング（GameScene 側で敵への連撃ヒット・カメラ演出に使われる）
+	hammerHitFrame_ = isHitCheck;
 
 	// 現在進行中の連撃動作が「最後まで完了」した時に判定
 	if (isSkillFinished) {
@@ -506,12 +529,13 @@ void Player::BehaviorHammerSkillUpdate() {
 			comboInputRequested_ = false;
 			animation_.BehaviorHammerSkillInit(hammerComboIndex_);
 
-			// わずかに前進させる（踏み込み処理）
-			float stepForward = (lrDirection_ == LRDirection::kRight) ? 0.3f : -0.3f;
-			worldTransform_.translation_.x += stepForward;
+			// ★ 次のスイングとして番号を進める（踏み込みで座標は動かさない）
+			++hammerSwingId_;
+			hammerHitFrame_ = false;
 		} else {
 			// 先行入力がない、または最終段が終わった場合は通常状態へ戻る
 			behaviorRequest_ = Behavior::kRoot;
+			hammerHitFrame_ = false;
 		}
 	}
 }
@@ -672,6 +696,22 @@ void Player::CheckScreenEdgeCollision() {
 	}
 }
 
+namespace {
+// ★ ハンマー連撃の対象になる敵（通常の敵・盾の敵）かどうか
+bool IsComboTargetEnemy(BaseEnemy* enemy) { return dynamic_cast<Enemy*>(enemy) != nullptr || dynamic_cast<ShieldEnemy*>(enemy) != nullptr; }
+
+// ★ ハンマーの連撃を受けて止まっている敵かどうか
+bool IsEnemyStunned(BaseEnemy* enemy) {
+	if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
+		return normalEnemy->IsComboHitState();
+	}
+	if (ShieldEnemy* shieldEnemy = dynamic_cast<ShieldEnemy*>(enemy)) {
+		return shieldEnemy->IsComboHitState();
+	}
+	return false;
+}
+} // namespace
+
 void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 	if (isDead_) {
 		return;
@@ -693,6 +733,15 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 		if (aabbToCheck.min.x < aabbEnemy.max.x && aabbToCheck.max.x > aabbEnemy.min.x && aabbToCheck.min.y < aabbEnemy.max.y && aabbToCheck.max.y > aabbEnemy.min.y &&
 		    aabbToCheck.min.z < aabbEnemy.max.z && aabbToCheck.max.z > aabbEnemy.min.z) {
 
+			// ★ ハンマー連撃中の通常の敵・盾の敵は GameScene 側の連撃処理で扱う（盾のガードやノックバックでプレイヤーが動かないようにする）
+			if (behavior_ == Behavior::kHammerSkill && IsComboTargetEnemy(enemy)) {
+				continue;
+			}
+			// ★ 連撃を受けて止まっている敵に触れても、プレイヤーはダメージを受けない
+			if (!IsAttacking() && IsEnemyStunned(enemy)) {
+				continue;
+			}
+
 			if (IsAttacking()) {
 				enemy->OnCollision(this);
 
@@ -701,7 +750,7 @@ void Player::CheckEnemyCollision(const std::list<BaseEnemy*>& enemies) {
 					BehaviorKnockbackInitialize();
 					isKnockbackRequested_ = false;
 				}
-			} else if (behavior_ != Behavior::kKnockback) { // ★変更：ノックバック中（クールタイム中）でなければ処理
+			} else if (!IsInvincible()) { // ★ 変更：無敵時間中（ノックバック中・ノックバック終了後）でなければ処理
 				// ★ 被弾時効果音の再生
 				BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy);
 				if (boss) {
@@ -999,6 +1048,17 @@ void Player::ApplyLightManager(const LightManager& lightManager) {
 void Player::Draw() {
 	if (isDeathAnimationFinished_) {
 		return; // 演出が終わったら非表示
+	}
+
+	// ★ 無敵時間中は点滅させる（ノックバック中は速く、終わった後はゆっくり。無敵が終わる直前は再び速く点滅して知らせる）
+	if (IsInvincible()) {
+		float blinkSpeed = 12.0f; // 1 秒あたりの点滅回数
+		if (behavior_ != Behavior::kKnockback) {
+			blinkSpeed = (invincibleTimer_ <= 0.5f) ? 14.0f : 7.0f;
+		}
+		if ((static_cast<int>(invincibleVisualTimer_ * blinkSpeed * 2.0f) % 2) == 0) {
+			return; // 点滅の非表示フレーム
+		}
 	}
 
 	// 各部位の個別モデルをそれぞれの階層構造行列で描画

@@ -64,6 +64,10 @@ public:
 	void EndExecution();
 	bool IsExecution() const { return isExecution_; }
 
+	// ★ 敵への打撃のカメラ演出（シェイクではなく、少し寄る・敵の方へ振れる・傾くことで「当たった」感じを出す）
+	// hitPos: 打撃を受けた敵の位置、strength: 強さ（1.0 が通常の 1 発分。フィニッシュは大きめにする）
+	void CombatHit(const KamataEngine::Vector3& hitPos, float strength = 1.0f);
+
 private:
 	// モードごとの更新処理
 	void UpdateFollow();
@@ -78,6 +82,9 @@ private:
 
 	// プレイヤーを画面内に押し戻す処理
 	void ConstrainPlayerInScreen();
+
+	// ★ 敵への打撃のカメラ演出を毎フレーム反映する
+	void ApplyCombatHitEffect();
 
 private:
 	KamataEngine::Camera* camera_ = nullptr;
@@ -101,13 +108,14 @@ private:
 	static inline const float kHalfScreenWidth = 10.0f; // 画面の中心から端までのワールド座標上の幅（調整可能）
 
 	// ボス演出用変数
-	bool isBossPerformance_ = false;            // ボス演出中フラグ
-	bool isBossPerformanceFinished_ = false;    // ボス演出完了フラグ
-	float bossEventTimer_ = 0.0f;               // 演出経過時間タイマー
-	KamataEngine::Vector3 bossEventStartPos_{}; // 演出開始時のカメラ位置
+	bool isBossPerformance_ = false;              // ボス演出中フラグ
+	bool isBossPerformanceFinished_ = false;      // 中ボス演出完了フラグ
+	bool isFinalBossPerformanceFinished_ = false; // ★ 追加: ラスボス演出完了フラグ
+	float bossEventTimer_ = 0.0f;                 // 演出経過時間タイマー
+	KamataEngine::Vector3 bossEventStartPos_{};   // 演出開始時のカメラ位置
 
 	static inline const float kBossTriggerDistance = 12.0f;      // ボス演出が発動する距離
-	static inline const float kFinalBossTriggerDistance = 10.0f; // ★ ラスボス接近検知距離
+	static inline const float kFinalBossTriggerDistance = 10.0f; // ★ ラスボス接近検知距離（X軸距離）
 	static inline const float kBossInTime = 1.0f;                // ボスへ移動・ズームインにかかる時間
 	static inline const float kBossHoldTime = 2.5f;              // ボスを映し続ける時間
 	static inline const float kBossOutTime = 1.0f;               // プレイヤーへ復帰・ズームアウトにかかる時間
@@ -149,7 +157,7 @@ private:
 		kNone,        // 演出なし（通常の追従）
 		kAttackIntro, // 攻撃開始: ラスボスへ引いて、空へ飛び立つクリスタルを見上げる
 		kAttackOut,   // 攻撃開始の演出を終えて、プレイヤー追従へ戻る
-		kDefeat,      // 撃破: 崩れ落ちるラスボスへゆっくり寄っていく
+		kDefeat,      // 撃破: 崩れ落ちるラスボスからゆっくり引いていく
 	};
 	BossCinematic bossCinematic_ = BossCinematic::kNone;
 	float cinematicTimer_ = 0.0f;                   // 各演出の経過時間
@@ -166,9 +174,23 @@ private:
 	static inline const float kAttackIntroMaxTime = 3.4f;   // 攻撃開始: ラスボスを映す最大時間（流星群が降り始める前に戻る）
 	static inline const float kAttackOutTime = 1.0f;        // 攻撃開始: プレイヤーへ戻るのにかかる時間
 	static inline const float kAttackCameraStartZ = -24.0f; // 攻撃開始: ラスボスを映すカメラの Z 座標
-	static inline const float kDefeatCameraInTime = 0.9f;   // 撃破: ラスボスへ移動するのにかかる時間
-	static inline const float kDefeatCameraFarZ = -22.0f;   // 撃破: 最初のカメラの Z 座標（ラスボス全体）
-	static inline const float kDefeatCameraNearZ = -14.0f;  // 撃破: 最後のカメラの Z 座標（ゆっくり寄る）
+	static inline const float kDefeatCameraInTime = 0.4f;   // ★ 修正: 撃破: ズームアウトにかかる時間（高速化）
+	static inline const float kDefeatCameraFarZ = -15.0f;   // ★ 修正: 撃破開始時のカメラの Z 座標（通常位置）
+	static inline const float kDefeatCameraNearZ = -26.0f;  // ★ 修正: ズームアウトしてカメラを遠くにする Z 座標（ラスボス全体）
+
+	// ★ 敵への打撃のカメラ演出用変数
+	float combatHitTimer_ = 0.0f;                      // 演出の残り時間
+	float combatHitStrength_ = 1.0f;                   // 演出の強さ
+	float combatHitTiltSign_ = 1.0f;                   // 傾ける向き（1 回ごとに左右交互）
+	KamataEngine::Vector3 combatHitFocus_{};           // 打撃を受けた敵の位置
+	KamataEngine::Vector3 combatHitAppliedOffset_{};   // 前フレームに足した位置のオフセット（次のフレームの先頭で元に戻す）
+	KamataEngine::Vector3 combatHitAppliedRotation_{}; // 前フレームに足した角度のオフセット
+
+	static inline const float kCombatHitDuration = 0.35f;    // 1 回分の演出の長さ（秒）
+	static inline const float kCombatHitZoomDistance = 1.0f; // 打撃の瞬間に寄る距離
+	static inline const float kCombatHitPanRate = 0.10f;     // 打撃を受けた敵の方へカメラが振れる割合
+	static inline const float kCombatHitTiltRoll = 0.05f;    // カメラの傾き（斜め：Z 軸まわり）
+	static inline const float kCombatHitTiltPitch = 0.025f;  // カメラの傾き（X 軸まわり）
 
 	// ★追加：ラスボス発狂シェイク減衰用変数
 	float frenzyShakeTimer_ = 0.0f;
