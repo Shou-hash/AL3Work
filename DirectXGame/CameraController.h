@@ -51,9 +51,13 @@ public:
 	void StartGoalPerformance(const KamataEngine::Vector3& goalPos);
 	bool IsGoalPerformance() const { return isGoalPerformance_; }
 
+	// ★ カメラ演出中（ボス演出・ゴール演出・処刑演出・シネマティック演出等）かどうかの判定
+	bool IsCameraPerformance() const { return isBossPerformance_ || isGoalPerformance_ || isExecution_ || bossCinematic_ != BossCinematic::kNone; }
+
 	// ★ 処刑演出（中ボス撃破後の連撃）用カメラ
 	// ズームイン開始（focusPos: 注目する位置 = 中ボス）
 	void StartExecution(const KamataEngine::Vector3& focusPos);
+
 	// 注目する位置の更新（打ち上げられた中ボスを追うときなどに毎フレーム呼ぶ）
 	void SetExecutionFocus(const KamataEngine::Vector3& focusPos) { executionFocus_ = focusPos; }
 	// 注目点からカメラまでの距離の目標（小さいほどズームイン）

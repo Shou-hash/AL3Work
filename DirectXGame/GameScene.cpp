@@ -1120,36 +1120,42 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	for (BaseEnemy* enemy : enemies_) {
-		if (enemy) {
-			// ボスにプレイヤーポインタを設定
-			if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
-				boss->SetPlayer(player_.get());
-			}
-			if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
-				finalBoss->SetPlayer(player_.get());
-				// ★ ラスボス戦でのみ、中ボスのHPバーの可視性をラスボスの状態と連動させる
-				for (BaseEnemy* bossCandidate : enemies_) {
-					if (BossEnemy* bossEnemy = dynamic_cast<BossEnemy*>(bossCandidate)) {
-						bossEnemy->SetHpBarVisible(finalBoss->IsCrystal22Landed());
+	// ★ カメラ演出中（ボス出現演出、ゴール演出など）かどうかの判定
+	bool isCameraPerformance = cameraController_ && cameraController_->IsCameraPerformance();
+
+	// ★ カメラ演出中でない場合のみ、敵たちの攻撃挙動や移動処理（Update）を行う
+	if (!isCameraPerformance) {
+		for (BaseEnemy* enemy : enemies_) {
+			if (enemy) {
+				// ボスにプレイヤーポインタを設定
+				if (BossEnemy* boss = dynamic_cast<BossEnemy*>(enemy)) {
+					boss->SetPlayer(player_.get());
+				}
+				if (FinalBoss* finalBoss = dynamic_cast<FinalBoss*>(enemy)) {
+					finalBoss->SetPlayer(player_.get());
+					// ★ ラスボス戦でのみ、中ボスのHPバーの可視性をラスボスの状態と連動させる
+					for (BaseEnemy* bossCandidate : enemies_) {
+						if (BossEnemy* bossEnemy = dynamic_cast<BossEnemy*>(bossCandidate)) {
+							bossEnemy->SetHpBarVisible(finalBoss->IsCrystal22Landed());
+						}
 					}
 				}
-			}
-			enemy->Update();
+				enemy->Update();
 
-			if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
-				if (normalEnemy->IsItemSpawnRequested()) {
-					Item* newItem = new Item();
-					newItem->Initialize(modelItemHp_, &camera_, enemy->GetWorldTransform().translation_, mapChipField_);
-					items_.push_back(newItem);
-					normalEnemy->ResetItemSpawnRequest();
-				}
-			} else if (ShieldEnemy* shieldEnemy = dynamic_cast<ShieldEnemy*>(enemy)) {
-				if (shieldEnemy->IsItemSpawnRequested()) {
-					Item* newItem = new Item();
-					newItem->Initialize(modelItemHp_, &camera_, enemy->GetWorldTransform().translation_, mapChipField_);
-					items_.push_back(newItem);
-					shieldEnemy->ResetItemSpawnRequest();
+				if (Enemy* normalEnemy = dynamic_cast<Enemy*>(enemy)) {
+					if (normalEnemy->IsItemSpawnRequested()) {
+						Item* newItem = new Item();
+						newItem->Initialize(modelItemHp_, &camera_, enemy->GetWorldTransform().translation_, mapChipField_);
+						items_.push_back(newItem);
+						normalEnemy->ResetItemSpawnRequest();
+					}
+				} else if (ShieldEnemy* shieldEnemy = dynamic_cast<ShieldEnemy*>(enemy)) {
+					if (shieldEnemy->IsItemSpawnRequested()) {
+						Item* newItem = new Item();
+						newItem->Initialize(modelItemHp_, &camera_, enemy->GetWorldTransform().translation_, mapChipField_);
+						items_.push_back(newItem);
+						shieldEnemy->ResetItemSpawnRequest();
+					}
 				}
 			}
 		}
@@ -1185,7 +1191,8 @@ void GameScene::UpdatePlay() {
 		}
 	}
 
-	if (player_) {
+	// ★ カメラ演出中でない場合のみ、攻撃処理・当たり判定を行う
+	if (!isCameraPerformance && player_) {
 		auto attackAABB = player_->GetAttackAABB();
 		if (!attackAABB.has_value()) {
 			crystal22AttackConsumed_ = false;
@@ -1350,7 +1357,8 @@ void GameScene::UpdatePlay() {
 		playerHp_->Update(camera_.translation_);
 	}
 
-	if (player_) {
+	// ★ カメラ演出中でない場合のみ、被弾判定を行う
+	if (!isCameraPerformance && player_) {
 		player_->CheckEnemyCollision(enemies_);
 	}
 }
