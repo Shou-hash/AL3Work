@@ -156,13 +156,16 @@ private:
 	static inline const float kExecutionTiltPitch = 0.035f;   // カメラの傾き（X 軸まわり）
 	static inline const float kExecutionPunchDistance = 1.2f; // 1 発ごとに少しだけ寄る距離
 
-	// ★ ラスボスの攻撃・撃破のカメラ演出用変数
+	// ★ ラスボスのカメラ演出列挙体に覚醒(kAwakening)を追加
 	enum class BossCinematic {
-		kNone,        // 演出なし（通常の追従）
-		kAttackIntro, // 攻撃開始: ラスボスへ引いて、空へ飛び立つクリスタルを見上げる
-		kAttackOut,   // 攻撃開始の演出を終えて、プレイヤー追従へ戻る
-		kDefeat,      // 撃破: 崩れ落ちるラスボスからゆっくり引いていく
+		kNone,         // 演出なし
+		kAttackIntro,  // 攻撃開始: ラスボスへ引いて空を見上げる
+		kAttackOut,    // プレイヤー追従へ戻る
+		kAwakening,    // ★ 追加: 覚醒演出（ラスボス全体を映し、ゆっくり寄っていく ➔ 咆哮で引く）
+		kAwakeningOut, // ★ 追加: 覚醒演出が終わって、プレイヤー追従へなめらかに戻る
+		kDefeat,       // 撃破: ゆっくり引いていく
 	};
+
 	BossCinematic bossCinematic_ = BossCinematic::kNone;
 	float cinematicTimer_ = 0.0f;                   // 各演出の経過時間
 	KamataEngine::Vector3 cinematicStartPos_{};     // 各演出の開始時のカメラ位置
@@ -173,14 +176,18 @@ private:
 	bool wasBossAttacking_ = false;                 // 前のフレームでラスボスが攻撃中だったか（攻撃開始の検出用）
 	float attackFollowBlend_ = 0.0f;                // 攻撃中の「少し引いて空を見上げる」追従の強さ（0.0 ~ 1.0）
 
-	static inline const float kAttackIntroInTime = 0.9f;    // 攻撃開始: ラスボスへ引くのにかかる時間
-	static inline const float kAttackIntroMinTime = 2.0f;   // 攻撃開始: 最低限ラスボスを映す時間
-	static inline const float kAttackIntroMaxTime = 3.4f;   // 攻撃開始: ラスボスを映す最大時間（流星群が降り始める前に戻る）
-	static inline const float kAttackOutTime = 1.0f;        // 攻撃開始: プレイヤーへ戻るのにかかる時間
-	static inline const float kAttackCameraStartZ = -24.0f; // 攻撃開始: ラスボスを映すカメラの Z 座標
-	static inline const float kDefeatCameraInTime = 0.4f;   // ★ 修正: 撃破: ズームアウトにかかる時間（高速化）
-	static inline const float kDefeatCameraFarZ = -15.0f;   // ★ 修正: 撃破開始時のカメラの Z 座標（通常位置）
-	static inline const float kDefeatCameraNearZ = -26.0f;  // ★ 修正: ズームアウトしてカメラを遠くにする Z 座標（ラスボス全体）
+	static inline const float kAttackIntroInTime = 0.9f;      // 攻撃開始: ラスボスへ引くのにかかる時間
+	static inline const float kAttackIntroMinTime = 2.0f;     // 攻撃開始: 最低限ラスボスを映す時間
+	static inline const float kAttackIntroMaxTime = 3.4f;     // 攻撃開始: ラスボスを映す最大時間（流星群が降り始める前に戻る）
+	static inline const float kAttackOutTime = 1.0f;          // 攻撃開始: プレイヤーへ戻るのにかかる時間
+	static inline const float kAttackCameraStartZ = -24.0f;   // 攻撃開始: ラスボスを映すカメラの Z 座標
+	static inline const float kAwakeningInTime = 1.0f;        // ★ 覚醒演出: ラスボスへ移るのにかかる時間
+	static inline const float kAwakeningOutTime = 1.3f;       // ★ 覚醒演出: プレイヤー追従へ戻るのにかかる時間
+	static inline const float kAwakeningCameraFarZ = -24.0f;  // ★ 覚醒演出: 最初にラスボス全体を映すカメラの Z 座標
+	static inline const float kAwakeningCameraNearZ = -19.5f; // ★ 覚醒演出: 胎動でゆっくり寄っていくカメラの Z 座標
+	static inline const float kDefeatCameraInTime = 0.8f;     // ★ 修正: 撃破: ズームアウトにかかる時間（高速化）
+	static inline const float kDefeatCameraFarZ = -15.0f;     // ★ 修正: 撃破開始時のカメラの Z 座標（通常位置）
+	static inline const float kDefeatCameraNearZ = -35.0f;    // ★ 修正: ズームアウトしてカメラを遠くにする Z 座標（ラスボス全体）
 
 	// ★ 敵への打撃のカメラ演出用変数
 	float combatHitTimer_ = 0.0f;                      // 演出の残り時間

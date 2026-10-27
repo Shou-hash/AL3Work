@@ -17,6 +17,7 @@ public:
 		bool isCloud = false;                                     // ★ 雲オブジェクト判定フラグ
 		float moveSpeed = 0.0f;                                   // ★ 右から左への移動速度
 		KamataEngine::Vector3 originalScale = {1.0f, 1.0f, 1.0f}; // ★ ランダム生成された元のスケール
+		bool matrixDirty = true;                                  // ★ 軽量化: 描画範囲外で行列の更新を省略した（描画される時に計算する）
 	};
 
 	BackgroundBlocks() = default;

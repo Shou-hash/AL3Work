@@ -1,6 +1,7 @@
 #include "SelectScene.h"
 #include "AudioManager.h" // ★ BGM管理クラスのインクルード
 #include "Matrix4x4.h"
+#include "ModelCache.h"
 #include "StageManager.h"
 #include <algorithm>
 #include <cmath>
@@ -11,21 +12,26 @@
 
 SelectScene::~SelectScene() {
 	delete fade_;
-	delete modelSkydome_;
-	delete modelArrow_; // ★ 矢印モデルの解放
 
-	// ★ モデルの解放
-	for (int32_t i = 0; i < kNumStages; ++i) {
-		delete stageSprites_[i];
-	}
+	// ★ 軽量化: モデルは ModelCache で使い回しているため、ここでは解放しない
 }
 
 void SelectScene::Initialize(StageManager* stageDataManager) {
+	// ★ 軽量化: 前回の Initialize で確保したものを先に解放する（モデルは ModelCache で使い回すので解放しない）
+	skydome.reset();
+	delete fade_;
+	fade_ = nullptr;
+
+	pendingPauseMenu_ = Pause::MenuType::Count; // ポーズ選択項目の初期化
+
 	// ★ セレクトBGMの再生
 	AudioManager::GetInstance()->PlayBGM(BGMType::kSelect);
 
 	stageManager_ = stageDataManager;
 	finished_ = false;
+	isEndSceneRequested_ = false;
+	isTitleRequested_ = false; // ★ 遷移要求フラグの初期化
+	isExitRequested_ = false;
 	phase_ = Phase::FadeIn;
 
 	fade_ = new Fade();
@@ -35,7 +41,7 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 	camera_.Initialize();
 	camera_.translation_ = {10.0f, 5.0f, -15.0f};
 
-	modelSkydome_ = KamataEngine::Model::CreateFromOBJ("skydome", true);
+	modelSkydome_ = ModelCache::Load("skydome");
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
@@ -44,12 +50,12 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 	}
 
 	// ★ ステージ選択モデル（Stage1.obj, Stage2.obj, Stage3.obj）のロードと配置初期化
-	stageSprites_[0] = KamataEngine::Model::CreateFromOBJ("Stage1", true);
-	stageSprites_[1] = KamataEngine::Model::CreateFromOBJ("Stage2", true);
-	stageSprites_[2] = KamataEngine::Model::CreateFromOBJ("Stage3", true);
+	stageSprites_[0] = ModelCache::Load("Stage1");
+	stageSprites_[1] = ModelCache::Load("Stage2");
+	stageSprites_[2] = ModelCache::Load("Stage3");
 
 	// ★ 操作解説用矢印モデル（Arrow.obj）のロード
-	modelArrow_ = KamataEngine::Model::CreateFromOBJ("Arrow", true);
+	modelArrow_ = ModelCache::Load("Arrow");
 
 	// 3つのステージモデルをカメラ前方（ワールド空間）に横並びで配置
 	float startX = 7.0f;
@@ -95,7 +101,7 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 	// 初期選択ステージのタイマーを満了状態にしておく
 	animationTimers_[currentSelectIndex_] = 1.0f;
 
-	// ★ 朝のライティングを設定（ラスボスの夜・赤いスポットライトは使わない）
+	// ★ ライティング初期化
 	lightManager_ = std::make_unique<LightManager>();
 	lightManager_->Initialize();
 	lightManager_->ApplyToModel(modelSkydome_, LightManager::GroupType::kWorld);
@@ -105,16 +111,118 @@ void SelectScene::Initialize(StageManager* stageDataManager) {
 	if (modelArrow_) {
 		lightManager_->ApplyToModel(modelArrow_, LightManager::GroupType::kWorld);
 	}
+
+	// ★ ライティング切替演出変数の初期化
+	previousSelectIndex_ = currentSelectIndex_;
+	if (currentSelectIndex_ == 2) {
+		flickerTimer_ = 0.0f;
+		currentInterval_ = 0.06f; // 最初の切替間隔（約0.06秒＝高速切替）
+		isNight_ = true;
+		isFlickerFinished_ = false;
+	} else {
+		isNight_ = false;
+		isFlickerFinished_ = true;
+	}
+
+	// ★ フォント演出・ポーズUIクラスの初期化
+	font_ = std::make_unique<Font>();
+	font_->Initialize(&camera_);
+	if (lightManager_) {
+		font_->ApplyLightManager(*lightManager_);
+	}
+
+	// ★ セレクトシーン用ポーズクラスの初期化（セレクト画面モード Title/Exit の2項目）
+	pause_ = std::make_unique<Pause>();
+	pause_->Initialize(&camera_);
+	pause_->SetMode(Pause::Mode::Select);                       // セレクト画面モードに設定
+	pause_->SetScale({0.085f, 0.07f, 0.07f});                   // スケールをさらに小さく設定
+	pause_->SetOffsets({0.0f, 8.0f, 3.5f}, {0.0f, 0.0f, 3.5f}); // Z軸距離を 8.0f -> 3.5f にして手前へ移動
+	if (lightManager_) {
+		pause_->ApplyLightManager(*lightManager_);
+	}
 }
 
 void SelectScene::Update() {
+	// ★ 追加: ポーズクラスの更新（ESC押下判定と看板の降り/上がりアニメーション）
+	if (pause_) {
+		pause_->Update();
+
+		// ポーズメニュー項目確定時の画面遷移処理
+		if (pause_->IsMenuSelected()) {
+			Pause::MenuType selected = pause_->GetSelectedMenu();
+			pause_->ResetMenuSelection();
+			pause_->Close(); // 看板を閉じる
+
+			// ★ 修正: 選択項目を保持してフェードアウトを開始
+			pendingPauseMenu_ = selected;
+			phase_ = Phase::FadeOut;
+			if (fade_) {
+				fade_->Start(Fade::Status::FadeOut, 0.8f);
+			}
+		}
+	}
+
+	// ★ 追加: ポーズ中（看板展開中・完全停止中）はセレクトシーンの全挙動を一時停止（フェードアウト中は除く）
+	if (pause_ && pause_->IsPaused() && phase_ != Phase::FadeOut) {
+		return;
+	}
+
 	fade_->Update();
 	skydome->Update();
 
 	camera_.UpdateMatrix();
 
-	// ★ 朝のライティングの更新
+	// ★ ステージ選択切り替えの検出とステージ2専用ライティング演出のリセット
+	if (currentSelectIndex_ != previousSelectIndex_) {
+		if (currentSelectIndex_ == 2) {
+			// ステージ2が選択された時：高速交互切替（フリッカー）演出を開始
+			flickerTimer_ = 0.0f;
+			currentInterval_ = 0.06f; // 最初は速く切替（0.06秒間隔）
+			isNight_ = true;
+			isFlickerFinished_ = false;
+		} else {
+			// ステージ0・1が選択された時：即座に朝のライティングに戻す
+			isNight_ = false;
+			isFlickerFinished_ = true;
+		}
+		previousSelectIndex_ = currentSelectIndex_;
+	}
+
+	// ★ ステージ2選択時の「朝 ⇔ 夜」ライティング交互切替（フリッカー）演出更新
+	if (currentSelectIndex_ == 2) {
+		if (!isFlickerFinished_) {
+			flickerTimer_ += 1.0f / 60.0f;
+			if (flickerTimer_ >= currentInterval_) {
+				flickerTimer_ = 0.0f;
+				isNight_ = !isNight_; // 朝と夜を交互にトグル
+
+				// 切替間隔を段々遅くする（1.5倍ずつ間隔が伸びる）
+				currentInterval_ *= 1.5f;
+
+				// 切替間隔が一定以上（0.7秒以上）になり、かつ「夜」の状態で演出を終了して夜に固定
+				if (currentInterval_ >= 0.7f && isNight_) {
+					isFlickerFinished_ = true;
+				}
+			}
+		}
+		lightManager_->SetNightFactor(isNight_ ? 1.0f : 0.0f);
+		lightManager_->SetLightsEnabled(isNight_); // 夜のスポットライト演出も連動
+	} else {
+		// ステージ0・1選択時は標準の朝のライティング演出
+		lightManager_->SetNightFactor(0.0f);
+		lightManager_->SetLightsEnabled(false);
+	}
+
+	// ★ ライティングの更新
 	lightManager_->Update();
+
+	// ★ ポーズUIの更新とESCキー検出
+	if (font_) {
+		font_->Update();
+		if (font_->IsEndSceneRequested()) {
+			isEndSceneRequested_ = true;
+		}
+	}
 
 	// 演出用の共通タイマーを進める
 	flashTimer_ += 0.08f;
@@ -257,8 +365,16 @@ void SelectScene::Update() {
 	}
 
 	case Phase::FadeOut:
-		if (fade_->IsFinished())
-			finished_ = true;
+		if (fade_->IsFinished()) {
+			// ★ 修正: ポーズからの遷移要求に応じて各フラグを立てる
+			if (pendingPauseMenu_ == Pause::MenuType::Title) {
+				isTitleRequested_ = true;
+			} else if (pendingPauseMenu_ == Pause::MenuType::Exit) {
+				isExitRequested_ = true;
+			} else {
+				finished_ = true;
+			}
+		}
 		break;
 	}
 
@@ -304,6 +420,20 @@ void SelectScene::Draw() {
 		}
 	}
 	KamataEngine::Model::PostDraw();
+
+	// ★ ポーズUI（Pauseモデル、ESCモデル）の描画処理
+	if (font_) {
+		KamataEngine::Model::PreDraw();
+		font_->DrawPauseUI();
+		KamataEngine::Model::PostDraw();
+	}
+
+	// ★ ポーズ看板モデル（PictureFrame）の描画
+	if (pause_) {
+		KamataEngine::Model::PreDraw();
+		pause_->Draw();
+		KamataEngine::Model::PostDraw();
+	}
 
 	fade_->Draw();
 }

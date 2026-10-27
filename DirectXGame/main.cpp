@@ -66,6 +66,9 @@ void UpdateScene() {
 	case Scene::kTitle:
 		titleScene->Update();
 
+		// ★ 軽量化: 待ち時間のあいだに、ゲームで使うモデルを 1 フレームにつき 1 個ずつ読み込んでおく
+		GameScene::PreloadModelsStep();
+
 		if (titleScene->IsFinished()) {
 			ChangeScene(Scene::kSelect);
 			selectScene->Initialize(stageManager);
@@ -75,7 +78,16 @@ void UpdateScene() {
 	case Scene::kSelect:
 		selectScene->Update();
 
-		if (selectScene->IsFinished()) {
+		// ★ 軽量化: セレクト画面でも続きを読み込む
+		GameScene::PreloadModelsStep();
+
+		// ★ 追加: ポーズからの画面遷移要求の処理
+		if (selectScene->IsTitleRequested()) {
+			ChangeScene(Scene::kTitle);
+			titleScene->Initialize();
+		} else if (selectScene->IsExitRequested()) {
+			isExitRequested = true;
+		} else if (selectScene->IsFinished()) {
 			ChangeScene(Scene::kGame);
 			gameScene->Initialize(stageManager);
 		}
@@ -84,7 +96,24 @@ void UpdateScene() {
 	case Scene::kGame:
 		gameScene->Update();
 
-		if (gameScene->isFinished()) {
+		// ★ 追加: ポーズからの画面遷移要求の処理
+		if (gameScene->IsTitleRequested()) {
+			ChangeScene(Scene::kTitle);
+			titleScene->Initialize();
+
+			delete gameScene;
+			gameScene = nullptr;
+			gameScene = new GameScene();
+		} else if (gameScene->IsSelectRequested()) {
+			ChangeScene(Scene::kSelect);
+			selectScene->Initialize(stageManager);
+
+			delete gameScene;
+			gameScene = nullptr;
+			gameScene = new GameScene();
+		} else if (gameScene->IsExitRequested()) {
+			isExitRequested = true;
+		} else if (gameScene->isFinished()) {
 			ChangeScene(Scene::kEnd);
 			endScene->Initialize(stageManager);
 		} else if (gameScene->IsReloadRequested()) {

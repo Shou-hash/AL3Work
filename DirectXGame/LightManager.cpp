@@ -39,6 +39,8 @@ Vector3 Lerp(const Vector3& a, const Vector3& b, float t) { return {a.x + (b.x -
 
 Vector3 Scale(const Vector3& a, float s) { return {a.x * s, a.y * s, a.z * s}; }
 
+float LerpF(float a, float b, float t) { return a + (b - a) * t; }
+
 // スムーズステップ（edge0 以下で 0.0、edge1 以上で 1.0 になめらかに変化する）
 float SmoothStep(float edge0, float edge1, float x) {
 	float t = (x - edge0) / (edge1 - edge0);
@@ -89,6 +91,23 @@ void LightManager::SetCrystalPointLight(bool active, const KamataEngine::Vector3
 	}
 }
 
+void LightManager::SetDoomPointLight(float intensity, const KamataEngine::Vector3& position) {
+	if (intensity <= 0.01f) {
+		return;
+	}
+
+	// 流星群の点光源（pointLights[1]）を、終末の裁きの間だけ赤い光に使い回す（流星群と同時には使われない）
+	for (GroupType type : {GroupType::kWorld, GroupType::kBoss}) {
+		PointState& p = GetSet(type).pointLights[1];
+		p.active = true;
+		p.color = {1.0f, 0.30f, 0.14f};
+		p.intensity = 9.0f * intensity;
+		p.position = position;
+		p.radius = 20.0f;
+		p.decay = 1.2f;
+	}
+}
+
 void LightManager::Initialize() {
 	// エンジン標準のライトグループを生成（種類ごとに 1 つ）
 	for (auto& set : lightSets_) {
@@ -101,8 +120,14 @@ void LightManager::Initialize() {
 	lightFade_ = 0.0f;
 	nightTarget_ = 0.0f;
 	nightCurrent_ = 0.0f;
+	awakenedBlend_ = 0.0f;
+	awakenRoarGlow_ = 0.0f;
 	isBossFrenzy_ = false;
 	time_ = 0.0f;
+
+	// ★ 軽量化: 初回は全てのライトグループを反映し、そのあとはモデルに設定されたものだけを更新する
+	setUsed_.fill(false);
+	firstTransferDone_ = false;
 
 	// =========================================================
 	// 通常（ブロック・プレイヤー・敵など）
@@ -175,7 +200,7 @@ void LightManager::Initialize() {
 	TransferBuffer();
 }
 
-void LightManager::Update() {
+void LightManager::Update(bool transfer) {
 	time_ += 1.0f / 60.0f;
 
 	// ゲーム側の指示（ImGui の手動操作がある場合はそちらを優先）
@@ -197,6 +222,13 @@ void LightManager::Update() {
 
 	// 夜の度合いを目標値へなめらかに近づける（出現演出の間に朝から夜へ段々暗くなる）
 	nightCurrent_ += (nightGoal - nightCurrent_) * kNightSmoothing;
+
+	// ★ 終末ライティングの度合いを目標値へゆっくり近づける（急に切り替わって目がチカチカしないようにする）
+	const bool awakenedTarget = awakenedOverride_ ? manualAwakened_ : isAwakened_;
+	awakenedBlend_ += ((awakenedTarget ? 1.0f : 0.0f) - awakenedBlend_) * awakenedSmoothing_;
+	if (std::fabs((awakenedTarget ? 1.0f : 0.0f) - awakenedBlend_) < 0.002f) {
+		awakenedBlend_ = awakenedTarget ? 1.0f : 0.0f;
+	}
 
 	// 演出: 朝の太陽（メイン平行光源）をゆっくり円を描くように回転させて光と影の表情を変化させる
 	//   左（日の出）➔ 上（昼）➔ 右（日の入り）➔ 下（地平線の下）と一周する。
@@ -229,56 +261,72 @@ void LightManager::Update() {
 		sunWarmRate_ = 0.0f;
 	}
 
-	TransferBuffer();
-}
-
-void LightManager::TransferBuffer() {
-	for (size_t i = 0; i < lightSets_.size(); ++i) {
-		ApplyLightSet(lightSets_[i], i == static_cast<size_t>(GroupType::kBoss));
+	if (transfer) {
+		TransferBuffer();
 	}
 }
 
-void LightManager::ApplyLightSet(LightSet& set, bool isBoss) {
+void LightManager::TransferBuffer() {
+	// 終末の光の奥行きによる暗さ（奥の背景ほど暗くして、手前のステージが一番見やすくなるようにする）
+	static constexpr float kDepthRates[static_cast<size_t>(GroupType::kCount)] = {1.0f, 0.95f, 0.8f, 0.6f, 1.0f};
+
+	for (size_t i = 0; i < lightSets_.size(); ++i) {
+		// ★ 軽量化: 初回以外は、モデルに設定されていない（使われていない）ライトグループは更新しない
+		if (firstTransferDone_ && !setUsed_[i]) {
+			continue;
+		}
+		ApplyLightSet(lightSets_[i], i == static_cast<size_t>(GroupType::kBoss), kDepthRates[i]);
+	}
+	firstTransferDone_ = true;
+}
+
+void LightManager::ApplyLightSet(LightSet& set, bool isBoss, float depthRate) {
 	LightGroup* group = set.group.get();
 	if (!group) {
 		return;
 	}
 
 	const float night = nightCurrent_;
-	// スポットライトは、点灯の進行度が 0 の間は無効にする
 	const bool isSpotOn = lightFade_ > 0.0001f;
+	const float apoc = awakenedBlend_; // ★ 終末ライティングの度合い（朝・夜 ➔ 終末へなめらかに切り替わる）
 
-	// 環境光：朝の環境光から夜の環境光へ
-	// ★ 太陽の高さによる環境光の変化は、朝のライティングの度合い（1.0 - night）に応じて反映する
 	const float ambientRate = 1.0f + (sunAmbientRate_ - 1.0f) * (1.0f - night);
-	group->SetAmbientColor(Scale(Lerp(set.ambientMorning, set.ambientNight, night), ambientRate));
 
-	// 平行光源 0,1：朝の見た目から夜の見た目へ（向き・色・明るさ・彩度をまとめて補間）
+	// ★ 覚醒状態（終末ライティング）：ImGuiで調整可能な色へ、度合いに応じて近づける
+	Vector3 ambientColor = Lerp(set.ambientMorning, set.ambientNight, night);
+	ambientColor = Lerp(ambientColor, Scale(awakenedAmbientColor_, depthRate), apoc);
+
+	group->SetAmbientColor(Scale(ambientColor, ambientRate));
+
 	for (int i = 0; i < kUsableDirLights; ++i) {
 		const DirState& d = set.dirLights[i];
 		Vector3 morningColor = AdjustColor(d.morning.color, d.morning.brightness, d.morning.saturation);
 		if (i == 0 && isSunRotating_) {
-			// ★ メインの太陽: 低い位置では朝焼け・夕焼けの暖かい色に、地平線の下では暗くする
 			morningColor = Scale(Lerp(morningColor, kSunWarmColor, sunWarmRate_ * 0.5f), sunBrightnessRate_);
 		}
 		Vector3 nightColor = AdjustColor(d.night.color, d.night.brightness, d.night.saturation);
+
+		// ★ 覚醒時のメイン・サブライト色と向き（ImGuiで調整可能な値へ、度合いに応じて近づける）
+		Vector3 baseColor = Lerp(morningColor, nightColor, night);
 		Vector3 direction = Lerp(d.morning.direction, d.night.direction, night);
+		if (apoc > 0.0f) {
+			const Vector3 apocColor = Scale((i == 0) ? awakenedDirColor0_ : awakenedDirColor1_, depthRate);
+			baseColor = Lerp(baseColor, apocColor, apoc);
+			direction = Lerp(direction, (i == 0) ? awakenedDir0_ : awakenedDir1_, apoc);
+		}
+
 		group->SetDirLightActive(i, d.active);
 		group->SetDirLightDir(i, SafeDir(direction, {0.0f, -1.0f, 0.0f}, kDirLightSign));
-		group->SetDirLightColor(i, Lerp(morningColor, nightColor, night));
+		group->SetDirLightColor(i, baseColor);
 	}
 
-	// 平行光源 2 は無効にしたまま、シェーダーへ渡す設定値を color に格納する
-	// （ObjPS.hlsl 側で dirLights[2].color を読む）
-	//   x: Lambert(0) / HalfLambert(1)   y: 光沢の強さ   z: 光沢の鋭さ
-	float currentGlossStrength = isBoss ? bossGlossStrength_ : glossStrength_;    // ★ ラスボス専用のハイライト強度を適用
-	float currentGlossShininess = isBoss ? bossGlossShininess_ : glossShininess_; // ★ ラスボス専用のハイライト鋭さを適用
+	float currentGlossStrength = isBoss ? bossGlossStrength_ : glossStrength_;
+	float currentGlossShininess = isBoss ? bossGlossShininess_ : glossShininess_;
 
 	group->SetDirLightActive(2, false);
 	group->SetDirLightDir(2, {0.0f, -1.0f, 0.0f});
 	group->SetDirLightColor(2, {static_cast<float>(lightType_), currentGlossStrength, currentGlossShininess});
 
-	// 点光源
 	for (int i = 0; i < static_cast<int>(set.pointLights.size()); ++i) {
 		const PointState& p = set.pointLights[i];
 		group->SetPointLightActive(i, p.active);
@@ -289,29 +337,31 @@ void LightManager::ApplyLightSet(LightSet& set, bool isBoss) {
 		group->SetPointLightDecay(i, p.decay);
 	}
 
-	// ★ ラスボスの自己発光：点光源 2 番の intensity をシェーダーへの受け渡しに使う（この点光源は常に無効のまま）
-	// 夜になるほど強く光り、発狂中は脈打つように明滅する。ラスボス以外のグループは 0 を渡す
 	{
 		float glow = 0.0f;
 		if (isBoss) {
-			float pulseSpeed = isBossFrenzy_ ? 8.0f : 2.0f;
-			float pulseAmp = isBossFrenzy_ ? 0.25f : 0.1f;
+			float pulseSpeed = LerpF(isBossFrenzy_ ? 8.0f : 2.0f, awakenedPulseSpeed_, apoc); // ★ 覚醒時のパルス速度（ゆっくり）
+			float pulseAmp = LerpF(isBossFrenzy_ ? 0.25f : 0.1f, awakenedPulseAmp_, apoc);    // ★ 覚醒時のパルス振幅（小さく）
 			glow = bossGlowStrength_ * bossGlowFade_ * (1.0f + 0.5f * night) * (1.0f + pulseAmp * std::sin(time_ * pulseSpeed));
+			glow *= LerpF(1.0f, awakenedGlowRate_, apoc); // ★ 覚醒時の自己発光倍率
+			// ★ 咆哮の余韻: ラスボスだけがやわらかく光る（画面全体は明るくしない）
+			glow += bossGlowStrength_ * bossGlowFade_ * 0.5f * awakenRoarGlow_ * awakenRoarGlow_;
 		}
 		group->SetPointLightActive(2, false);
 		group->SetPointLightIntensity(2, glow);
 	}
 
-	// スポットライト：ゆらぎ（明滅）を加える。ラスボスの発狂中は激しく明滅、夜になるほど少し強くなる
 	const bool isFrenzy = isBoss && isBossFrenzy_;
-	const float pulseAmp = isFrenzy ? 0.2f : 0.08f;
-	const float pulseSpeed = isFrenzy ? 10.0f : 2.5f;
+	const float pulseAmp = LerpF(isFrenzy ? 0.25f : 0.08f, awakenedPulseAmp_, apoc);    // ★ 覚醒時のスポット明滅振幅
+	const float pulseSpeed = LerpF(isFrenzy ? 10.0f : 2.5f, awakenedPulseSpeed_, apoc); // ★ 覚醒時のスポット明滅速度
 	const float nightBoost = 1.0f + 0.3f * night;
 	for (int i = 0; i < static_cast<int>(set.spotLights.size()); ++i) {
 		const SpotState& s = set.spotLights[i];
 		float pulse = 1.0f + pulseAmp * std::sin(time_ * pulseSpeed + static_cast<float>(i) * 1.7f);
+		// ★ 覚醒時のスポットライト色（ImGuiで調整可能な色を反映）
+		Vector3 spotColor = Lerp(s.color, awakenedSpotColor_, apoc);
 		group->SetSpotLightActive(i, isSpotOn && s.active);
-		group->SetSpotLightColor(i, Scale(s.color, lightFade_));
+		group->SetSpotLightColor(i, Scale(spotColor, lightFade_));
 		group->SetSpotLightIntensity(i, s.intensity * pulse * nightBoost);
 		group->SetSpotLightPos(i, s.position);
 		group->SetSpotLightRadius(i, s.radius);
@@ -320,7 +370,6 @@ void LightManager::ApplyLightSet(LightSet& set, bool isBoss) {
 		group->SetSpotLightFactorAngle(i, {ToEngineAngle(s.angleDeg.x), ToEngineAngle(s.angleDeg.y)});
 	}
 
-	// ダーティフラグが立っていれば定数バッファへ転送される
 	group->Update();
 }
 
@@ -354,10 +403,14 @@ void LightManager::SetMeteorPointLights(bool active, const std::vector<KamataEng
 void LightManager::ApplyToModel(Model* model, GroupType type) const {
 	if (model) {
 		model->SetLightGroup(GetSet(type).group.get());
+		setUsed_[static_cast<size_t>(type)] = true; // ★ 軽量化: このライトグループは使われている
 	}
 }
 
-const LightGroup* LightManager::GetLightGroup(GroupType type) const { return GetSet(type).group.get(); }
+const LightGroup* LightManager::GetLightGroup(GroupType type) const {
+	setUsed_[static_cast<size_t>(type)] = true; // ★ 軽量化: このライトグループは使われている
+	return GetSet(type).group.get();
+}
 
 void LightManager::FollowSpot(SpotState& spot, bool active, const Vector3& targetPos, const Vector3& offset) {
 	spot.active = active;
@@ -485,6 +538,26 @@ void LightManager::DrawImGui() {
 			ImGui::SliderFloat("Boss Gloss Strength", &bossGlossStrength_, 0.0f, 3.0f);
 			ImGui::SliderFloat("Boss Gloss Shininess", &bossGlossShininess_, 2.0f, 128.0f);
 
+			ImGui::TreePop();
+		}
+
+		// ★ 終末ライティング（覚醒時）の ImGui 調整項目
+		if (ImGui::TreeNode("Awakened Lighting (End World)")) {
+			ImGui::Checkbox("Manual Awakened Override", &awakenedOverride_);
+			if (awakenedOverride_) {
+				ImGui::Checkbox("Awakened Active", &manualAwakened_);
+			}
+			ImGui::ColorEdit3("Ambient Color", &awakenedAmbientColor_.x);
+			ImGui::ColorEdit3("Dir Light 0 Color", &awakenedDirColor0_.x);
+			ImGui::ColorEdit3("Dir Light 1 Color", &awakenedDirColor1_.x);
+			ImGui::DragFloat3("Dir Light 0 Direction", &awakenedDir0_.x, 0.01f);
+			ImGui::DragFloat3("Dir Light 1 Direction", &awakenedDir1_.x, 0.01f);
+			ImGui::ColorEdit3("Spot Light Color", &awakenedSpotColor_.x);
+			ImGui::SliderFloat("Glow Rate", &awakenedGlowRate_, 0.0f, 3.0f);
+			ImGui::SliderFloat("Pulse Speed", &awakenedPulseSpeed_, 0.0f, 20.0f);
+			ImGui::SliderFloat("Pulse Amp", &awakenedPulseAmp_, 0.0f, 1.0f);
+			ImGui::SliderFloat("Blend Smoothing", &awakenedSmoothing_, 0.002f, 0.2f);
+			ImGui::Text("Awakened Blend: %.2f", awakenedBlend_);
 			ImGui::TreePop();
 		}
 

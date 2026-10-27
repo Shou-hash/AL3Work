@@ -1,6 +1,7 @@
 #include "EndScene.h"
 #include "AudioManager.h" // ★ BGM管理クラスのインクルード
 #include "Matrix4x4.h"
+#include "ModelCache.h"
 #include "StageManager.h"
 #include <cmath>
 #include <numbers>
@@ -10,12 +11,8 @@
 
 EndScene::~EndScene() {
 	delete fade_;
-	delete modelSkydome_;
 
-	// ★ モデルの解放
-	for (int32_t i = 0; i < kNumMenus; ++i) {
-		delete menuSprites_[i];
-	}
+	// ★ 軽量化: モデルは ModelCache で使い回しているため、ここでは解放しない
 }
 
 void EndScene::Initialize(StageManager* stageDataManager) {
@@ -35,15 +32,15 @@ void EndScene::Initialize(StageManager* stageDataManager) {
 	camera_.translation_ = {10.0f, 5.0f, -15.0f};
 
 	// ★ スカイドームの初期化
-	modelSkydome_ = KamataEngine::Model::CreateFromOBJ("skydome", true);
+	modelSkydome_ = ModelCache::Load("skydome");
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
 	// メニュー選択モデル（Return.obj, Retry.obj, Title.obj, Exit.obj）のロードと配置初期化
-	menuSprites_[0] = KamataEngine::Model::CreateFromOBJ("Return", true);
-	menuSprites_[1] = KamataEngine::Model::CreateFromOBJ("Retry", true);
-	menuSprites_[2] = KamataEngine::Model::CreateFromOBJ("Title", true);
-	menuSprites_[3] = KamataEngine::Model::CreateFromOBJ("Exit", true);
+	menuSprites_[0] = ModelCache::Load("Return");
+	menuSprites_[1] = ModelCache::Load("Retry");
+	menuSprites_[2] = ModelCache::Load("Title");
+	menuSprites_[3] = ModelCache::Load("Exit");
 
 	// 4つの項目を画面中央付近に縦並びで配置
 	float startY = 6.5f;

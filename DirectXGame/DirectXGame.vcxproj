@@ -169,11 +169,13 @@
     <ClCompile Include="BossEnemy.cpp" />
     <ClCompile Include="CameraController.cpp" />
     <ClCompile Include="BackgroundBlocks.cpp" />
+    <ClCompile Include="CrystalArrow.cpp" />
     <ClCompile Include="DeathParticles.cpp" />
     <ClCompile Include="EndScene.cpp" />
     <ClCompile Include="Enemy.cpp" />
     <ClCompile Include="Fade.cpp" />
     <ClCompile Include="FinalBoss.cpp" />
+    <ClCompile Include="Font.cpp" />
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="GlobalVariables.cpp" />
     <ClCompile Include="Goal.cpp" />
@@ -183,6 +185,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapChipField.cpp" />
     <ClCompile Include="Matrix4x4.cpp" />
+    <ClCompile Include="Pause.cpp" />
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="PlayerAnimation.cpp" />
     <ClCompile Include="PlayerHp.cpp" />
@@ -297,11 +300,13 @@
     <ClInclude Include="BossEnemy.h" />
     <ClInclude Include="CameraController.h" />
     <ClInclude Include="BackgroundBlocks.h" />
+    <ClInclude Include="CrystalArrow.h" />
     <ClInclude Include="DeathParticles.h" />
     <ClInclude Include="EndScene.h" />
     <ClInclude Include="Enemy.h" />
     <ClInclude Include="Fade.h" />
     <ClInclude Include="FinalBoss.h" />
+    <ClInclude Include="Font.h" />
     <ClInclude Include="GameScene.h" />
     <ClInclude Include="GlobalVariables.h" />
     <ClInclude Include="Goal.h" />
@@ -310,6 +315,8 @@
     <ClInclude Include="LightManager.h" />
     <ClInclude Include="MapChipField.h" />
     <ClInclude Include="Matrix4x4.h" />
+    <ClInclude Include="ModelCache.h" />
+    <ClInclude Include="Pause.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="PlayerAnimation.h" />
     <ClInclude Include="PlayerHp.h" />

@@ -2,35 +2,62 @@
 #include "AudioManager.h"
 #include "Kamataengine.h"
 #include "Matrix4x4.h"
+#include "ModelCache.h"
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #ifdef _DEBUG
 #include <imgui.h>
 #endif
 
+namespace {
+// ★ 軽量化: カメラからこの横方向の距離の列だけ、ブロックを用意して描画する（タイトルのカメラは固定の奥行きなので、これ以上遠くは画面に映らない）
+constexpr float kTitleStageRangeX = 24.0f;
+} // namespace
+
 TitleScene::~TitleScene() {
 	delete fade_;
 	delete player_;
-	delete modelPlayerHead_;
-	delete modelPlayerBody_;
-	delete modelPlayerLeft_;
-	delete modelPlayerRight_;
 
+	// ★ 軽量化: モデルは ModelCache で使い回しているため、ここでは解放しない
 	delete mapChipField_;
-	delete model_;
-	delete modelBlockAbove_;
-	delete modelBlockBelow_;
-	delete modelBlockLeft_;
-	delete modelBlockRight_;
 	for (auto& worldTransformBlockLine : worldTransformBlocks_) {
 		for (auto* worldTransformBlock : worldTransformBlockLine) {
 			delete worldTransformBlock;
 		}
 	}
 	worldTransformBlocks_.clear();
+}
 
-	delete modelSkydome_;
-	delete modelTitleName_;
+// ★ 軽量化: カメラの周辺の列のブロックだけ WorldTransform を作る
+//   ブロックは動かないので、作るときに行列を 1 回だけ計算して転送する（毎フレームの更新は不要）
+void TitleScene::EnsureBlockTransforms(float centerX) {
+	if (!mapChipField_ || columnReady_.empty()) {
+		return;
+	}
+
+	const int32_t numColumns = static_cast<int32_t>(columnReady_.size());
+	const int32_t minCol = (std::max)(0, static_cast<int32_t>(std::floor(centerX - kTitleStageRangeX)));
+	const int32_t maxCol = (std::min)(numColumns - 1, static_cast<int32_t>(std::ceil(centerX + kTitleStageRangeX)));
+
+	for (int32_t j = minCol; j <= maxCol; ++j) {
+		if (columnReady_[j]) {
+			continue;
+		}
+		columnReady_[j] = true;
+
+		for (size_t i = 0; i < worldTransformBlocks_.size(); ++i) {
+			if (!blockModels_[i][j] || worldTransformBlocks_[i][j]) {
+				continue;
+			}
+			KamataEngine::WorldTransform* worldTransform = new KamataEngine::WorldTransform();
+			worldTransform->Initialize();
+			worldTransform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, static_cast<uint32_t>(i));
+			worldTransform->matWorld_ = MakeAffineMatrix(worldTransform->scale_, worldTransform->rotation_, worldTransform->translation_);
+			worldTransform->TransferMatrix();
+			worldTransformBlocks_[i][j] = worldTransform;
+		}
+	}
 }
 
 void TitleScene::Initialize() {
@@ -48,17 +75,14 @@ void TitleScene::Initialize() {
 
 	mapChipField_ = new MapChipField();
 	mapChipField_->LoadMapChipDataFromCSV("Resources/titleStageDatas.csv");
-	model_ = KamataEngine::Model::CreateFromOBJ("block", true);
+	// ★ 軽量化: モデルは ModelCache で使い回す（ゲームシーンと同じモデルを二重に読み込まない）
+	model_ = ModelCache::Load("block");
 
 	// ★ ブロックの向き別モデルを読み込み
-	delete modelBlockAbove_;
-	delete modelBlockBelow_;
-	delete modelBlockLeft_;
-	delete modelBlockRight_;
-	modelBlockAbove_ = KamataEngine::Model::CreateFromOBJ("blockAbove", true);
-	modelBlockBelow_ = KamataEngine::Model::CreateFromOBJ("blockBelow", true);
-	modelBlockLeft_ = KamataEngine::Model::CreateFromOBJ("blockLeft", true);
-	modelBlockRight_ = KamataEngine::Model::CreateFromOBJ("blockRight", true);
+	modelBlockAbove_ = ModelCache::Load("blockAbove");
+	modelBlockBelow_ = ModelCache::Load("blockBelow");
+	modelBlockLeft_ = ModelCache::Load("blockLeft");
+	modelBlockRight_ = ModelCache::Load("blockRight");
 
 	// ★ 奥行き背景（Resources/titleBackgroundDatas.csv から配置）
 	backgroundBlocks_ = std::make_unique<BackgroundBlocks>();
@@ -69,15 +93,13 @@ void TitleScene::Initialize() {
 
 	blockModels_.assign(numBlockVertical, std::vector<KamataEngine::Model*>(numBlockHorizontal, nullptr));
 	worldTransformBlocks_.resize(numBlockVertical);
+	columnReady_.assign(numBlockHorizontal, false);
 	for (uint32_t i = 0; i < numBlockVertical; ++i) {
 		worldTransformBlocks_[i].resize(numBlockHorizontal, nullptr);
 		for (uint32_t j = 0; j < numBlockHorizontal; ++j) {
 			MapChipType type = mapChipField_->GetMapChipTypeByIndex(j, i);
 			if (type == MapChipType::kBlock) {
-				KamataEngine::WorldTransform* worldTransform = new KamataEngine::WorldTransform();
-				worldTransform->Initialize();
-				worldTransform->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
-				worldTransformBlocks_[i][j] = worldTransform;
+				// ★ 軽量化: WorldTransform はカメラの周辺に来たときに EnsureBlockTransforms で作る（ここではモデルの種類だけ決める）
 
 				// ★ ブロックの向きの判定（GameScene と共通）。空白に一番近いブロックだけが向きを持つ
 				switch (mapChipField_->GetBlockFaceByIndex(j, i)) {
@@ -101,21 +123,21 @@ void TitleScene::Initialize() {
 		}
 	}
 
-	modelPlayerHead_ = KamataEngine::Model::CreateFromOBJ("player_head", true);
-	modelPlayerBody_ = KamataEngine::Model::CreateFromOBJ("player_body", true);
-	modelPlayerLeft_ = KamataEngine::Model::CreateFromOBJ("player_left", true);
-	modelPlayerRight_ = KamataEngine::Model::CreateFromOBJ("player_right", true);
+	modelPlayerHead_ = ModelCache::Load("player_head");
+	modelPlayerBody_ = ModelCache::Load("player_body");
+	modelPlayerLeft_ = ModelCache::Load("player_left");
+	modelPlayerRight_ = ModelCache::Load("player_right");
 
 	player_ = new Player();
 	player_->Initialize(modelPlayerBody_, &camera_, {5.0f, 4.0f, 0.0f});
 	player_->SetMapChipField(mapChipField_);
 
-	modelSkydome_ = KamataEngine::Model::CreateFromOBJ("skydome", true);
+	modelSkydome_ = ModelCache::Load("skydome");
 	skydome = std::make_unique<Skydome>();
 	skydome->Initialize(modelSkydome_, &camera_);
 
 	// ★ タイトル名モデルの初期化（Scale拡大 & Y軸180度回転）
-	modelTitleName_ = KamataEngine::Model::CreateFromOBJ("TitleName", true);
+	modelTitleName_ = ModelCache::Load("TitleName");
 	worldTransformTitleName_.Initialize();
 	worldTransformTitleName_.scale_ = {2.0f, 2.0f, 2.0f};             // ★ スケールを大きく変更 (画面サイズに合わせて数値を調整してください)
 	worldTransformTitleName_.rotation_.y = std::numbers::pi_v<float>; // ★ Y軸回転を180度(π rad)に設定
@@ -138,6 +160,9 @@ void TitleScene::Initialize() {
 	backgroundBlocks_->SetLightGroups(
 	    lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundNear), lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundMid),
 	    lightManager_->GetLightGroup(LightManager::GroupType::kBackgroundFar));
+
+	// ★ 軽量化: 最初に画面に映る周辺のブロックだけ用意する（残りはカメラが近づいたときに用意する）
+	EnsureBlockTransforms(camera_.translation_.x);
 }
 
 void TitleScene::Update() {
@@ -252,15 +277,8 @@ void TitleScene::Update() {
 		transformRight.TransferMatrix();
 	}
 
-	for (auto& worldTransformBlockLine : worldTransformBlocks_) {
-		for (auto* worldTransformBlock : worldTransformBlockLine) {
-			if (!worldTransformBlock) {
-				continue;
-			}
-			worldTransformBlock->matWorld_ = MakeAffineMatrix(worldTransformBlock->scale_, worldTransformBlock->rotation_, worldTransformBlock->translation_);
-			worldTransformBlock->TransferMatrix();
-		}
-	}
+	// ★ 軽量化: ブロックは動かないので毎フレームの行列更新はしない。カメラの周辺に来た列のブロックだけ用意する
+	EnsureBlockTransforms(camera_.translation_.x);
 
 	// ★ タイトル名モデルの演出処理（待機時の上下移動 ＆ SPACE押下時の回転）
 	static float titleFloatingTimer = 0.0f;
@@ -314,17 +332,22 @@ void TitleScene::Draw() {
 	backgroundBlocks_->Draw(camera_);
 
 	// ★ ブロックは向きに応じたモデルで描画
-	for (size_t i = 0; i < worldTransformBlocks_.size(); ++i) {
-		for (size_t j = 0; j < worldTransformBlocks_[i].size(); ++j) {
-			KamataEngine::WorldTransform* worldTransformBlock = worldTransformBlocks_[i][j];
-			if (!worldTransformBlock) {
-				continue;
+	//   軽量化: PreDraw / PostDraw はブロック 1 個ごとではなく全体で 1 回だけ。カメラの周辺の列だけ描画する
+	{
+		const int32_t minCol = (std::max)(0, static_cast<int32_t>(std::floor(camera_.translation_.x - kTitleStageRangeX)));
+		KamataEngine::Model::PreDraw();
+		for (size_t i = 0; i < worldTransformBlocks_.size(); ++i) {
+			const int32_t maxCol = (std::min)(static_cast<int32_t>(worldTransformBlocks_[i].size()) - 1, static_cast<int32_t>(std::ceil(camera_.translation_.x + kTitleStageRangeX)));
+			for (int32_t j = minCol; j <= maxCol; ++j) {
+				KamataEngine::WorldTransform* worldTransformBlock = worldTransformBlocks_[i][j];
+				if (!worldTransformBlock) {
+					continue;
+				}
+				KamataEngine::Model* blockModel = blockModels_[i][j] ? blockModels_[i][j] : model_;
+				blockModel->Draw(*worldTransformBlock, camera_);
 			}
-			KamataEngine::Model* blockModel = blockModels_[i][j] ? blockModels_[i][j] : model_;
-			KamataEngine::Model::PreDraw();
-			blockModel->Draw(*worldTransformBlock, camera_);
-			KamataEngine::Model::PostDraw();
 		}
+		KamataEngine::Model::PostDraw();
 	}
 
 	skydome->Draw();

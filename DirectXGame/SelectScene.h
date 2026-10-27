@@ -1,7 +1,9 @@
 #pragma once
 #include "Fade.h"
+#include "Font.h"
 #include "Kamataengine.h"
-#include "LightManager.h" // ★ 追加
+#include "LightManager.h"
+#include "Pause.h" // ★ 追加: ポーズクラスのインクルード
 #include "Skydome.h"
 #include <memory>
 #include <vector>
@@ -25,9 +27,15 @@ public:
 	void Draw();
 
 	bool IsFinished() const { return finished_; }
+	bool IsEndSceneRequested() const { return isEndSceneRequested_; }
+	bool IsTitleRequested() const { return isTitleRequested_; } // ★ 追加: タイトル遷移要求フラグを取得
+	bool IsExitRequested() const { return isExitRequested_; }   // ★ 追加: ゲーム終了要求フラグを取得
 
 private:
 	bool finished_ = false;
+	bool isEndSceneRequested_ = false;
+	bool isTitleRequested_ = false; // ★ 追加: タイトル画面への遷移要求フラグ
+	bool isExitRequested_ = false;  // ★ 追加: ゲーム終了の要求フラグ
 	Phase phase_ = Phase::FadeIn;
 
 	Fade* fade_ = nullptr;
@@ -41,8 +49,14 @@ private:
 	// ★ 操作解説用矢印モデルポインタ
 	KamataEngine::Model* modelArrow_ = nullptr;
 
-	// ★ 朝のライティング
+	// ★ ライティングマネージャ
 	std::unique_ptr<LightManager> lightManager_ = nullptr;
+
+	// ★ フォント演出・ポーズUIクラスのインスタンス
+	std::unique_ptr<Font> font_ = nullptr;
+
+	// ★ 追加: ポーズUI・看板演出制御専用クラスのインスタンス
+	std::unique_ptr<Pause> pause_ = nullptr;
 
 	// ステージマネージャ参照用のポインタ
 	StageManager* stageManager_ = nullptr;
@@ -70,4 +84,14 @@ private:
 	float cameraPerformanceTimer_ = 0.0f;
 	KamataEngine::Vector3 cameraStartPos_{};
 	KamataEngine::Vector3 cameraTargetPos_{};
+
+	// ★ 追加: ポーズ看板からの選択項目保持用変数
+	Pause::MenuType pendingPauseMenu_ = Pause::MenuType::Count;
+
+	// ★ 追加: ステージ2選択時のライティング朝夜交互切替（フリッカー）演出用変数
+	int32_t previousSelectIndex_ = -1; // 直前の選択ステージインデックス
+	float flickerTimer_ = 0.0f;        // 切替タイマー
+	float currentInterval_ = 0.06f;    // 現在の切替間隔（秒。最初は速く段々遅くなる）
+	bool isNight_ = false;             // 現在のライティング状態（false: 朝, true: 夜）
+	bool isFlickerFinished_ = false;   // 切替演出が終了して夜に固定されたか
 };

@@ -13,6 +13,12 @@ float Lerp(float current, float target, float rate) { return current + rate * (t
 // ズーム演出用のイージング関数 (EaseInOutCubic)
 float EaseInOutCubic(float t) { return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) / 2.0f; }
 
+// スムーズステップ（edge0 以下で 0.0、edge1 以上で 1.0 になめらかに変化する）
+static float SmoothStepF(float edge0, float edge1, float x) {
+	float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+	return t * t * (3.0f - 2.0f * t);
+}
+
 void CameraController::Initialize(KamataEngine::Camera* camera) {
 	// 引数で受け取ったカメラのポインタをメンバ変数に保存する
 	camera_ = camera;
@@ -556,11 +562,11 @@ bool CameraController::UpdateFinalBossCinematic() {
 	const float pi = 3.14159265f;
 	const FinalBoss::State bossState = finalBoss_->GetState();
 	const bool isAttacking = (bossState == FinalBoss::State::kAttack);
+	const bool isDodging = (bossState == FinalBoss::State::kDodgingAttack); // ★ 覚醒専用攻撃「終末の裁き」中
 	const KamataEngine::Vector3& bossBasePos = finalBoss_->GetBasePosition();
 
 	isBossCinematicWide_ = false;
 
-	// プレイヤー追従位置（復帰先）
 	const KamataEngine::WorldTransform& playerTransform = target_->GetWorldTransform();
 	KamataEngine::Vector3 playerTargetPos;
 	playerTargetPos.x = playerTransform.translation_.x + targetOffset_.x;
@@ -568,8 +574,76 @@ bool CameraController::UpdateFinalBossCinematic() {
 	playerTargetPos.z = playerTransform.translation_.z + targetOffset_.z;
 
 	// =========================================================
-	// ① 撃破演出: 崩れ落ちるラスボスからカメラを遠くにし（ズームアウト）、全体を映す（終わったらゴール追従カメラ演出が始まる）
+	// ★ 追加: 覚醒演出カメラ
+	//   ラスボス全体を映す ➔ 胎動の間ゆっくり寄っていく ➔ 咆哮の瞬間にぐっと引く ➔ 余韻
+	//   ※ 画面の揺れはランダムではなく、ゆっくりした波（sin）だけで表現して目に優しくする
 	// =========================================================
+	if (finalBoss_->IsAwakening()) {
+		if (bossCinematic_ != BossCinematic::kAwakening) {
+			bossCinematic_ = BossCinematic::kAwakening;
+			cinematicTimer_ = 0.0f;
+			cinematicStartPos_ = camera_->translation_;
+			cinematicStartRot_ = camera_->rotation_;
+		}
+		cinematicTimer_ += dt;
+		isBossCinematicWide_ = true;
+
+		const float p = finalBoss_->GetAwakeningProgress();
+		const float build = EaseInOutCubic(std::clamp((p - 0.20f) / 0.42f, 0.0f, 1.0f)); // 胎動の間にゆっくり寄る
+		const float punch = std::sin(std::clamp((p - 0.62f) / 0.16f, 0.0f, 1.0f) * pi);  // 咆哮の瞬間だけ 1.0 になる山
+		const float settle = SmoothStepF(0.78f, 1.0f, p);                                // 余韻
+		const float tremor = build * (1.0f - SmoothStepF(0.62f, 0.80f, p));              // 胎動中だけ、ほんの少し震える
+
+		KamataEngine::Vector3 desired;
+		desired.x = bossBasePos.x + std::sin(cinematicTimer_ * 1.7f) * 0.15f * (0.3f + build) + std::sin(cinematicTimer_ * 29.0f) * 0.04f * tremor;
+		desired.y = bossBasePos.y + 1.0f + std::cos(cinematicTimer_ * 1.3f) * 0.10f * (0.3f + build) + std::cos(cinematicTimer_ * 26.0f) * 0.04f * tremor;
+		desired.z = kAwakeningCameraFarZ + (kAwakeningCameraNearZ - kAwakeningCameraFarZ) * build;
+		desired.z += (-22.0f - desired.z) * settle;
+		desired.z -= 2.5f * punch;
+
+		KamataEngine::Vector3 desiredRot = cinematicBaseRotation_;
+		desiredRot.x -= 0.04f * SmoothStepF(0.15f, 0.60f, p) + 0.03f * punch;
+		desiredRot.z += 0.03f * std::sin(cinematicTimer_ * 2.1f) * build + 0.04f * punch;
+
+		const float blend = EaseInOutCubic(std::clamp(cinematicTimer_ / kAwakeningInTime, 0.0f, 1.0f));
+		camera_->translation_.x = Lerp(cinematicStartPos_.x, desired.x, blend);
+		camera_->translation_.y = Lerp(cinematicStartPos_.y, desired.y, blend);
+		camera_->translation_.z = Lerp(cinematicStartPos_.z, desired.z, blend);
+		camera_->rotation_.x = Lerp(cinematicStartRot_.x, desiredRot.x, blend);
+		camera_->rotation_.z = Lerp(cinematicStartRot_.z, desiredRot.z, blend);
+		return true;
+	}
+
+	// 覚醒演出が終わったら、プレイヤー追従（攻撃中と同じ少し引いた位置）へなめらかに戻る
+	if (bossCinematic_ == BossCinematic::kAwakening) {
+		bossCinematic_ = BossCinematic::kAwakeningOut;
+		cinematicTimer_ = 0.0f;
+		cinematicStartPos_ = camera_->translation_;
+		cinematicStartRot_ = camera_->rotation_;
+	}
+
+	if (bossCinematic_ == BossCinematic::kAwakeningOut) {
+		cinematicTimer_ += dt;
+		isBossCinematicWide_ = true;
+
+		const float t = std::clamp(cinematicTimer_ / kAwakeningOutTime, 0.0f, 1.0f);
+		const float easeVal = EaseInOutCubic(t);
+
+		KamataEngine::Vector3 returnPos = {playerTargetPos.x, playerTargetPos.y + 1.2f, playerTargetPos.z - 3.5f};
+		camera_->translation_.x = Lerp(cinematicStartPos_.x, returnPos.x, easeVal);
+		camera_->translation_.y = Lerp(cinematicStartPos_.y, returnPos.y, easeVal);
+		camera_->translation_.z = Lerp(cinematicStartPos_.z, returnPos.z, easeVal);
+
+		camera_->rotation_.x = Lerp(cinematicStartRot_.x, cinematicBaseRotation_.x - 0.06f, easeVal);
+		camera_->rotation_.z = Lerp(cinematicStartRot_.z, cinematicBaseRotation_.z, easeVal);
+
+		if (t >= 1.0f) {
+			bossCinematic_ = BossCinematic::kNone;
+			attackFollowBlend_ = 1.0f; // このあと、終末の裁き中の追従（少し引いた位置）へそのままつながる
+		}
+		return true;
+	}
+
 	if (finalBoss_->IsDefeated() && !finalBoss_->IsDefeatAnimationFinished()) {
 		if (bossCinematic_ != BossCinematic::kDefeat) {
 			bossCinematic_ = BossCinematic::kDefeat;
@@ -579,7 +653,6 @@ bool CameraController::UpdateFinalBossCinematic() {
 		cinematicTimer_ += dt;
 		isBossCinematicWide_ = true;
 
-		// ★ ズームアウト完了時にラスボスへ通知し、撃破演出（崩れ落ちアニメーション）を開始させる
 		if (cinematicTimer_ >= kDefeatCameraInTime) {
 			finalBoss_->SetDefeatZoomFinished(true);
 		}
@@ -588,17 +661,15 @@ bool CameraController::UpdateFinalBossCinematic() {
 		const float blendIn = EaseInOutCubic(std::clamp(cinematicTimer_ / kDefeatCameraInTime, 0.0f, 1.0f));
 		const float easeProgress = EaseInOutCubic(progress);
 
-		// 注目位置: ラスボス全体 ➔ 崩れ落ちるにつれて少し下へ。カメラを遠く（ズームアウト）にして全貌を映す
 		KamataEngine::Vector3 desired;
 		desired.x = bossBasePos.x + std::sin(progress * pi) * 1.5f;
 		desired.y = bossBasePos.y + 1.0f - 1.5f * easeProgress;
-		desired.z = kDefeatCameraFarZ + (kDefeatCameraNearZ - kDefeatCameraFarZ) * easeProgress;
+		desired.z = kDefeatCameraNearZ;
 
 		camera_->translation_.x = Lerp(cinematicStartPos_.x, desired.x, blendIn);
 		camera_->translation_.y = Lerp(cinematicStartPos_.y, desired.y, blendIn);
 		camera_->translation_.z = Lerp(cinematicStartPos_.z, desired.z, blendIn);
 
-		// 傾き: 崩れ落ちる向きに合わせて斜めになり、演出の終わりに向けて元に戻る
 		const float tilt = std::sin(progress * pi);
 		camera_->rotation_.z = cinematicBaseRotation_.z + 0.10f * tilt;
 		camera_->rotation_.x = cinematicBaseRotation_.x + 0.04f * tilt;
@@ -606,21 +677,16 @@ bool CameraController::UpdateFinalBossCinematic() {
 	}
 
 	if (bossCinematic_ == BossCinematic::kDefeat) {
-		// 撃破演出が終わったら傾きを元に戻す
 		bossCinematic_ = BossCinematic::kNone;
 		camera_->rotation_ = cinematicBaseRotation_;
 	}
 
-	// =========================================================
-	// ★ ダウン（伏せ）演出: ステージ手前に伏せたラスボスとプレイヤーをカメラで映す
-	// （※攻撃処理の前に判定を行うように上部へ移動しました）
-	// =========================================================
 	if (bossState == FinalBoss::State::kDown) {
 		isBossCinematicWide_ = true;
 		KamataEngine::Vector3 desired;
 		desired.x = (playerTransform.translation_.x + bossBasePos.x) * 0.5f;
 		desired.y = playerTransform.translation_.y + 1.0f;
-		desired.z = -14.0f; // ★ 少しズームインして追撃しやすい構図にする
+		desired.z = -14.0f;
 
 		camera_->translation_.x = Lerp(camera_->translation_.x, desired.x, 0.1f);
 		camera_->translation_.y = Lerp(camera_->translation_.y, desired.y, 0.1f);
@@ -631,9 +697,6 @@ bool CameraController::UpdateFinalBossCinematic() {
 		return true;
 	}
 
-	// =========================================================
-	// ② 攻撃開始の検出
-	// =========================================================
 	if (isAttacking && !wasBossAttacking_) {
 		bossCinematic_ = BossCinematic::kAttackIntro;
 		cinematicTimer_ = 0.0f;
@@ -643,16 +706,12 @@ bool CameraController::UpdateFinalBossCinematic() {
 	}
 	wasBossAttacking_ = isAttacking;
 
-	// =========================================================
-	// ③ 攻撃開始演出: ラスボスへ引き、空へ飛び立つクリスタルを見上げながらゆっくり寄る
-	// =========================================================
 	if (bossCinematic_ == BossCinematic::kAttackIntro) {
 		cinematicTimer_ += dt;
 		isBossCinematicWide_ = true;
 
 		const bool finished = !isAttacking || finalBoss_->IsMeteorShowerStarted() || cinematicTimer_ >= kAttackIntroMaxTime;
 		if (finished && cinematicTimer_ >= kAttackIntroMinTime) {
-			// プレイヤーへ戻る演出へ
 			bossCinematic_ = BossCinematic::kAttackOut;
 			cinematicTimer_ = 0.0f;
 			cinematicStartPos_ = camera_->translation_;
@@ -663,14 +722,13 @@ bool CameraController::UpdateFinalBossCinematic() {
 
 			KamataEngine::Vector3 desired;
 			desired.x = bossBasePos.x;
-			desired.y = bossBasePos.y + 2.0f + 0.5f * hold; // 飛び立つクリスタルを追って少し上へ
-			desired.z = kAttackCameraStartZ + 0.8f * hold;  // ゆっくり寄る
+			desired.y = bossBasePos.y + 2.0f + 0.5f * hold;
+			desired.z = kAttackCameraStartZ + 0.8f * hold;
 
 			camera_->translation_.x = Lerp(cinematicStartPos_.x, desired.x, blendIn);
 			camera_->translation_.y = Lerp(cinematicStartPos_.y, desired.y, blendIn);
 			camera_->translation_.z = Lerp(cinematicStartPos_.z, desired.z, blendIn);
 
-			// 空を見上げるようにカメラを上へ傾け、ゆっくり左右にも傾ける
 			const float tilt = EaseInOutCubic(std::clamp(cinematicTimer_ / (kAttackIntroInTime + 0.6f), 0.0f, 1.0f));
 			camera_->rotation_.x = cinematicBaseRotation_.x - 0.10f * tilt;
 			camera_->rotation_.z = cinematicBaseRotation_.z + 0.03f * std::sin(cinematicTimer_ * 1.2f) * tilt;
@@ -678,9 +736,6 @@ bool CameraController::UpdateFinalBossCinematic() {
 		}
 	}
 
-	// =========================================================
-	// ④ 攻撃開始演出の後: プレイヤー追従へなめらかに戻る（少し引いた位置へ）
-	// =========================================================
 	if (bossCinematic_ == BossCinematic::kAttackOut) {
 		cinematicTimer_ += dt;
 		isBossCinematicWide_ = true;
@@ -688,7 +743,6 @@ bool CameraController::UpdateFinalBossCinematic() {
 		const float t = std::clamp(cinematicTimer_ / kAttackOutTime, 0.0f, 1.0f);
 		const float easeVal = EaseInOutCubic(t);
 
-		// 攻撃中の追従カメラ（少し引いて上へ）と同じ位置へ戻るので、切り替わりで飛ばない
 		KamataEngine::Vector3 returnPos = {playerTargetPos.x, playerTargetPos.y + 1.2f, playerTargetPos.z - 3.5f};
 		camera_->translation_.x = Lerp(cinematicStartPos_.x, returnPos.x, easeVal);
 		camera_->translation_.y = Lerp(cinematicStartPos_.y, returnPos.y, easeVal);
@@ -704,18 +758,22 @@ bool CameraController::UpdateFinalBossCinematic() {
 		return true;
 	}
 
-	// =========================================================
-	// ⑤ 攻撃中: プレイヤーを追従しながら、少し引いて空を見上げる（最後のクリスタルが落ちたら少し寄る）
-	// =========================================================
-	if (!isAttacking && attackFollowBlend_ <= 0.0f) {
+	if (!isAttacking && !isDodging && attackFollowBlend_ <= 0.0f) {
 		return false;
 	}
 
-	const float blendTarget = isAttacking ? (finalBoss_->IsCrystal22Landed() ? 0.4f : 1.0f) : 0.0f;
+	// ★ 終末の裁き中は、柱が降る範囲（プレイヤーの左右）が見えるように少し引いて追従する。柱が着弾するたびにカメラが少し寄って傾く
+	if (isDodging) {
+		KamataEngine::Vector3 strikePos{};
+		if (finalBoss_->ConsumeDoomStrikeEvent(strikePos)) {
+			CombatHit(strikePos, 0.9f);
+		}
+	}
+
+	const float blendTarget = isAttacking ? (finalBoss_->IsCrystal22Landed() ? 0.4f : 1.0f) : (isDodging ? 1.0f : 0.0f);
 	attackFollowBlend_ += (blendTarget - attackFollowBlend_) * 0.04f;
 
-	if (!isAttacking && attackFollowBlend_ < 0.003f) {
-		// 攻撃が終わって元の追従に戻りきったら、傾きも元に戻す
+	if (!isAttacking && !isDodging && attackFollowBlend_ < 0.003f) {
 		attackFollowBlend_ = 0.0f;
 		camera_->rotation_ = cinematicBaseRotation_;
 		return false;

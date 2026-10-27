@@ -1,6 +1,7 @@
 #include "BackgroundBlocks.h"
 #include "MapChipField.h"
 #include "Matrix4x4.h"
+#include "ModelCache.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -26,12 +27,7 @@ constexpr float kHeightMul[4] = {1.0f, 1.0f, 1.0f, 1.4f};
 } // namespace
 
 BackgroundBlocks::~BackgroundBlocks() {
-	delete modelBlock_;
-	delete modelBlockAbove_;
-	delete modelCloud_; // ★ 追加: 雲モデルの解放
-	for (int i = 0; i < kNumTileModels; ++i) {
-		delete tileModels_[i];
-	}
+	// ★ 軽量化: モデルは ModelCache で使い回しているため、ここでは解放しない
 
 	for (auto* obj : backgroundObjects_) {
 		delete obj;
@@ -63,7 +59,7 @@ bool BackgroundBlocks::LoadFromCSV(const std::string& csvPath) {
 	const char* tileModelNames[kNumTileModels] = {"block", "blockAbove", "blockBelow", "blockLeft", "blockRight"};
 	for (int i = 0; i < kNumTileModels; ++i) {
 		if (!tileModels_[i]) {
-			tileModels_[i] = KamataEngine::Model::CreateFromOBJ(tileModelNames[i], true);
+			tileModels_[i] = ModelCache::Load(tileModelNames[i], "bgTile");
 		}
 	}
 
@@ -205,9 +201,9 @@ void BackgroundBlocks::GenerateClouds() {
 
 void BackgroundBlocks::Initialize(MapChipField* mapChipField, const std::string& csvPath) {
 	// 背景描画に使うモデルを読み込み
-	modelBlock_ = KamataEngine::Model::CreateFromOBJ("block", true);
-	modelBlockAbove_ = KamataEngine::Model::CreateFromOBJ("blockAbove", true);
-	modelCloud_ = KamataEngine::Model::CreateFromOBJ("cloud3", true);
+	modelBlock_ = ModelCache::Load("block", "bgFar");
+	modelBlockAbove_ = ModelCache::Load("blockAbove", "bgMid");
+	modelCloud_ = ModelCache::Load("cloud3", "bgFar");
 
 	// ★ 先にマップチップからステージ全体の横幅を取得する
 	if (mapChipField) {
@@ -353,9 +349,16 @@ void BackgroundBlocks::Update(const KamataEngine::Camera& camera) {
 		obj->transform.translation_.y = obj->basePosition.y + camera.translation_.y * (1.0f - obj->parallaxFactor);
 		obj->transform.translation_.z = obj->basePosition.z;
 
+		// ★ 軽量化: 描画範囲外のものは行列の計算・転送を省略する（描画範囲に入った時に Draw で計算する）。結果は同じ
+		if (std::fabs(obj->transform.translation_.x - camera.translation_.x) > obj->cullRange) {
+			obj->matrixDirty = true;
+			continue;
+		}
+
 		// スケール・回転（Initializeで設定済み）・平行移動からアフィン行列を計算
 		obj->transform.matWorld_ = MakeAffineMatrix(obj->transform.scale_, obj->transform.rotation_, obj->transform.translation_);
 		obj->transform.TransferMatrix();
+		obj->matrixDirty = false;
 	}
 }
 
@@ -369,6 +372,13 @@ void BackgroundBlocks::Draw(const KamataEngine::Camera& camera) {
 		// カメラから横に遠く離れているものは画面に映らないので描画しない
 		if (std::fabs(obj->transform.translation_.x - camera.translation_.x) > obj->cullRange) {
 			continue;
+		}
+
+		// Update ではカメラが 1 フレーム前の位置のため範囲外だったものが、ここで範囲内になることがある。その場合だけここで行列を計算する
+		if (obj->matrixDirty) {
+			obj->transform.matWorld_ = MakeAffineMatrix(obj->transform.scale_, obj->transform.rotation_, obj->transform.translation_);
+			obj->transform.TransferMatrix();
+			obj->matrixDirty = false;
 		}
 
 		obj->model->Draw(obj->transform, camera);

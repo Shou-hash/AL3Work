@@ -27,6 +27,9 @@ public:
 	bool IsFinished() const { return finished_; }
 
 private:
+	// ★ 軽量化: カメラの周辺の列のブロックだけ WorldTransform を作る（まだ作っていない列だけ作る）
+	void EnsureBlockTransforms(float centerX);
+
 	bool finished_ = false;
 	Phase phase_ = Phase::FadeIn;
 
@@ -40,6 +43,7 @@ private:
 	MapChipField* mapChipField_ = nullptr;
 	KamataEngine::Model* model_ = nullptr; // 通常ブロック
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
+	std::vector<bool> columnReady_; // ★ 軽量化: 列ごとに WorldTransform を作成済みか
 
 	// ★ ブロックの向き別モデル（GameScene と同じ判定で使い分ける）
 	KamataEngine::Model* modelBlockAbove_ = nullptr;             // 地面用（上が空白）

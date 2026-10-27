@@ -64,9 +64,10 @@ public:
 	};
 
 	void Initialize();
-	void Update();
+	// transfer が false の場合は LightGroup への反映（TransferBuffer）を行わない（呼び出し側が後で TransferBuffer を呼ぶときに、同じフレームで 2 回反映しないため）
+	void Update(bool transfer = true);
 
-	// 現在の設定と演出状態を LightGroup へ反映する
+	// 現在の設定と演出状態を LightGroup へ反映する（使われているライトグループだけを更新する）
 	void TransferBuffer();
 
 	// モデルにライトグループを設定する（Model::Draw 時に使われる）
@@ -86,6 +87,13 @@ public:
 	void SetNightFactor(float factor) { nightTarget_ = factor; }
 	// ラスボスの発狂中はスポットライトを激しく明滅させる
 	void SetBossFrenzy(bool frenzy) { isBossFrenzy_ = frenzy; }
+
+	// ★ 覚醒時の終末ライティングフラグ設定（朝・夜から終末へ、なめらかに切り替わる）
+	void SetAwakened(bool awakened) { isAwakened_ = awakened; }
+	// ★ 覚醒の咆哮の余韻（0.0 ~ 1.0）。ラスボスだけをやわらかく光らせる
+	void SetAwakenRoarGlow(float glow) { awakenRoarGlow_ = glow; }
+	// ★ 終末の裁きの光の柱が着弾している間の赤いポイントライト（intensity が 0 のときは何もしない）
+	void SetDoomPointLight(float intensity, const KamataEngine::Vector3& position);
 
 	// ★ 追従スポットライト（対象の座標を渡すと、対象を斜め上から照らす）
 	void SetPlayerSpot(bool active, const KamataEngine::Vector3& targetPos);
@@ -117,14 +125,18 @@ private:
 	LightSet& GetSet(GroupType type) { return lightSets_[static_cast<size_t>(type)]; }
 	const LightSet& GetSet(GroupType type) const { return lightSets_[static_cast<size_t>(type)]; }
 
-	// 1 つのライトグループへ、演出状態を加味した値を反映する
-	void ApplyLightSet(LightSet& set, bool isBoss);
+	// 1 つのライトグループへ、演出状態を加味した値を反映する（depthRate: 終末の光の奥行きによる暗さの倍率。奥の背景ほど小さい）
+	void ApplyLightSet(LightSet& set, bool isBoss, float depthRate);
 	// スポットライトを対象の斜め上に配置して対象に向ける
 	void FollowSpot(SpotState& spot, bool active, const KamataEngine::Vector3& targetPos, const KamataEngine::Vector3& offset);
 	// ImGui（ライトグループ 1 つ分）
 	void DrawLightSetImGui(const char* name, LightSet& set, bool isWorld, int spotCount, const char* const* spotNames);
 
 	std::array<LightSet, static_cast<size_t>(GroupType::kCount)> lightSets_;
+
+	// ★ 軽量化: モデルに設定された（使われている）ライトグループだけを毎フレーム更新する
+	mutable std::array<bool, static_cast<size_t>(GroupType::kCount)> setUsed_{};
+	bool firstTransferDone_ = false; // 初回の反映（全てのライトグループ）が済んだか
 
 	LightingType lightType_ = LightingType::kHalfLambert;
 
@@ -134,7 +146,25 @@ private:
 	float nightTarget_ = 0.0f;   // 夜の度合いの目標値
 	float nightCurrent_ = 0.0f;  // 夜の度合いの現在値（なめらかに追従）
 	bool isBossFrenzy_ = false;  // ラスボス発狂中フラグ
+	bool isAwakened_ = false;    // ★ 追加: 覚醒状態（終末感）フラグ
 	float time_ = 0.0f;          // 明滅用タイマー
+
+	// ★ 追加: 終末ライティング（覚醒時）の ImGui 調整用パラメータ
+	//   目に優しいように、真っ暗な赤ではなく「くすんだ赤茶の環境光 ＋ 沈みきらない赤い太陽 ＋ 紫がかった補助光」で、赤一色にならないようにする
+	KamataEngine::Vector3 awakenedAmbientColor_ = {0.16f, 0.09f, 0.12f}; // ★ 覚醒時の環境光色
+	KamataEngine::Vector3 awakenedDirColor0_ = {0.62f, 0.26f, 0.18f};    // ★ 覚醒時のメイン平行光源色（地平線の燃えるような赤い太陽）
+	KamataEngine::Vector3 awakenedDirColor1_ = {0.20f, 0.15f, 0.30f};    // ★ 覚醒時のサブ平行光源色（紫がかった補助光で影を起こす）
+	KamataEngine::Vector3 awakenedDir0_ = {-0.8f, -0.22f, 0.4f};         // ★ 覚醒時のメイン平行光源の向き
+	KamataEngine::Vector3 awakenedDir1_ = {0.5f, -0.3f, 0.8f};           // ★ 覚醒時のサブ平行光源の向き
+	KamataEngine::Vector3 awakenedSpotColor_ = {0.65f, 0.30f, 0.24f};    // ★ 覚醒時のスポットライト色
+	float awakenedGlowRate_ = 0.75f;                                     // ★ 覚醒時のボス自己発光倍率
+	float awakenedPulseSpeed_ = 1.2f;                                    // ★ 覚醒時のパルス明滅速度（ゆっくり呼吸するように）
+	float awakenedPulseAmp_ = 0.05f;                                     // ★ 覚醒時のパルス明滅振幅
+	float awakenedSmoothing_ = 0.025f;                                   // ★ 終末ライティングへ切り替わる速さ（1 フレームあたりの追従率。小さいほどゆっくり）
+	bool awakenedOverride_ = false;                                      // ★ ImGuiからの手動覚醒オーバーライドフラグ
+	bool manualAwakened_ = false;                                        // ★ 手動覚醒状態のON/OFF
+	float awakenedBlend_ = 0.0f;                                         // ★ 終末ライティングの進行度（0.0 = 朝・夜、1.0 = 終末。なめらかに追従）
+	float awakenRoarGlow_ = 0.0f;                                        // ★ 覚醒の咆哮の余韻（ラスボスの発光に足す）
 
 	// ★ ラスボスの自己発光（シェーダーの pointLights[2].intensity 経由で渡す）
 	bool bossGlowActive_ = false;   // 発光させるかどうか
